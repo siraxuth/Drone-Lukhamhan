@@ -40,10 +40,15 @@ export function SceneLayer() {
 
   // หน้าโหลด: อยู่แค่ตราบที่โมเดลยังไม่พร้อม ไม่มีเวลาขั้นต่ำ · ถ้าไม่ใช้ 3D หรือพังก็ปล่อยทันที
   const [ready, setReady] = useState(false);
-  const onReady = useCallback(() => setReady(true), []);
+  const onReady = useCallback(() => {
+    setReady(true);
+    // จำว่าโหลดสำเร็จแล้ว: ครั้งต่อไป (รีเฟรช/กลับมาหน้าแรก) ไม่โชว์หน้าโหลดอีก · ไฟล์โมเดลมาจากแคชเบราว์เซอร์
+    try { localStorage.setItem('model-seen-v1', '1'); document.documentElement.dataset.modelSeen = '1'; } catch { /* ไม่มี storage ก็โชว์ตามปกติ */ }
+  }, []);
   const use3d = effective === 'low' || effective === 'high';
   const hide = ready || (effective === 'off' && mode !== 'pending') || (reduced && mode !== 'pending');
   useEffect(() => {
+    if (document.documentElement.dataset.modelSeen) { setReady(true); return; }
     const t = setTimeout(() => setReady(true), 2600); // เพดานรวมไม่เกิน ~3 วินาทีนับจากเปิดหน้า: ช้ากว่านี้ก็เปิดหน้าให้ใช้ก่อน โมเดลค่อยโผล่ตามมา
     return () => clearTimeout(t);
   }, []);

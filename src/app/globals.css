@@ -496,6 +496,7 @@ html[data-scene3d="on"] .scene-poster { visibility: hidden; }
 	background: var(--canvas); transition: opacity .35s ease, visibility .35s ease;
 	animation: model-loader-failsafe .01s 4s forwards;
 }
+html[data-model-seen] .model-loader { display: none; }
 .model-loader[data-hide] { opacity: 0; visibility: hidden; pointer-events: none; }
 .model-loader-bar { position: relative; width: 140px; height: 3px; overflow: hidden; border-radius: 3px; background: color-mix(in oklab, var(--foreground) 14%, transparent); }
 .model-loader-bar i { position: absolute; inset: 0 auto 0 0; width: 40%; border-radius: 3px; background: var(--brand-blue); animation: model-loader-slide 1.1s ease-in-out infinite; }

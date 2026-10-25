@@ -36,6 +36,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="th" suppressHydrationWarning>
+      <head>
+        {/* เคยโหลดโมเดลโดรนสำเร็จแล้วบนเครื่องนี้ → ไม่ต้องโชว์หน้าโหลดอีก (ตั้งก่อนวาดหน้าแรก กันกะพริบ) */}
+        <script dangerouslySetInnerHTML={{ __html: "try{if(localStorage.getItem('model-seen-v1'))document.documentElement.dataset.modelSeen='1'}catch(e){}" }} />
+      </head>
       <body>
         <JsonLd data={siteSchema()} />
         <RootProvider theme={{ attribute: 'class', defaultTheme: 'system', enableSystem: true }}>
