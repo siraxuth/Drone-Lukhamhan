@@ -22,7 +22,7 @@ export default function ChangelogPage() {
     <>
       <Header />
       <Breadcrumbs items={[{ label: 'บันทึกการเปลี่ยนแปลง' }]} />
-      <main className="mx-auto max-w-7xl  pb-32 pt-4 ">
+      <main className="mx-auto max-w-7xl px-4 pb-32 pt-4 md:px-0">
         <h1 className="font-display text-4xl font-extrabold leading-[1.1] tracking-tight sm:text-5xl">บันทึกการเปลี่ยนแปลง</h1>
         <p className="mt-3 text-lg leading-8 text-muted-foreground">แต่ละเวอร์ชันของเว็บเปลี่ยนอะไรไปบ้าง เวอร์ชันปัจจุบันคือ <b className="text-foreground">v{SITE.version}</b></p>
         <ol className="mt-10 grid gap-8">
