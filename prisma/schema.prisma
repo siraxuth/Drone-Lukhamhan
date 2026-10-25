@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  TEACHER
+  MEMBER
+}
+
+// ---- Better Auth ----
+model User {
+  id            String    @id
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  role          Role      @default(MEMBER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verification")
+}
+
+// ---- เนื้อหาของชมรม ----
+
+/// ปีการแข่งขัน: กติกาเปลี่ยนทุกปี = เพิ่มแถวใหม่ ไม่ต้องแก้โค้ด
+model Season {
+  id         String      @id @default(cuid())
+  year       Int         @unique
+  title      String
+  summary    String?
+  rules      Json        @default("[]") // [{ heading, body }]
+  fieldImage String?
+  videoUrls  String[]
+  published  Boolean     @default(false)
+  challenges Challenge[]
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+}
+
+/// หมวดเนื้อหา/section ที่ admin จัดลำดับได้
+model Section {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  quote     String?
+  body      String   @default("")
+  order     Int      @default(0)
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// ผลงานที่ผ่านมาของชมรม
+model Project {
+  id          String   @id @default(cuid())
+  title       String
+  year        Int
+  description String   @default("")
+  image       String?
+  /// แกลเลอรีภาพของผลงาน (ภาพปกอยู่ใน image แยกต่างหาก)
+  images      String[] @default([])
+  videoUrl    String?
+  location    String   @default("")
+  published   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// โจทย์สนามสำหรับ simulator
+model Challenge {
+  id        String   @id @default(cuid())
+  seasonId  String?
+  season    Season?  @relation(fields: [seasonId], references: [id], onDelete: SetNull)
+  title     String
+  brief     String   @default("")
+  starter   String   @default("")
+  /// ลายสนาม + วัตถุบนสนาม (ห่วง จุดผ่าน แท่น ลูกโป่ง เป้า) ดู src/lib/scenarios.ts
+  config    Json     @default("{}")
+  slug      String?
+  level     String   @default("เริ่มต้น") // เริ่มต้น | กลาง | ยาก
+  order     Int      @default(0)
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
