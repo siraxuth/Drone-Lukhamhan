@@ -1,0 +1,163 @@
+---
+title: "10. โหมดบิน"
+description: mode_config.hpp เลือกโหมดบรรทัดเดียว drone_sanam5.ino กระจายไปยัง setup/loop ของโหมดนั้น และวิธีเพิ่มโหมดใหม่
+---
+
+ชมรมแข่งหลายรายการ แต่ละรายการใช้ปุ่มรีโมทและท่าบินคนละชุด ถ้าเอาทุกอย่างมารวมใน `loop()` เดียว ปุ่ม KEY1 ของรายการหนึ่งจะชนกับ KEY1 ของอีกรายการ จึงแยกเป็น **โหมด** แต่ละโหมดมีไฟล์ของตัวเอง เลือกใช้โหมดเดียวต่อการอัปโหลดหนึ่งครั้ง เหมือนสลับแผ่นเกมในเครื่อง
+
+## 1. เลือกโหมดบรรทัดเดียว
+
+```cpp
+// mode_config.hpp
+#define FLIGHT_MODE_DRONE_MISSION              1
+#define FLIGHT_MODE_AVIATION_MASTERY           2
+#define FLIGHT_MODE_DRONE_INNOVATION_CHALLENGE 3
+
+#define ACTIVE_FLIGHT_MODE   FLIGHT_MODE_DRONE_MISSION
+```
+
+เปลี่ยนที่เดียวคือบรรทัด `ACTIVE_FLIGHT_MODE` แล้วอัปโหลดใหม่
+
+| ค่า | โหมด | ไฟล์ | ปุ่ม |
+| --- | --- | --- | --- |
+| 1 | `FLIGHT_MODE_DRONE_MISSION` | `Drone_Mission.ino` | KEY1–10, 12–14 |
+| 2 | `FLIGHT_MODE_AVIATION_MASTERY` | `Aviation_Mastery.ino` | KEY1–4 |
+| 3 | `FLIGHT_MODE_DRONE_INNOVATION_CHALLENGE` | `Drone_Innovation_Challenge.ino` | KEY1–4, 6 |
+
+## 2. ตัวกระจายโหมด
+
+<Figure caption="ACTIVE_FLIGHT_MODE ชี้ไปโหมดเดียว #if/#elif เลือกชื่อฟังก์ชัน setup/loop ของโหมดนั้นมาตั้งเป็น MODE_SETUP และ MODE_LOOP ค่าที่ไม่รู้จักจะหยุดที่ #error">
+  <ModeDispatch />
+</Figure>
+
+```cpp
+// drone_sanam5.ino
+#if  ACTIVE_FLIGHT_MODE == FLIGHT_MODE_DRONE_MISSION
+  #define MODE_SETUP  setupDroneMissionMode
+  #define MODE_LOOP   loopDroneMissionMode
+#elif ACTIVE_FLIGHT_MODE == FLIGHT_MODE_AVIATION_MASTERY
+  #define MODE_SETUP  setupAviationMasteryMode
+  #define MODE_LOOP   loopAviationMasteryMode
+#elif ACTIVE_FLIGHT_MODE == FLIGHT_MODE_DRONE_INNOVATION_CHALLENGE
+  #define MODE_SETUP  setupDroneInnovationChallengeMode
+  #define MODE_LOOP   loopDroneInnovationChallengeMode
+#else
+  #error "ACTIVE_FLIGHT_MODE ตั้งค่าไม่ถูก — เปิด mode_config.hpp แล้วตั้งเป็น FLIGHT_MODE_* ตัวใดตัวหนึ่ง"
+#endif
+
+void setup() {
+  drone.beginDefault();
+  MODE_SETUP();
+}
+
+void loop() {
+  MODE_LOOP();
+}
+```
+
+- `#define MODE_SETUP ชื่อฟังก์ชัน` คือการตั้งชื่อเล่น ตัวประมวลผลก่อนคอมไพล์ (preprocessor) แทนที่ `MODE_SETUP` เป็น `setupDroneMissionMode` ให้ก่อนคอมไพล์จริง
+- `#if/#elif/#else` เลือกชุดชื่อเพียงชุดเดียว
+- `#error` หยุดคอมไพล์พร้อมข้อความ ถ้าพิมพ์ค่าผิด (เช่น 4 โดยยังไม่เพิ่มโหมด) จะรู้ทันทีตอนกดตรวจสอบ ไม่ใช่ไปพังตอนโดรนลอยแล้ว
+- `drone.beginDefault()` ทำงานทุกโหมด: เปิด Serial 9600 และตั้งพิน `PORT1`, `PORT3`, `PORT4`, `PORT5`, `PORT6` เป็น output
+
+## 3. โหมดหนึ่งมีอะไร
+
+ทุกโหมดมีฟังก์ชันสองตัวตามชื่อ `setup...Mode()` และ `loop...Mode()`
+
+```cpp
+// Aviation_Mastery.ino
+void setupAviationMasteryMode() {
+}
+
+void loopAviationMasteryMode() {
+  drone.onKey1(AviationMastery_KEY_1_handle);
+  drone.onKey2(AviationMastery_KEY_2_handle);
+  drone.onKey3(AviationMastery_KEY_3_handle);
+  drone.onKey4(AviationMastery_KEY_4_handle);
+}
+```
+
+โหมด Mission มี `setup` ที่ตั้งพิน `PORT3`, `PORT6` เป็น output แล้วเรียก `close_all_ball_gate()` ให้ประตูปิดก่อน (กันเซอร์โวกระตุกตอนเปิดเครื่อง) ส่วน `loop` ก็แค่ผูกปุ่มด้วย `onKeyN` ตาม [ปุ่มรีโมท](/docs/code/remote-keys)
+
+## 4. ไฟล์ .ino ทุกไฟล์ถูกคอมไพล์เสมอ
+
+Arduino IDE รวมไฟล์ `.ino` ทั้งโฟลเดอร์เป็นโปรแกรมเดียว `#if` ในหน้านี้เลือกแค่ **ชื่อ** ที่จะใช้ใน `setup()` กับ `loop()` โค้ดของโหมดที่ไม่ได้เลือกก็ยังถูกคอมไพล์ จึงมีกฎสองข้อ
+
+1. ชื่อฟังก์ชันต้องไม่ซ้ำข้ามไฟล์ ชมรมจึงใส่ชื่อโหมดนำหน้า เช่น `AviationMastery_KEY_1_handle` กับ `DroneMission_KEY_1_handle`
+2. ทุกโหมดต้องคอมไพล์ผ่านพร้อมกัน แก้โหมดหนึ่งผิดก็ล้มทั้งโปรเจกต์
+
+## 5. เพิ่มโหมดใหม่ทีละขั้น
+
+สมมติเพิ่มโหมด "ฝึกบิน" ชื่อ `TRAINING`
+
+<Steps>
+<Step>
+
+### 1. สร้างไฟล์ `Training.ino`
+
+```cpp
+#include "DroneEasy.hpp"
+
+void Training_KEY_1_handle() {
+  drone.calibration();
+  delay(3000);
+  drone.takeOff();
+  delay(4000);
+  drone.fw(100);
+  drone.autoLand();
+}
+
+void setupTrainingMode() {
+}
+
+void loopTrainingMode() {
+  drone.onKey1(Training_KEY_1_handle);
+}
+```
+
+</Step>
+<Step>
+
+### 2. เพิ่มเลขโหมดใน `mode_config.hpp`
+
+```cpp
+#define FLIGHT_MODE_TRAINING                   4
+```
+
+</Step>
+<Step>
+
+### 3. เพิ่ม `#elif` ใน `drone_sanam5.ino` ก่อน `#else`
+
+```cpp
+#elif ACTIVE_FLIGHT_MODE == FLIGHT_MODE_TRAINING
+  #define MODE_SETUP  setupTrainingMode
+  #define MODE_LOOP   loopTrainingMode
+```
+
+</Step>
+<Step>
+
+### 4. เลือกใช้
+
+```cpp
+#define ACTIVE_FLIGHT_MODE   FLIGHT_MODE_TRAINING
+```
+
+อัปโหลดแล้วทดลองกด KEY1
+
+</Step>
+</Steps>
+
+## ลองทำ
+
+1. ตั้ง `ACTIVE_FLIGHT_MODE` เป็นเลข 9 แล้วกด Verify ดูข้อความ `#error`
+2. เพิ่มโหมด Training ตามขั้นตอนข้างบน โดยให้ KEY2 บินถอยหลัง 100 ซม.
+3. ดู `Drone_Innovation_Challenge.ino` ว่าปุ่ม KEY5 ถูกคอมเมนต์ไว้ ลองปลดคอมเมนต์ต้องมีอะไรให้ครบก่อน
+
+## พังตรงไหนบ่อย
+
+- **อัปโหลดโหมดผิด** ปุ่มไม่ทำอย่างที่คิด ตรวจ `ACTIVE_FLIGHT_MODE` ก่อนเป็นอย่างแรก
+- **ชื่อฟังก์ชันซ้ำข้ามไฟล์** คอมไพล์ฟ้อง "redefinition"
+- **ลืม `#elif` ของโหมดใหม่** เจอ `#error` แม้จะเพิ่มเลขโหมดแล้ว
+- **เพิ่มโหมดแต่ลืมใส่ `setup...Mode`** ลิงก์ไม่ผ่าน เพราะ `MODE_SETUP` ชี้ฟังก์ชันที่ไม่มี

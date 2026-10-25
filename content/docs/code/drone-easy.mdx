@@ -1,0 +1,162 @@
+---
+title: "4. drone.* คำสั่งแบบอ่านง่าย"
+description: wrapper จาก DroneEasy.hpp/.cpp ที่ห่อ pArduino-> ให้สั้นลง พร้อมการเบรกในตัว
+---
+
+ถ้า `pArduino->` คือการเขียนใบสั่งยาวๆ ส่งเข้าครัว `drone.*` ก็คือปุ่มลัดบนจอสั่งอาหาร กดทีเดียวได้ครบชุด ทุกภารกิจของชมรมเขียนด้วย `drone.*` เป็นหลัก `drone` เป็นตัวแปรเดียวของคลาส `DroneEasy` ประกาศไว้ที่ `DroneEasy.cpp` (`DroneEasy drone;`)
+
+<Figure caption="drone.fw(250) ไล่ลงไปทีละชั้น จนกลายเป็นไบต์ที่ส่งไปให้ Flight Controller">
+  <EasyLayers />
+</Figure>
+
+## 1. เดินหน้า ถอยหลัง เลื่อนข้าง: fw bw ml mr
+
+```cpp
+// DroneEasy.cpp
+void DroneEasy::settle(uint16_t ms) const {
+  pArduino->set_direction(7, 1);
+  delay(ms);
+}
+
+void DroneEasy::fw(int cm) const { pArduino->move_forward_cm(cm); settle(400); }
+void DroneEasy::bw(int cm) const { pArduino->move_backward_cm(cm); settle(400); }
+void DroneEasy::ml(int cm) const { pArduino->move_left_cm(cm); settle(400); }
+void DroneEasy::mr(int cm) const { pArduino->move_right_cm(cm); settle(400); }
+
+void DroneEasy::sh(int z) const {
+  pArduino->set_height(z);
+  delay(400);
+}
+```
+
+ลองกดดูทีละคำสั่ง ภาพคือสิ่งที่โดรนทำ **หลัง** บรรทัดนั้นถูกรัน (เริ่มจากโดรนลอยอยู่ที่ 110 ซม.)
+
+<Tabs items={['fw เดินหน้า', 'bw ถอยหลัง', 'ml เลื่อนซ้าย', 'mr เลื่อนขวา']}>
+<Tab value="fw เดินหน้า"><CmdDemo code="drone.fw(150);" air /></Tab>
+<Tab value="bw ถอยหลัง"><CmdDemo code="drone.bw(150);" air /></Tab>
+<Tab value="ml เลื่อนซ้าย"><CmdDemo code="drone.ml(150);" air /></Tab>
+<Tab value="mr เลื่อนขวา"><CmdDemo code="drone.mr(150);" air /></Tab>
+</Tabs>
+
+| คำสั่ง | ความหมาย | ทำอะไรจริง |
+| --- | --- | --- |
+| `drone.fw(cm)` | เดินหน้า | `move_forward_cm(cm)` แล้ว `settle(400)` |
+| `drone.bw(cm)` | ถอยหลัง | `move_backward_cm(cm)` แล้ว `settle(400)` |
+| `drone.ml(cm)` | เลื่อนซ้าย | `move_left_cm(cm)` แล้ว `settle(400)` |
+| `drone.mr(cm)` | เลื่อนขวา | `move_right_cm(cm)` แล้ว `settle(400)` |
+| `drone.sh(z)` | ตั้งความสูง z ซม. | `set_height(z)` แล้วรอ 400 ms |
+| `drone.settle(ms)` | หยุดนิ่งรอ | `set_direction(7, 1)` แล้วรอ ms (ค่าตั้งต้น 220) |
+
+`settle` ต่างจากเบรกท้าย `move_*_cm` ตรงที่ใช้ speed 1 (ช้า) และรอเวลานานกว่า ผลคือโดรนนิ่งจริงก่อนคำสั่งถัดไป
+
+<Figure caption="drone.fw(250): บินหน้า 3865 ms เบรกด้วย poshold(2) แล้วนิ่งอีก 400 ms รวมราว 4.27 วินาที">
+  <FwTimeline />
+</Figure>
+
+## 2. เขียนต่อกันเป็นขบวน
+
+เขียนต่อกันได้เลยโดยไม่ต้อง `delay` เอง เพราะแต่ละคำสั่งรอและเบรกให้ในตัว ลองกดดูทีละบรรทัด
+
+<CmdDemo steps={["drone.fw(250);", "drone.ml(255);", "drone.mr(480);", "drone.bw(8);"]} air />
+
+```cpp
+drone.fw(250);
+drone.ml(255);
+drone.mr(480);
+drone.bw(8);
+```
+
+## 3. ตั้งแต่ calibrate ถึงลงจอด
+
+<CmdDemo steps={["drone.calibration();", "drone.takeOff();", "drone.sh(110);", "drone.autoLand();"]} />
+
+```cpp
+drone.calibration();             // ตั้งศูนย์
+drone.calibrateAndDelay(3000);   // ตั้งศูนย์ + รอ 3000 ms
+drone.takeOff();
+drone.autoLand();
+drone.stopMotor();               // ฉุกเฉิน ตัดมอเตอร์
+drone.wait(1000);                // = delay(1000)
+drone.poll();                    // ดึงข้อมูลสดจาก FC
+```
+
+## 4. เลือก speed เอง: move* และ moveFast*
+
+```cpp
+drone.moveForward(100);        // speed 2 เหมือน fw แต่ไม่มี settle(400)
+drone.moveLeft(100, 1);        // ช้ากว่า
+drone.moveFastForward(243);    // speed 3 ใช้ MS_PER_CM_FWD_FAST ไม่มีเบรก
+```
+
+| กลุ่ม | คำสั่ง | ค่าตั้งต้น speed |
+| --- | --- | --- |
+| ปกติ | `moveForward` `moveBackward` `moveLeft` `moveRight` | 2 |
+| เร็ว | `moveFastForward` `moveFastBackward` `moveFastLeft` `moveFastRight` | 3 |
+
+ข้อควรระวัง: ค่า `MS_PER_CM_*` วัดมาที่ speed ค่าตั้งต้นของกลุ่มนั้น เปลี่ยน speed แล้วระยะจะเพี้ยน ดู [ระยะกับเวลา](/docs/code/distance-time)
+
+## 5. ความสูงและลอยนิ่ง
+
+<CmdDemo steps={["drone.sh(60);", "drone.sh(110);", "drone.sh(170);"]} air />
+
+```cpp
+drone.setHeight(110);            // set_height ไม่รอ
+drone.holdHeight(110, 2);        // set_height แล้ว poshold(2)
+drone.smoothSetHeight(120);      // ค่อยๆ ขยับทีละ 10 ซม. (step 10, delay 200)
+drone.posHold();                 // poshold(2)
+drone.direction(5, 3);           // set_direction(5, 3) ทิศอะไรก็ได้
+drone.up(3, 300);                // ขึ้น speed 3 รอ 300 ms
+drone.down(3, 300);              // ลง speed 3 รอ 300 ms
+uint16_t h = drone.heightCm();   // ความสูงล่าสุดจาก get_height_cm()
+```
+
+- `sh(z)` เหมาะกับท่อนที่ต้องรอให้ถึงก่อนไปต่อ ส่วน `setHeight(z)` ส่งแล้วไปต่อทันที
+- `drone.up` และ `drone.down` ค่าตั้งต้น speed คือ **3** (ต่างจาก `pArduino->up` ที่ใช้ 2) และไม่หยุดเอง
+- `heightCm()` ต้องเรียก `drone.poll()` ก่อนจึงได้ค่าล่าสุด
+
+## 6. คำสั่งอื่นที่ห่อไว้ครบ
+
+| `drone.` | เรียก `pArduino->` |
+| --- | --- |
+| `rotate()` | `rotate()` |
+| `flip()` | `flip()` (ว่างเปล่า) |
+| `circle360()` | `circle_360()` |
+| `jump()` และ `jumpEnd()` | `jump()` และ `jump_end()` |
+| `picture()` | `picture()` |
+| `videoBegin()` และ `videoEnd()` | `video_begin()` และ `video_end()` |
+| `motor(num, speed)` | `motor(num, speed)` |
+| `setPos(x, y)` | `set_pos(x, y)` |
+| `setYaw(rotate, angle)` | `set_yaw(rotate, angle)` |
+| `raw()` | คืน `*pArduino` ไว้เรียกเมธอดที่ไม่มีใน wrapper |
+
+## 7. ตัวช่วยวัดระยะ: mToCm และ moveTimeDir
+
+```cpp
+uint16_t cm = DroneEasy::mToCm(2.5f);   // 250 (แปลงเมตรเป็นซม. ปัดเศษ)
+
+drone.moveTimeDir(1, 100, 15.46f);      // dir 1 หน้า 100 ซม. ใช้ 15.46 ms/cm
+```
+
+`moveTimeDir(dir, cm, ms_per_cm, speed)` ให้ใส่ค่า ms/cm เอง แล้วเบรกด้วย `set_direction(7, 1)` และรอ 220 ms เหมาะกับการ**ลองค่าใหม่โดยไม่ต้องแก้ `config.hpp`** ใช้ตอนวัดตามหน้า [ระยะกับเวลา](/docs/code/distance-time)
+
+## 8. ปุ่มรีโมท
+
+```cpp
+drone.onKey1(handler);    // ถึง onKey14
+drone.onKey(5, handler);  // เลขปุ่มตรงๆ
+```
+
+อ่านต่อที่ [ปุ่มรีโมท](/docs/code/remote-keys) คำสั่งเซอร์โว ปล่อยบอล และยิง (`servoRelease`, `swipeLeftS1`, `dropPayload`, `reachShootHeightStable` ฯลฯ) ห่อไว้ใน `DroneEasy` เหมือนกัน แต่อธิบายในหมวดกลไก เช่น [ปล่อยสัมภาระ](/docs/mechanisms/payload-drop)
+
+## ลองทำ
+
+1. เขียนบรรทัดบินสี่เหลี่ยมจัตุรัสด้านละ 100 ซม. ด้วย `fw` `mr` `bw` `ml`
+2. เทียบ `drone.fw(100)` กับ `drone.moveForward(100)` ต่างกันกี่ ms ต่อครั้ง (ตอบ: ต่างกันที่ `settle(400)` คือ 400 ms)
+3. เขียน `drone.moveTimeDir(1, 100, 15.46f)` แล้วเทียบระยะที่ได้กับ `fw(100)`
+
+## พังตรงไหนบ่อย
+
+- **เรียก `drone.up()` โดยไม่ตามด้วย `posHold()`** โดรนไต่ต่อไม่หยุด
+- **ใช้ `moveFast*` แล้วโดรนไหลเลย** ไม่มีเบรกท้ายคำสั่ง ต้องใส่ `drone.settle()` เอง
+- **สับสน `sh` กับ `setHeight`** ตัวแรกรอ 400 ms ตัวหลังไม่รอ
+- **ใช้ชื่อสั้นผิดตัวพิมพ์** เขียน `Fw` ตัวพิมพ์ใหญ่ หรือ `setheight` ตัวเล็กหมด จะ compile ไม่ผ่าน ชื่อต้องตรงกับ `DroneEasy.hpp` ทุกตัวอักษร

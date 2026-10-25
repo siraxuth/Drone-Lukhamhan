@@ -1,0 +1,121 @@
+---
+title: "6. หมุนหัวโดรน (Yaw)"
+description: set_yaw, yaw_block, yaw_soft_stop แบบ 70/30 พร้อม trim และค่า YAW_* ใน config.hpp
+---
+
+Yaw คือการหมุนรอบแกนตั้ง หัวโดรนหันไปซ้ายหรือขวาโดยตัวไม่เลื่อนที่ ใช้เมื่อกลไกอยู่ที่หัวโดรน เช่นเข็มเจาะลูกโป่ง ต้องหันหัวเข้าหาเป้า (ดู [เจาะลูกโป่ง](/docs/mechanisms/balloon-poke))
+
+## 1. set_yaw: สั่งหมุน
+
+หลังสั่งแล้ว โดรนหมุนอยู่ที่เดิม ตำแหน่งไม่เปลี่ยน ดูลูกศรแดงบนพื้น (ทิศหัว) หมุนตาม
+
+<CmdDemo steps={["pArduino->set_yaw(1, 90);   // 1 = ขวา 90°", "pArduino->set_yaw(2, 90);   // 2 = ซ้าย 90° กลับมาทิศเดิม", "pArduino->set_yaw(1, 180);  // ขวา 180° หันหลังกลับ"]} air />
+
+```cpp
+pArduino->set_yaw(1, 90);   // 1 = หมุนขวา 90 องศา
+pArduino->set_yaw(2, 90);   // 2 = หมุนซ้าย 90 องศา
+```
+
+<Figure caption="rotate = 1 หมุนขวา (ตามเข็มนาฬิกามองจากด้านบน) rotate = 2 หมุนซ้าย ตามที่ yaw_soft_stop ใช้ใน config.hpp">
+  <YawDir />
+</Figure>
+
+เหมือน `set_direction` คำสั่งนี้ **ส่งแล้วจบทันที** ไม่รอให้หมุนเสร็จ ต้อง `delay` เองให้พอ โค้ดของชมรมคำนวณเวลาจากมุม:
+
+```cpp
+// config.hpp
+static const uint16_t YAW_MS_PER_DEG = 42;
+static const uint16_t YAW_EXTRA_MS   = 120;
+static const uint16_t YAW_SETTLE_MS  = 220;
+static const uint8_t  YAW_TRIM_DEG   = 4;
+
+static inline void yaw_block(uint8_t dir, uint16_t deg){
+  pArduino->set_yaw(dir, deg);
+  delay((uint32_t)deg * YAW_MS_PER_DEG + YAW_EXTRA_MS);
+}
+```
+
+`yaw_block(dir, deg)` = สั่งหมุน แล้วรอ `deg × 42 + 120` ms หมุน 90° รอ 90 × 42 + 120 = 3900 ms
+
+## 2. หมุนทีเดียวแล้ว "เลยเป้า"
+
+คิดถึงจักรยานที่เบรกกะทันหันบนทางลื่น: ล้อหยุด ตัวยังไถลต่อ โดรนที่หมุนเร็วแล้วหยุดทันทีก็เลยมุมได้เล็กน้อย (overshoot) วิธีที่ชมรมใช้คือหมุน **สองจังหวะ** แล้วถอยกลับนิดหนึ่ง
+
+## 3. yaw_soft_stop: 70 แล้ว 30 แล้ว trim
+
+```cpp
+// config.hpp
+static inline void yaw_soft_stop(bool to_right, uint16_t deg, uint8_t trim_deg = YAW_TRIM_DEG){
+  const uint8_t DIR  = to_right ? 1 : 2;
+  const uint8_t ANTI = to_right ? 2 : 1;
+  const uint16_t a = (deg * 7) / 10;
+  const uint16_t b = deg - a;
+
+  yaw_block(DIR, a);
+  pArduino->set_direction(7, 3); delay(YAW_SETTLE_MS);
+
+  yaw_block(DIR, b);
+  pArduino->set_direction(7, 3); delay(YAW_SETTLE_MS / 2);
+
+  if (trim_deg){
+    yaw_block(ANTI, trim_deg);
+    pArduino->set_direction(7, 3); delay(YAW_SETTLE_MS);
+  }
+}
+```
+
+สามจังหวะ:
+
+1. หมุน 70% ของมุมที่ต้องการ แล้ว `poshold` นิ่ง 220 ms
+2. หมุนส่วนที่เหลือ 30% แล้วนิ่ง 110 ms (`YAW_SETTLE_MS / 2`)
+3. หมุนย้อนทิศ `trim_deg` = 4° เพื่อดึงกลับจาก overshoot แล้วนิ่ง 220 ms
+
+ตัวอย่าง `yaw_soft_stop(true, 90)`:
+
+| จังหวะ | หมุน | รอหมุน | นิ่ง |
+| --- | --- | --- | --- |
+| 1 | ขวา 63° | 63 × 42 + 120 = 2766 ms | 220 ms |
+| 2 | ขวา 27° | 27 × 42 + 120 = 1254 ms | 110 ms |
+| 3 (trim) | ซ้าย 4° | 4 × 42 + 120 = 288 ms | 220 ms |
+
+รวม 2766 + 220 + 1254 + 110 + 288 + 220 = **4858 ms** ช้ากว่า `yaw_block(1, 90)` ตัวเดียว (3900 ms) ราวหนึ่งวินาที แลกกับมุมที่นิ่งกว่า
+
+<Figure caption="มุมที่สั่งสะสมตามเวลาของ yaw_soft_stop(true, 90): แถบแดงคือช่วงพักนิ่ง เส้นลงท้ายที่ 86° เพราะ trim ถอย 4° เพื่อหักล้าง overshoot ที่คาดไว้">
+  <YawProfile />
+</Figure>
+
+## 4. smart_yaw: ใส่เลขบวก/ลบได้เลย
+
+<CmdDemo steps={["smart_yaw(90);   // เลขบวก = ขวา", "smart_yaw(-90);  // เลขลบ = ซ้าย"]} air />
+
+```cpp
+smart_yaw(90);    // ขวา 90 องศา (yaw_soft_stop(true, 90))
+smart_yaw(-45);   // ซ้าย 45 องศา (yaw_soft_stop(false, 45))
+```
+
+เลขบวกหมุนขวา เลขลบหมุนซ้าย `smart_yaw` ตัดสินทิศจากเครื่องหมายแล้วเรียก `yaw_soft_stop` ให้
+
+<Callout type="info" title="ตอนนี้ยังไม่ถูกใช้ในภารกิจ">
+ฟังก์ชัน `yaw_block`, `yaw_soft_stop` และ `smart_yaw` ถูกเตรียมไว้ใน `config.hpp` แต่ไฟล์ `.ino` ปัจจุบันไม่ได้เรียก (ใน `KEY1_mode1` มีบรรทัด `drone.setYaw` ที่ถูกคอมเมนต์ไว้) ค่า 42 ms ต่อองศาและ trim 4° จึงควร**วัดเองก่อนใช้จริง** เหมือน ms/cm
+</Callout>
+
+## 5. ปรับ YAW_* ให้พอดีโดรน
+
+- **หมุนไม่ถึงเป้า**: ลองเพิ่ม `YAW_MS_PER_DEG` ทีละ 2–3 หรือดูว่าแบตอ่อน
+- **เลยเป้ายังเหลือ**: เพิ่ม `YAW_TRIM_DEG` เป็น 5–6 ทีละ 1 องศา
+- **หมุนเสร็จแล้วยังโยก**: เพิ่ม `YAW_SETTLE_MS`
+
+เปลี่ยนทีละค่า ทดสอบ 3 ครั้ง ก่อนเปลี่ยนค่าถัดไป
+
+## ลองทำ
+
+1. คำนวณเวลาที่ `yaw_soft_stop(false, 60)` ใช้ทั้งหมด (ตอบ: a = 42, b = 18: (42×42+120) + 220 + (18×42+120) + 110 + 288 + 220 = 1884 + 220 + 876 + 110 + 288 + 220 = 3598 ms)
+2. เขียน handler ที่บินหน้า 100 ซม. หมุนขวา 90° แล้วบินหน้า 100 ซม. (ใช้ `smart_yaw(90)`)
+3. วัดว่าหมุนจริงกี่องศา ด้วยแผ่นกระดาษมีเส้นมุมวางใต้โดรน
+
+## พังตรงไหนบ่อย
+
+- **ลืมว่า `set_yaw` ไม่รอ** ถ้าไม่ `delay` โดรนยังหมุนตอนคำสั่งบินเดินหน้าเริ่ม
+- **ทิศหน้า-ซ้าย-ขวาเปลี่ยนหลังหมุน** `fw`, `ml`, `mr` นับตามหัวโดรนใหม่ เมื่อหมุนไปแล้วเส้นทางทั้งหมดเปลี่ยน
+- **ใช้ `deg` ไม่เป็นบวก** `yaw_soft_stop` รับ `uint16_t` ใส่ค่าลบจะกลายเป็นเลขใหญ่มาก ใช้ `smart_yaw` ที่รับค่าลบได้
+- **เอามุมไปคูณ ms เอง** ลืมบวก `YAW_EXTRA_MS` ทำให้ตัดช่วงท้ายสั้นไป

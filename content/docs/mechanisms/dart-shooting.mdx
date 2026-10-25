@@ -1,0 +1,158 @@
+---
+title: "3. ยิงลูกดอกใส่เป้า"
+description: servoHold, การกวาดซ้ายขวา และการรอให้ความสูงนิ่งก่อนยิง จาก shooting.ino
+---
+
+ภารกิจยิงเป้า (Drone Innovation Challenge) ให้ยิงลูกดอกใส่เป้ากลม 4 จุด ยิงได้ 1 ลูกต่อเป้า วงกลางสุดได้ 20 คะแนน วงนอกสุด 10 คะแนน และโดรนต้องอยู่ห่างเป้า **อย่างน้อย 1 เมตร** ก่อนยิง
+
+ชุดยิงของชมรมมีเซอร์โวสองตัว (`SHOOT1_PIN = PORT4`, `SHOOT2_PIN = PORT5` ใน `config.hpp`) ตัวหนึ่งใช้ยิงด้านหน้า อีกตัวใช้ยิงด้านหลัง (ตามคอมเมนต์ใน `Drone_Innovation_Challenge.ino`) โค้ดสั่งเซอร์โวไปสามตำแหน่ง คือ ปิด ซ้าย ขวา โครงกลไกที่ใช้ปลดลูกดอกไม่ได้อยู่ในโค้ด หน้านี้อธิบายเฉพาะการสั่งเซอร์โว
+
+เหมือนก้านปัดน้ำฝน ปัดไปสุดทาง ค้างครู่หนึ่ง แล้วกลับมาจอดที่เดิม
+
+## 1. กวาดซ้าย กวาดขวา
+
+<Figure caption="swipe_left_S1: ไป S_LEFT ค้าง 220 ms กลับ S_CLOSE ค้าง 150 ms แล้วรอ 60 ms เหมือนกันกับ swipe_right ที่ใช้ S_RIGHT">
+  <MechSwipeTimeline />
+</Figure>
+
+ค่าตำแหน่งสามค่าอยู่ใน `config.hpp`
+
+```cpp
+const int S_CLOSE = 1500;
+const int S_LEFT  = 1200;
+const int S_RIGHT = 2000;
+
+const uint16_t FIRE_HOLD_MS  = 220;
+const uint16_t RESET_HOLD_MS = 150;
+const uint16_t POST_DELAY_MS = 60;
+```
+
+ตัวส่งพัลส์อยู่ใน `shooting.ino` สองชั้น ชั้นล่างส่งพัลส์ 1 ครั้ง ชั้นบนวนซ้ำจนครบเวลา
+
+```cpp
+static inline void servoPulse50Hz(int pin, int pulse_us) {
+  pulse_us = clampPulse(pulse_us);   // จำกัดที่ 600–2400 µs
+  noInterrupts();
+  digitalWrite(pin, HIGH);
+  delayMicroseconds(pulse_us);
+  digitalWrite(pin, LOW);
+  interrupts();
+  delayMicroseconds(20000 - pulse_us);
+}
+
+static inline void servoHold(int pin, int pulse_us, uint16_t hold_ms) {
+  const uint32_t t0 = millis();
+  while (millis() - t0 < hold_ms) servoPulse50Hz(pin, pulse_us);
+}
+```
+
+- `servoHold` ค้างที่ตำแหน่งหนึ่งตามเวลาที่กำหนด (หน่วย ms ไม่ใช่ 1.5 วินาทีตายตัวแบบ `release_servo_angle`)
+- `clampPulse` ตัดค่าที่เกินช่วง 600–2400 µs เพื่อไม่ให้เซอร์โวชนขอบ
+- `noInterrupts()` ปิดเฉพาะช่วงพัลส์ HIGH ไม่กี่ร้อยไมโครวินาที โค้ดตัวอย่างเก่าในไฟล์ `Servo.ino` เขียนคอมเมนต์ไว้ว่าเพื่อกันพัลส์ถูกยืด ส่วนที่เหลือของเฟรมเปิด interrupt ให้ I2C ทำงานได้
+
+ท่ากวาดสี่ท่าประกอบจากสองฟังก์ชันนี้
+
+```cpp
+static void swipe_left_S1() {
+  servoHold(SHOOT1_PIN, S_LEFT, FIRE_HOLD_MS);
+  servoHold(SHOOT1_PIN, S_CLOSE, RESET_HOLD_MS);
+  delay(POST_DELAY_MS);
+}
+```
+
+อีกสามท่า (`swipe_right_S1`, `swipe_left_S2`, `swipe_right_S2`) ต่างกันแค่พินและทิศ รวมเวลาครั้งละ 220 + 150 + 60 = **430 ms** ส่วน `Test_ball.ino` มี `target_shooting()` เรียกทั้งสี่ท่าเรียงกันไว้ทดสอบบนโต๊ะ
+
+## 2. ทำไมยิงแล้วต้องรอความสูงนิ่ง
+
+ลูกดอกพุ่งตามทิศที่โดรนหันและความสูงขณะนั้น ถ้าโดรนยังกำลังขึ้นหรือลง ลูกจะพลาดวง `shooting.ino` จึงมีฟังก์ชันสั่งความสูงเป้าหมาย (`HEIGHT_SHOOT = 120` ซม.) แล้ว **รอจนอ่านความสูงนิ่งจริง** ก่อนปล่อยให้ยิง
+
+### แบบรอเวลาแล้วเช็กทีเดียว: `ensure_shoot_height`
+
+```cpp
+void ensure_shoot_height() {
+  pArduino->set_height(HEIGHT_SHOOT);
+  delay(200);
+  uint16_t current_h = read_height_cm();
+  if (current_h < (HEIGHT_SHOOT - 10) || current_h > (HEIGHT_SHOOT + 10)) {
+      pArduino->set_height(HEIGHT_SHOOT);
+      delay(500);
+      hold_now(300);
+  } else {
+      hold_now(400);
+  }
+}
+```
+
+ถ้าความสูงอยู่ในช่วง ±10 ซม. จากเป้า แค่ถือนิ่ง 400 ms ถ้าไม่ใช่ สั่งซ้ำ รอ 500 ms แล้วถือ 300 ms
+
+### แบบวนจนนิ่ง: `reach_height_shoot_stable`
+
+ฟังก์ชันนี้สั่งความสูงซ้ำๆ แล้วอ่านค่ากลับ นิ่งเมื่ออยู่ในช่วงคลาดเคลื่อน (`TOL = 4` ซม.) ต่อเนื่อง 500 ms
+
+```cpp
+constexpr uint16_t TARGET = HEIGHT_SHOOT;
+constexpr uint8_t  TOL    = 4;
+constexpr uint16_t MAX_WAIT_MS    = 3500;
+constexpr uint16_t SAMPLE_DELAY   = 80;
+constexpr uint16_t STABLE_NEED_MS = 500;
+
+while (millis() - t0 < MAX_WAIT_MS) {
+  pArduino->set_height(TARGET);
+  delay(SAMPLE_DELAY);
+  pArduino->poll();
+  uint16_t h = read_height_cm();
+  if (h == 0 || h > 300) { stableSince = 0; continue; }
+  int diff = (int)h - (int)TARGET;
+  if (abs(diff) <= TOL) {
+    if (stableSince == 0) stableSince = millis();
+    if (millis() - stableSince >= STABLE_NEED_MS) break;
+  } else {
+    stableSince = 0;
+  }
+}
+```
+
+ชื่อเล่นของลูกเล่นนี้คือ **stableSince** จดเวลาที่เริ่มนิ่ง ถ้าหลุดช่วงเมื่อไร รีเซ็ตเป็น 0 แล้วเริ่มนับใหม่ ผ่านครบ 500 ms จึงออกจากลูป ถ้ารอนานเกิน 3.5 วินาทียอมแพ้แล้วยิงต่อ ไม่ให้ภารกิจค้าง
+
+ฟังก์ชันตระกูลเดียวกันมีให้เลือกตามเวลาที่มี
+
+| ฟังก์ชัน | เป้า (ซม.) | ช่วงคลาด | รอสูงสุด | ต้องนิ่งนาน |
+| --- | --- | --- | --- | --- |
+| `reach_height_shoot_stable` | 120 | ±4 | 3500 ms | 500 ms |
+| `reach_height_shoot_fastb` | 127 | ±6 | 2000 ms | 350 ms |
+| `reach_height_shoot_fast` | 125 | ±6 | 2000 ms | 350 ms |
+| `reach_height_shoot_fast2` | 120 | ไม่เช็ก | รอ 700 ms ตายตัว | ไม่มี |
+
+## 3. โค้ดภารกิจจริงยิงอย่างไร
+
+มีสองทางในโฟลเดอร์ และไม่เหมือนกัน
+
+- **`shooting.ino`** มี `servoHold` กับ `swipe_*` แต่ตอนนี้ถูกเรียกจาก `Test_ball.ino` ที่ทดสอบบนโต๊ะเท่านั้น
+- **`Drone_Innovation_Challenge.ino`** (ภารกิจจริง) ยิงด้วย `drone.servoAngle(SHOOT1_PIN, S_LEFT_ANGLE)` ที่ใช้ค่าองศา 62 / 88 / 132 แล้วผ่าน `release_servo_angle` ซึ่งส่งพัลส์ 1.5 วินาทีและบล็อกโปรแกรม
+
+```cpp
+drone.holdHeight(132);
+drone.wait(700);
+drone.setHeight(135);
+drone.wait(1500);                            // รอให้นิ่ง
+drone.servoAngle(SHOOT1_PIN, S_LEFT_ANGLE);  // ยิงด้านหน้า
+```
+
+สองทางไปจบที่ตำแหน่งเซอร์โวใกล้กัน เพราะ `S_LEFT_ANGLE = 62` แปลงเป็นพัลส์ได้ 1199 µs ใกล้กับ `S_LEFT = 1200` (ดูวิธีคำนวณในบท [จูนเซอร์โวด้วยองศา](/docs/mechanisms/servo-calibration)) ภารกิจจริงจึงรอความสูงด้วย `delay` ตายตัว (700 + 1500 ms) ไม่ได้วนอ่านเซนเซอร์เหมือน `reach_height_shoot_stable`
+
+## ลองทำ
+
+1. รวมเวลาที่ `target_shooting()` ใช้ทั้งสี่ท่า (430 ms × 4) แล้วเทียบกับเวลาที่ภารกิจจริงใช้ต่อการยิงหนึ่งครั้ง (รอ 700 + 1500 + 1500)
+2. ดูในตัวจำลอง โปรแกรม `innovation-four` ยิงที่ความสูง 140 ซม. ได้วง 20 ทุกเป้า ลองแก้เป็น `sh(150)` ดูว่าคะแนนลดลงเท่าไร
+3. เขียนฟังก์ชันที่เลือก `reach_height_shoot_stable` กับ `reach_height_shoot_fast2` ตามเวลาที่เหลือในงบ
+
+<TryInSimulator program="innovation-four">ดูโปรแกรมยิงเป้าครบ 4 จุด</TryInSimulator>
+
+## พังตรงไหนบ่อย
+
+- **ยิงแล้วเป้าเลยไปข้างบน** ความสูงยังไม่นิ่ง ใช้แบบ `stable` แทน `fast2`
+- **ก้านค้างไม่กลับ** เวลา `RESET_HOLD_MS` สั้นเกินไป ก้านยังไปไม่ถึงตำแหน่งปิด ก่อนโดรนขยับต่อ
+- **ยิงแล้วโดรนส่าย** การกระแทกของลูกดอกทำให้ท่าทางเปลี่ยน รอ `POST_DELAY_MS` แล้วค่อยบินต่อ อย่ายกเลิกบรรทัดนั้น
+- **ปรับ `S_LEFT`/`S_RIGHT` ทีละมาก** `README.ino` เตือนให้ปรับทีละน้อยแล้วทดสอบใหม่ ค่าที่ไม่ตรงทำให้ลูกดอกไม่หลุดหรือหลุดทั้งสองข้าง
+- **อยู่ใกล้เป้าเกินไป** กติกากำหนดห่างอย่างน้อย 1 เมตร ถ้าใกล้กว่านั้นไม่นับ
+- **ยิงเกิน 1 ลูกต่อเป้า** กติกานับลูกที่คะแนนน้อยที่สุด ยิงซ้ำมีแต่เสีย

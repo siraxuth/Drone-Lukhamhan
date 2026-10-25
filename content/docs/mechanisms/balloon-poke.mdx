@@ -1,0 +1,111 @@
+---
+title: "2. เจาะลูกโป่ง 3 ช่วง"
+description: เข้าเร็ว แตะช้า ถอยออก พร้อมตัวกันความสูงจาก poke_controls.ino และค่า POKE_* ใน config.hpp
+---
+
+ในภารกิจยุทธวิธี (Aviation Mastery) ลูกโป่งแต่ละลูกให้ 5 คะแนน และกติกาบอกว่าถ้าใช้เข็มต้องมีปลายแหลมยาวไม่เกิน 1 มิลลิเมตร โดรนต้องเข้าไปแตะลูกโป่งให้ถูกจุดโดยไม่ชนเสา
+
+คิดเหมือนเอาเข็มจิ้มลูกโป่งในมือ ถ้าพุ่งเต็มแรง ลูกโป่งหนี เข็มพลาด ถ้าค่อยๆ เลื่อนช้าตลอดทาง เสียเวลา ท่าที่ได้ผลคือ **วิ่งเข้าใกล้เร็วๆ ชะลอตอนจะถึง จิ้ม แล้วถอยกลับ**
+
+<Callout type="info" title="สถานะของโค้ดชุดนี้">
+ฟังก์ชันใน `poke_controls.ino` เป็นไลบรารีที่เตรียมไว้ ไฟล์ภารกิจใน `drone_sanam5` ตอนนี้ (`Aviation_Mastery.ino`, `Drone_Mission.ino`) ยังไม่ได้เรียกใช้ และ `Aviation_Mastery.ino` บินด้วย `fw`/`bw` ธรรมดา หน้านี้อธิบายตัวไลบรารี ไม่ใช่ท่าที่ชมรมบินอยู่
+</Callout>
+
+## 1. 3 ช่วงของการเจาะ
+
+<Figure caption="ช่วงที่ 1 เข้าเร็ว 14 ซม. ช่วงที่ 2 เข้าช้า 6 ซม. ช่วงที่ 3 ถอย 14 ซม. ก่อนหน้านั้นหยุดห่างเป้า 20 ซม. (PRE_STOP_CM)">
+  <MechPokeProfile />
+</Figure>
+
+ค่าทั้งหมดอยู่ใน `config.hpp`
+
+```cpp
+constexpr uint16_t PRE_STOP_CM     = 20;
+constexpr uint16_t POKE_FAST_CM    = 14;
+constexpr uint16_t POKE_SLOW_CM    = 6;
+constexpr uint16_t POKE_RETREAT_CM = 14;
+```
+
+ตัวเจาะจริงคือ `needle_poke()` สามบรรทัด
+
+```cpp
+static inline void needle_poke(uint16_t approachFast, uint16_t approachSlow, uint16_t retreatBack) {
+  if (approachFast > 0)  pArduino->move_forward_cm(approachFast, 2);
+  if (approachSlow > 0)  pArduino->move_forward_cm(approachSlow, 1);
+  if (retreatBack > 0)   pArduino->move_backward_cm(retreatBack, 2);
+}
+```
+
+ตัวเลขท้ายคือระดับความเร็ว (`speed`) 1 = ช้า 2 = ปกติ 3 = เร็ว ตามคอมเมนต์ใน `protocol.cpp` ระยะทางแปลงเป็นเวลาด้วย `MS_PER_CM_*` ใน `config.hpp`
+
+```text
+เร็ว  14 ซม. × 15.46 ms = 216 ms
+ช้า    6 ซม. × 15.46 ms =  93 ms
+ถอย   14 ซม. × 15.16 ms = 212 ms
+รวมช่วงเจาะ                ≈ 0.52 วินาที
+```
+
+ตรงนี้เป็นการคำนวณจากค่าคงที่ ความเร็วจริงที่ต่างกันระหว่างระดับ 1 และ 2 โค้ดไม่ได้ระบุไว้ ต้องวัดเอง ใช้เครื่องคิดเลขนี้ลองปรับระยะ
+
+<MsPerCmCalc />
+
+## 2. ตัวกันความสูง (alt-guard)
+
+ก่อนเจาะ ฟังก์ชันหลัก `advance_and_poke_straight` อ่านความสูงจากเซนเซอร์ แล้วเลือกว่าจะปรับความสูงหรือไม่
+
+```cpp
+void advance_and_poke_straight(uint16_t deltaFromHere,
+                               uint8_t micro_bias_cm,
+                               bool relock_height) {
+  if (deltaFromHere > PRE_STOP_CM) {
+    pArduino->move_forward_cm(deltaFromHere - PRE_STOP_CM, 2);
+  }
+
+  uint16_t h = read_height_cm();
+  if (h >= ALT_GUARD_MIN_CM) {
+    set_height_drop_stable();
+  } else {
+    delay(80);
+  }
+
+  if (micro_bias_cm > 0) {
+    pArduino->move_forward_cm(micro_bias_cm, 1);
+  }
+
+  needle_poke(POKE_FAST_CM, POKE_SLOW_CM, POKE_RETREAT_CM);
+  // ... ล็อกความสูงอีกรอบถ้า relock_height
+}
+```
+
+ลำดับคือ
+
+1. **เข้าใกล้** เดินหน้า `deltaFromHere − 20` ซม. เหลือระยะ 20 ซม. ก่อนถึงเป้า
+2. **alt-guard** ถ้าอ่านความสูงได้ `ALT_GUARD_MIN_CM` (70 ซม.) ขึ้นไป ให้ลงมาที่ `HEIGHT_DROP` (45 ซม.) แล้วนิ่งก่อน (`set_height_drop_stable`: สั่งสองรอบ รอ 120 ms แล้ว `hold_now(250)`) ถ้าต่ำกว่า 70 อยู่แล้ว แค่รอ 80 ms
+3. **ขยับละเอียด** ถ้ากำหนด `micro_bias_cm` ก็เดินหน้าช้าอีกเล็กน้อยเพื่อชดเชยตำแหน่ง
+4. **เจาะ** เร็ว → ช้า → ถอย
+5. **ล็อกความสูงซ้ำ** ถ้า `relock_height` เป็นจริง และความสูงยังเกิน 70 ก็สั่ง `HEIGHT_DROP` อีกรอบ
+
+ชื่อ "guard" มาจากที่มันเป็นประตูตรวจ ถ้าโดรนยังสูงเกินเกณฑ์ ห้ามเจาะทั้งอย่างนั้น ค่า 70 และ 45 เป็นค่าจูนของชมรมสำหรับกลไกชุดนี้ ถ้าสนามหรือเสาเปลี่ยน ต้องวัดใหม่
+
+เวอร์ชัน `advance_and_poke_k6` ใช้โครงเดียวกัน แต่ค่า `PRE_STOP_K6 = 20`, `POKE_FAST_K6 = 10`, `POKE_SLOW_K6 = 10`, `POKE_RETREAT_K6 = 14` มี `advance_and_poke_pedestal_safe` ประกาศไว้ใน `poke_controls.h` แต่ **ยังไม่มีตัวฟังก์ชัน** อย่าเรียกใช้ จะ compile ไม่ผ่านตอน link
+
+## 3. เช็กความสูงอย่างปลอดภัย
+
+`read_height_cm()` อ่านค่าจาก `pArduino->get_height_cm()` ซึ่งเป็นไบต์ 0 และ 1 ที่ดึงมาจาก Flight Controller (ดูบท [แพ็กเก็ต I2C](/docs/advanced/i2c-packet)) ค่าเป็น 0 แปลว่ายังไม่มีข้อมูล และมากกว่า 300 ซม. น่าจะเป็นค่าผิดปกติ โค้ดอื่นในชุดเดียวกัน (`goto_height_smooth`) ตัดค่าสองแบบนี้ทิ้งก่อนใช้ ควรทำเหมือนกันถ้าเขียนเอง
+
+## ลองทำ
+
+1. คำนวณเวลาเจาะของ `advance_and_poke_k6` จากค่า `MS_PER_CM_*` ว่าต่างจากแบบ straight กี่มิลลิวินาที
+2. เขียนภารกิจสั้นที่บินไปยังจุดที่ห่างเสา 100 ซม. แล้วเรียก `advance_and_poke_straight(100)` ลองในตัวจำลองไม่ได้โดยตรง เพราะตัวจำลองมีคำสั่ง `pop()` ให้แทน ใช้ฝึกลำดับก่อน
+3. ดูโปรแกรม `aviation-all` ในตัวจำลอง นับว่าแตะลูกโป่งเรียงกันกี่ครั้งต่อเสาหนึ่งกลุ่ม
+
+<TryInSimulator program="aviation-all">ดูโปรแกรมแตะลูกโป่งเต็ม</TryInSimulator>
+
+## พังตรงไหนบ่อย
+
+- **พุ่งเร็วเกินไป** ลูกโป่งถูกลมดันหนี หรือโดรนชนเสา ลดค่า `POKE_FAST_CM` ก่อน อย่าลด `POKE_SLOW_CM`
+- **ระยะ `PRE_STOP_CM` สั้นไป** โดรนยังเลื่อนไหลตอนหยุด เข็มทะลุเกินลูกโป่ง เพิ่มทีละ 5 ซม. แล้วทดลอง
+- **ถอยไม่พอ** ปลายเข็มค้างติดผ้าหรือเสา ทำให้ลูกต่อไปพลาด `POKE_RETREAT_CM` ควรมากกว่าหรือเท่าระยะที่ไปจริง
+- **ความสูงเพี้ยน** ค่า 0 จากเซนเซอร์ถูกอ่านเป็น "ต่ำมาก" แล้วข้ามตัวกัน ตรวจสอบก่อนใช้
+- **เรียกฟังก์ชันที่ไม่มีตัวจริง** `advance_and_poke_pedestal_safe` ประกาศแล้วแต่ไม่มีโค้ด
+- **ลืมว่าฟังก์ชันบล็อก** `move_forward_cm` รอ `delay` จนครบ ระหว่างนั้นอ่านเซนเซอร์ไม่ได้ ดู [ภารกิจแบบไม่ใช้ delay](/docs/advanced/state-machine)

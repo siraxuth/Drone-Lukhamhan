@@ -1,0 +1,131 @@
+---
+title: "4. เขียนไลบรารีต่อยอด DroneEasy"
+description: วางชั้นของโค้ดให้ภารกิจอ่านง่าย และเขียน wrapper ของทีมเองโดยไม่แตะโปรโตคอลล่าง
+---
+
+โค้ดของชมรมมีสามชั้นอยู่แล้ว ถ้าเข้าใจว่าชั้นไหนทำอะไร คุณเพิ่มความสามารถใหม่ได้โดยไม่ทำให้ของเดิมพัง
+
+เหมือนร้านอาหาร ลูกค้า (ภารกิจ) สั่งเมนู พนักงานเสิร์ฟ (`DroneEasy`) แปลเมนูเป็นใบสั่ง ครัว (คลาส `Arduino`) ทำตามขั้นตอน ลูกค้าไม่ต้องรู้ว่าครัวใช้กระทะอะไร และถ้าอยากเพิ่มเมนูชุด ก็เพิ่มที่พนักงานเสิร์ฟ ไม่ต้องรื้อครัว
+
+<Figure caption="ภารกิจเรียก DroneEasy, DroneEasy เรียกคลาส Arduino, คลาส Arduino เขียนแพ็กเก็ต แล้ว FC มาอ่าน">
+  <AdvLibLayers />
+</Figure>
+
+## อ่านชั้นกลางให้เป็น
+
+`DroneEasy.hpp` ประกาศเมธอดทั้งหมด `DroneEasy.cpp` เป็นแค่ตัวส่งต่อบางๆ แทบทุกเมธอดเรียก `pArduino->...` หรือฟังก์ชันใน `.ino` บรรทัดเดียว
+
+```cpp
+void DroneEasy::fw(int cm) const { pArduino->move_forward_cm(cm); settle(400); }
+void DroneEasy::sh(int z) const { pArduino->set_height(z); delay(400); }
+void DroneEasy::posHold(uint8_t speed) const { pArduino->poshold(speed); }
+```
+
+ข้อสังเกตที่ใช้ตัดสินใจเขียนของใหม่
+
+- ตัวย่อ (`fw`, `sh`) **รวมเวลารอไว้แล้ว** (400 ms) ส่วนชื่อเต็ม (`moveForward`, `setHeight`) ไม่ได้ต่อ `settle`
+- เมธอดเป็น `const` และมีออบเจ็กต์เดียว `drone` ที่ประกาศ `extern` ไว้ใน header
+- `drone.raw()` คืนคลาส `Arduino` เดิม เผื่อใช้ฟังก์ชันที่ wrapper ยังไม่ได้ห่อ เช่น `drone.raw().set_yaw(1, 90)`
+
+## กติกาของชั้น
+
+1. **ภารกิจเรียกได้แค่ `drone.*` และฟังก์ชันของทีม** ไม่เรียก `set_direction` หรือแตะ `m_i2cData` ตรงๆ
+2. **ตัวเลขที่ต้องจูนอยู่ใน `config.hpp`** ไม่ฝังในภารกิจ (เช่น `HEIGHT_DROP`, `S_LEFT`)
+3. **เพิ่มความสามารถที่ชั้นกลาง** ถ้าอยากให้หลายภารกิจใช้ร่วมกัน
+4. **ไม่แก้ `protocol.cpp`** เว้นแต่จะเข้าใจว่า Flight Controller จะอ่านค่าอย่างไร ซึ่งไม่มีข้อมูล
+
+## ตัวอย่างที่ 1: เดินแล้วนิ่ง
+
+ตัวอย่างใหม่ ไม่ได้อยู่ใน `drone_sanam5` ใช้เฉพาะเมธอดที่มีอยู่แล้ว และยังไม่ได้ทดสอบกับโดรนจริง สร้างแท็บใหม่ `MyDrone.hpp`
+
+```cpp
+#pragma once
+#include "DroneEasy.hpp"
+
+// เลื่อนตามแกนหน้า-หลัง แล้วซ้าย-ขวา จากนั้นล็อกตำแหน่ง
+// fwCm > 0 = เดินหน้า, < 0 = ถอย · rightCm > 0 = ขวา, < 0 = ซ้าย
+inline void goAndHold(int fwCm, int rightCm) {
+  if (fwCm > 0)      drone.fw(fwCm);
+  else if (fwCm < 0) drone.bw(-fwCm);
+  if (rightCm > 0)      drone.mr(rightCm);
+  else if (rightCm < 0) drone.ml(-rightCm);
+  drone.posHold(2);
+}
+```
+
+ภารกิจอ่านเป็นประโยคเดียว `goAndHold(250, -250);` แทนสี่บรรทัด
+
+## ตัวอย่างที่ 2: ตรวจความสูงก่อนทำต่อ
+
+ปรับจากรูปแบบที่ `poke_controls.ino` ใช้ (ตัดค่า 0 และค่าเกิน 300 ทิ้ง)
+
+```cpp
+inline bool heightNear(uint16_t target, uint8_t tol) {
+  drone.poll();                       // ดึงค่าสดจาก FC ก่อน
+  uint16_t h = drone.heightCm();
+  if (h == 0 || h > 300) return false;
+  int diff = (int)h - (int)target;
+  return abs(diff) <= tol;
+}
+```
+
+ใช้แทนการ `delay` เดาเวลา เช่นวนเรียก `drone.setHeight(120)` จน `heightNear(120, 4)` เป็นจริง แต่ต้องมีเพดานเวลาเสมอ (ดู `reach_height_shoot_stable` ที่จำกัด 3,500 ms)
+
+## ตัวอย่างที่ 3: เส้นทางเป็นตาราง
+
+แยก "เส้นทาง" ออกจาก "โค้ดที่วิ่ง" แก้ตัวเลขทีเดียวโดยไม่แตะลอจิก
+
+```cpp
+struct Step { char dir; int cm; };    // f b l r
+
+inline void runRoute(const Step* s, int n) {
+  for (int i = 0; i < n; i++) {
+    switch (s[i].dir) {
+      case 'f': drone.fw(s[i].cm); break;
+      case 'b': drone.bw(s[i].cm); break;
+      case 'l': drone.ml(s[i].cm); break;
+      case 'r': drone.mr(s[i].cm); break;
+    }
+  }
+}
+
+const Step TOP_T[] = { {'f',250}, {'l',250}, {'r',500}, {'l',250}, {'b',250} };
+```
+
+เรียก `runRoute(TOP_T, 5);` ได้ท่าตัว T เดิมที่ใช้ในตัวจำลอง ตารางนี้เอาไปคำนวณงบเวลาล่วงหน้าได้ด้วย: รวม `cm × ms/cm` ของแต่ละแถว
+
+## ตัวอย่างที่ 4: ห่อเซอร์โวด้วยชื่อ
+
+ค่าปล่อยบอลเป็นเลข µs กระจายอยู่ใน `Drone_Mission.ino` ห่อให้อ่านเป็นภาษาคนได้ตามแนวเดียวกับที่ไฟล์นั้นทำ
+
+```cpp
+inline void openLeftPair()  { open_pair_ch1_ch4(); }
+inline void openRightPair() { open_pair_ch2_ch3(); }
+inline void closeGates()    { close_all_ball_gate(); }
+```
+
+ชื่อสามตัวนี้ชี้ไปยังฟังก์ชันใน `Drone_Mission.ino` ที่มีอยู่ จึงใช้ได้เฉพาะในสเก็ตช์ที่มีไฟล์นั้น
+
+## เมื่อจะเพิ่มเมธอดลง DroneEasy เอง
+
+ทำตามลำดับเดิมที่ README ของชมรมแนะนำ
+
+1. ประกาศเมธอดใน `DroneEasy.hpp`
+2. เขียนตัวใน `DroneEasy.cpp`
+3. ถ้าต้องมีค่าจูน เพิ่มใน `config.hpp`
+4. ทดสอบบนโต๊ะ (ถอดใบพัด) ก่อนใส่ภารกิจ
+
+## ลองทำ
+
+1. เขียน `goAndHold` ของตัวเองแล้วเปลี่ยนภารกิจ `KEY_3` ใน `Drone_Mission.ino` ให้ใช้มัน เทียบจำนวนบรรทัดก่อนหลัง
+2. เติมตัวอย่างที่ 3 ให้มีทิศ `'u'` และ `'d'` โดยเรียก `drone.up(...)` และ `drone.down(...)`
+3. เขียนฟังก์ชัน `estimateMs(const Step*, int)` ที่บวกเวลาจากค่า `MS_PER_CM_*` ใน `config.hpp`
+
+## พังตรงไหนบ่อย
+
+- **ทับชื่อ** ชื่อ `S_LEFT`, `S_CLOSE` มีอยู่แล้วใน `config.hpp` ถ้าตั้งชื่อค่าคงที่ซ้ำ จะ compile ไม่ผ่าน
+- **ลืม include** ไฟล์ใหม่ต้อง `#include "DroneEasy.hpp"` (และ `config.hpp` ถ้าใช้ค่าคงที่ของมัน)
+- **นึกว่า `fw` ไม่รอ** `fw` รวม `settle(400)` ถ้าต่อกับ `posHold()` จะรอซ้ำ
+- **เขียน wrapper ที่เรียกกันวน** A เรียก B ที่เรียก A
+- **ฝังตัวเลขในภารกิจ** พอจูนต้องไล่แก้ทุกที่
+- **แก้ไฟล์ของ `drone_sanam5` ที่ใช้แข่งโดยไม่สำรอง** ทำสำเนาก่อนทุกครั้ง

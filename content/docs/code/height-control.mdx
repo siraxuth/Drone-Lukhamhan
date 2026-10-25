@@ -1,0 +1,154 @@
+---
+title: "7. คุมความสูง"
+description: set_height, smooth_set_height, ค่า HEIGHT_* และแนวคิด closed-loop ที่อ่านความสูงจริงมาเทียบ
+---
+
+ความสูงคือค่าที่ผิดแล้วเจ็บที่สุด: ต่ำไปชนแท่น สูงไปปล่อยบอลไม่เข้าหลุม หน้านี้ดูวิธีสั่งความสูงสามแบบ จากง่ายสุดไปแม่นสุด
+
+## 1. แบบที่ 1: set_height สั่งแล้วเชื่อ
+
+<CmdDemo steps={["pArduino->set_height(60);", "pArduino->set_height(110);", "pArduino->set_height(170);"]} air caption="โดรนปรับความสูงตามเลขที่สั่ง เส้นฟ้าแนวตั้งคือความสูงจากพื้น" />
+
+```cpp
+drone.sh(110);               // ส่งเป้า 110 ซม. แล้วรอ 400 ms
+pArduino->set_height(110);   // ส่งเป้าเฉยๆ ไม่รอ
+```
+
+Flight Controller มีเซ็นเซอร์ LiDAR กับ Barometer ดูความสูงเองและพาโดรนไปที่เป้า เราแค่บอก "ไปที่ 110" เหมือนตั้งอุณหภูมิแอร์ ไม่ได้ยืนเฝ้าเทอร์โมมิเตอร์ ข้อดีคือเขียนง่าย ข้อเสียคือเราไม่รู้ว่าไปถึงหรือยัง ต้องเดาเวลา
+
+## 2. ระดับความสูงใน config.hpp
+
+```cpp
+constexpr uint16_t HEIGHT_FLIGHT   = 100;
+constexpr uint16_t HEIGHT_TAKEOFF  = 110;
+constexpr uint16_t HEIGHT_GROUND   = 100;
+constexpr uint16_t HEIGHT_DROP     = 45;
+constexpr uint16_t HEIGHT_K5       = 170;
+constexpr uint16_t HEIGHT_SHOOT    = 120;
+```
+
+<Figure caption="ระดับความสูง (ซม.) ที่ตั้งไว้ใน config.hpp เส้นแดงคือ ALT_GUARD_MIN_CM = 70 ระดับที่ห้ามโดรนลงต่ำกว่าเมื่อกำลังเข้าใกล้แท่น">
+  <HeightLevels />
+</Figure>
+
+<Callout type="warn" title="คู่มือกับโค้ดไม่ตรงกัน ให้ยึดโค้ด และวัดเอง">
+คู่มือของชมรมเขียน `HEIGHT_TAKEOFF` = 120 และ `HEIGHT_DROP` = 50 แต่ `config.hpp` ตอนนี้เป็น 110 และ 45 หน้านี้ใช้ตามโค้ด ความสูงที่เหมาะขึ้นกับแท่นและสนามของแต่ละปี วัดและปรับเองทุกครั้ง
+</Callout>
+
+## 3. แบบที่ 2: smooth_set_height ค่อยๆ ขยับ
+
+<CmdDemo code="drone.smoothSetHeight(170);" air caption="ขยับทีละ 10 ซม. จึงขึ้นนุ่มกว่าสั่งทีเดียว" />
+
+```cpp
+pArduino->smooth_set_height(120, 10, 200);   // เป้า 120, ทีละ 10 ซม., รอ 200 ms ต่อก้าว
+```
+
+แทนที่จะกระโดดทีเดียว มันส่งเป้าทีละขั้นเหมือนขึ้นบันได เหมาะเมื่อกระโดดแรงแล้วโดรนแกว่ง
+
+```cpp
+// protocol.cpp (ย่อ)
+static uint16_t current_height = 85;
+if (target_height > current_height) {
+  for (uint16_t h = current_height + step; h <= target_height; h += step) {
+    set_height(h);
+    delay(delay_ms);
+  }
+}
+current_height = target_height;
+```
+
+<Figure caption="smooth_set_height(120) เมื่อ current_height เริ่มที่ 85: ส่ง 95, 105, 115 ขั้นถัดไปคือ 125 เกินเป้าจึงจบลูป ไม่เคยส่ง 120">
+  <HeightStairs />
+</Figure>
+
+ข้อสังเกตจากโค้ดจริง (อย่าเข้าใจผิด):
+
+- ตัวแปร `current_height` เริ่มที่ **85** คือค่าที่ "จำไว้" ไม่ได้อ่านจากเซ็นเซอร์ ถ้าโดรนอยู่ที่ความสูงอื่นจริง การไล่ขั้นจะเริ่มผิดจุด
+- ถ้าเป้าไม่ลงตัวกับ step (เช่น 120 จาก 85 ทีละ 10) ขั้นสุดท้ายที่ส่งคือ 115 แล้วเก็บ `current_height = 120` ในความจำ ทั้งที่ไม่เคยสั่ง 120
+- ใช้ step ที่หาร (เป้า − จุดเริ่ม) ลงตัว หรือตามด้วย `set_height` เป้าจริงอีกครั้ง
+
+```cpp
+pArduino->smooth_set_height(120, 10, 200);
+pArduino->set_height(120);    // เติมขั้นสุดท้ายเอง
+```
+
+## 4. แบบที่ 3: closed-loop อ่านค่ากลับมาเทียบ
+
+Closed-loop คือ "สั่ง → วัดผลจริง → ปรับ" วนไปจนถึง เหมือนเติมน้ำใส่ขวดโดยมองขีดระดับน้ำ ไม่ใช่นับว่าเปิดก๊อกกี่วินาที ชมรมใช้ในฟังก์ชัน `reachShootHeightStable` ก่อนยิงลูกดอก
+
+<Figure caption="วงรอบ closed-loop: ส่งเป้า ขอข้อมูล อ่านความสูงจริง เทียบ ถ้ายังไม่นิ่งก็วนใหม่">
+  <ClosedLoop />
+</Figure>
+
+```cpp
+// DroneEasy.cpp (ย่อ) drone.reachShootHeightStable()
+constexpr uint16_t TARGET = HEIGHT_SHOOT;
+constexpr uint8_t  TOL    = 4;
+constexpr uint16_t MAX_WAIT_MS   = 3500;
+constexpr uint16_t SAMPLE_DELAY  = 80;
+constexpr uint16_t STABLE_NEED_MS = 500;
+
+while (millis() - t0 < MAX_WAIT_MS) {
+  pArduino->set_height(TARGET);
+  delay(SAMPLE_DELAY);
+
+  pArduino->poll();
+  uint16_t h = pArduino->get_height_cm();
+
+  if (h == 0 || h > 300) { stableSince = 0; continue; }
+
+  int diff = (int)h - (int)TARGET;
+  if (abs(diff) <= TOL) {
+    if (stableSince == 0) stableSince = millis();
+    if (millis() - stableSince >= STABLE_NEED_MS) break;
+  } else {
+    stableSince = 0;
+  }
+}
+```
+
+อ่านเป็นภาษาคน:
+
+1. ส่งเป้า 120 รอ 80 ms แล้วอ่านความสูงจริง
+2. ค่า 0 หรือเกิน 300 คือเซ็นเซอร์อ่านพลาด ข้าม เริ่มนับนิ่งใหม่
+3. ถ้าห่างเป้าไม่เกิน ±4 ซม. เริ่มจับเวลา ถ้านิ่งต่อเนื่อง 500 ms ถือว่าถึง
+4. ถ้าหลุดจากช่วง เริ่มนับใหม่ และถ้าเกิน 3500 ms ก็เลิกรอ (กันค้างตลอดกาล)
+
+ชุดฟังก์ชันตระกูลเดียวกันใน `DroneEasy` มีหลายความเร็ว
+
+| ฟังก์ชัน | เป้า | ช่วงยอมรับ | รอสูงสุด |
+| --- | --- | --- | --- |
+| `reachShootHeightStable()` | `HEIGHT_SHOOT` | ±4 ซม. | 3500 ms |
+| `reachShootHeightFastb()` | 127 | ±6 ซม. | 2000 ms |
+| `reachShootHeightFast()` | 125 | ±6 ซม. | 2000 ms |
+| `reachShootHeightFast2()` | `HEIGHT_SHOOT` | ไม่อ่านค่า | ส่งแล้วรอ 700 ms |
+
+`ensureShootHeight()` อ่านครั้งเดียว ถ้าห่างเกิน ±10 ซม. ค่อยสั่งซ้ำ ส่วน `goto_height_smooth()` ใน `poke_controls.ino` ทำ closed-loop แบบไล่ทีละก้าว มีพารามิเตอร์ครบ (`stepUp`, `stepDown`, `tol`, `stable_ms`, `timeout_ms`, `tick_ms`, `hold_speed`)
+
+อ่านความสูงเองได้เสมอ:
+
+```cpp
+drone.poll();
+uint16_t h = drone.heightCm();
+```
+
+## 5. เลือกแบบไหนดี
+
+| สถานการณ์ | แบบ |
+| --- | --- |
+| ท่อนบินทั่วไป ไม่ต้องแม่นมาก | `sh(110)` |
+| ความสูงเปลี่ยนมากและโดรนแกว่ง | `smooth_set_height` แล้วเติม `set_height` |
+| ต้องแม่นก่อนยิงหรือปล่อย | closed-loop (`reachShootHeightStable`) |
+
+## ลองทำ
+
+1. คำนวณว่า `smooth_set_height(100, 10, 200)` จาก 85 ส่งเลขอะไรบ้าง (ตอบ: 95 เท่านั้น เพราะ 105 เกิน 100)
+2. เขียน handler ที่ขึ้นไป 110 แล้วพิมพ์ความสูงที่อ่านได้ลง Serial Monitor เทียบกับตลับเมตร
+3. เปลี่ยน `TOL` ใน `reachShootHeightStable` เป็น 2 แล้วดูว่าใช้เวลานานขึ้นไหม
+
+## พังตรงไหนบ่อย
+
+- **เชื่อ `sh(z)` ว่าถึงแล้ว** ความจริงรอแค่ 400 ms
+- **ลืม `poll()` ก่อน `get_height_cm()`** ได้ค่าเก่า
+- **ตั้ง `TOL` แคบเกินไป** โดรนแกว่งเล็กน้อยก็นับนิ่งไม่ได้ จนหมดเวลา
+- **ลงต่ำกว่า `ALT_GUARD_MIN_CM`** (70 ซม.) ตอนเข้าใกล้แท่น ชนจากด้านล่าง

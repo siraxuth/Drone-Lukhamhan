@@ -1,0 +1,145 @@
+---
+title: "5. ภารกิจแบบไม่ใช้ delay"
+description: เปลี่ยนภารกิจที่หยุดรอด้วย delay เป็นเครื่องสถานะที่ใช้ millis เพื่อให้ยกเลิกกลางทางและอ่านเซนเซอร์ได้
+---
+
+โค้ดภารกิจของชมรมเขียนแบบ "ทำทีละบรรทัดแล้วรอ" ใช้ง่าย อ่านเข้าใจเร็ว แต่ระหว่างที่รอ Arduino ทำอย่างอื่นไม่ได้เลย
+
+เหมือนตั้งนาฬิกาปลุกแล้วนั่งจ้องมัน คุณทำอะไรไม่ได้จนกว่าจะดัง อีกวิธีคือตั้งนาฬิกาแล้วไปทำอย่างอื่น แล้วเหลือบดูเป็นระยะว่าถึงเวลาหรือยัง วิธีหลังเรียกว่า **เครื่องสถานะ (state machine)**
+
+## ปัญหาของ delay
+
+ดูที่ `move_forward_cm` ใน `protocol.cpp`
+
+```cpp
+void Arduino::move_forward_cm(uint16_t distance_cm, uint8_t speed) {
+  set_direction(1, speed);
+  delay(ms_round(distance_cm * MS_PER_CM_FWD));   // บล็อกที่นี่
+  poshold(speed);
+}
+```
+
+คำสั่งเดินทุกตัว (`fw`, `bw`, `ml`, `mr`) และ `release_servo_angle` (บล็อก 1.5 วินาที) ติดอยู่ใน `delay` หรือลูปที่กินเวลา ผลที่ตามมา
+
+- กดปุ่มหยุดฉุกเฉินระหว่างภารกิจไม่ได้ `keyDo` ถูกเรียกใน `loop()` เท่านั้น ซึ่งยังไม่ถึงตอนที่ภารกิจจบ
+- อ่านความสูงระหว่างเดินไม่ได้
+- ภารกิจ 40 วินาทีคือ 40 วินาทีที่ไม่มีใครควบคุมได้
+
+ข้อดีของ `delay` คือโค้ดอ่านตามลำดับเวลาได้ตรงๆ ถ้าภารกิจสั้นและเรียบง่าย ไม่จำเป็นต้องเปลี่ยน
+
+## แนวคิด
+
+ใช้ `millis()` จดเวลาเมื่อเข้าสถานะ แล้วใน `loop()` ตรวจว่าผ่านมานานพอหรือยัง ถ้ายัง ออกจากฟังก์ชันทันที
+
+<Figure caption="ภารกิจเป็นสายของสถานะ แต่ละสถานะบอกว่ารออะไร และเมื่อไรไปสถานะถัดไป">
+  <AdvStateMachine />
+</Figure>
+
+สิ่งที่ทำให้วิธีนี้ใช้ได้ คือแพ็กเก็ตคำสั่งค้างอยู่ใน `m_i2cData` จนกว่าจะถูกเขียนทับ ([แพ็กเก็ต I2C](/docs/advanced/i2c-packet)) ถ้าสั่ง `direction(1, 2)` แล้วออกจากฟังก์ชัน โดรนยังเดินต่อเอง ไม่ต้องคอยย้ำ
+
+## ตัวอย่างเต็ม
+
+ตัวอย่างใหม่ที่เขียนเพื่อบทนี้ ไม่ได้อยู่ใน `drone_sanam5` ใช้เมธอดจริงของ `DroneEasy` และค่าจริงจาก `config.hpp` แต่ **ยังไม่ได้คอมไพล์หรือทดสอบกับโดรน** ลองบนโต๊ะ (ถอดใบพัด) ก่อน
+
+ภารกิจ: ตั้งศูนย์ ขึ้นบิน เดินหน้า 100 ซม. ยิงซ้ายด้วยเซอร์โว S1 แล้วลงจอด กด KEY2 ได้ทุกเมื่อเพื่อหยุดมอเตอร์
+
+```cpp
+#include "DroneEasy.hpp"
+#include "config.hpp"
+
+enum State : uint8_t { ST_IDLE, ST_CAL, ST_TAKEOFF, ST_FORWARD, ST_FIRE, ST_RESET, ST_LAND };
+
+static State    st = ST_IDLE;
+static uint32_t stSince = 0;
+
+static void goTo(State next) { st = next; stSince = millis(); }
+
+void startMission() {
+  if (st != ST_IDLE) return;
+  drone.calibration();
+  goTo(ST_CAL);
+}
+
+void abortMission() {
+  drone.stopMotor();
+  st = ST_IDLE;
+}
+
+void stepMission() {
+  const uint32_t dt = millis() - stSince;          // ลบแบบ unsigned ปลอดภัยเมื่อ millis ล้น
+  switch (st) {
+    case ST_IDLE: break;
+
+    case ST_CAL:
+      if (dt >= 3000) { drone.takeOff(); goTo(ST_TAKEOFF); }
+      break;
+
+    case ST_TAKEOFF:
+      if (dt >= 3000) { drone.direction(1, 2); goTo(ST_FORWARD); }   // เริ่มเดิน ไม่รอ
+      break;
+
+    case ST_FORWARD:
+      if (dt >= (uint32_t)(100 * MS_PER_CM_FWD + 0.5f)) {
+        drone.posHold(2);
+        goTo(ST_FIRE);
+      }
+      break;
+
+    case ST_FIRE:
+      drone.servoPulse50Hz(SHOOT1_PIN, S_LEFT);                      // ส่งพัลส์ 1 ครั้งต่อรอบ
+      if (dt >= FIRE_HOLD_MS) goTo(ST_RESET);
+      break;
+
+    case ST_RESET:
+      drone.servoPulse50Hz(SHOOT1_PIN, S_CLOSE);
+      if (dt >= RESET_HOLD_MS) { drone.autoLand(); goTo(ST_LAND); }
+      break;
+
+    case ST_LAND:
+      drone.poll();
+      if ((dt > 1800 && drone.heightCm() > 0 && drone.heightCm() < 10) || dt > 9000) {
+        drone.stopMotor();
+        goTo(ST_IDLE);
+      }
+      break;
+  }
+}
+
+void loopMyMode() {
+  drone.onKey1(startMission);
+  drone.onKey2(abortMission);
+  stepMission();
+}
+```
+
+อ่านโค้ดทีละส่วน
+
+- **ตัวแปรสถานะสองตัว** `st` บอกว่าอยู่ไหน `stSince` บอกว่าเข้ามาเมื่อไร
+- **`goTo`** เปลี่ยนสถานะและจดเวลาในที่เดียว กันลืมจดเวลา
+- **`dt`** ใช้ `millis() - stSince` แบบ unsigned ได้ผลถูกต้องแม้ `millis()` วนกลับ (ประมาณทุก 49 วัน)
+- **`ST_FORWARD`** ใช้ค่าเดียวกับที่ `move_forward_cm` ใช้ (`MS_PER_CM_FWD`) แต่ไม่ได้ `delay`
+- **เซอร์โว** `servoPulse50Hz` ส่งพัลส์หนึ่งรอบประมาณ 20 ms จึงเรียกซ้ำใน `loop()` เหมือนที่ `servoHold` ทำ ต่างตรงที่ตอนนี้ลูปคือ `loop()` ของเรา ฟังก์ชันนี้จำกัดพัลส์ไว้ที่ 600–2400 µs ค่า `S_LEFT` (1200) และ `S_CLOSE` (1500) อยู่ในช่วงนี้ แต่ค่าปล่อยบอลบางช่อง (เช่น 450) จะถูกตัดเป็น 600
+- **`abortMission`** ทำงานได้ทุกจังหวะ เพราะ `loop()` วนถี่ ซึ่งภารกิจแบบ `delay` ทำไม่ได้
+
+เรียก `loopMyMode()` จาก `loop()` ของโหมดที่เลือก เหมือนที่ `loopDroneMissionMode()` เรียก `drone.onKey…`
+
+## ข้อจำกัดที่ต้องรู้
+
+ฟังก์ชันสำเร็จรูปส่วนใหญ่ **ยังบล็อก** `drone.fw()`, `drone.sh()`, `release_servo_angle()`, `reach_height_shoot_stable()` ใช้ `delay` ข้างใน ถ้าเรียกตรงๆ ในสถานะ มันจะบล็อกทั้งโปรแกรมอีกครั้ง เครื่องสถานะได้ประโยชน์เต็มเมื่อใช้คู่กับคำสั่งแบบ "สั่งแล้วออก" เช่น `drone.direction`, `drone.posHold`, `drone.setHeight`
+
+ฟังก์ชัน `reach_height_shoot_stable`, `auto_land_safe` และ `goto_height_smooth` ใช้รูปแบบ `stableSince` ซึ่งใกล้เคียงกับแนวคิดนี้ แต่ยังอยู่ในลูป `while` ที่บล็อกอยู่ดี
+
+## ลองทำ
+
+1. เพิ่มสถานะ `ST_SETTLE` คั่นระหว่าง `ST_FORWARD` กับ `ST_FIRE` ให้รอ 700 ms (ตามที่ภารกิจจริงรอก่อนยิง)
+2. เปลี่ยนเงื่อนไขของ `ST_FIRE` ให้รอจนความสูงนิ่งตามรูปแบบ `reach_height_shoot_stable` แต่มีเพดานเวลา
+3. เขียนตารางสถานะของท่าตัว T จากบท [วางเส้นทางและงบเวลา](/docs/compete/mission-planning) เป็น enum โดยไม่ต้องเขียนโค้ดเต็ม
+
+## พังตรงไหนบ่อย
+
+- **เรียกฟังก์ชันที่บล็อกในสถานะ** `drone.fw()` ภายในเคสทำให้ทุกอย่างกลับไปเป็นแบบ `delay`
+- **ลืมจดเวลาเมื่อเปลี่ยนสถานะ** ใช้ `goTo` ทุกครั้ง
+- **เปรียบเทียบ `millis()` กับเวลาปลายทางตรงๆ** ใช้ผลต่าง `millis() - stSince` เพื่อไม่พังเมื่อค่าวนกลับ
+- **ส่งพัลส์เซอร์โวห่างกันเกินไป** พัลส์ต้องมาทุก 20 ms ถ้า `loop()` ถูกอย่างอื่นกิน เซอร์โวสั่นหรือไม่ค้าง
+- **`abortMission` ไม่ล้างสถานะ** สั่ง `stopMotor()` แต่สถานะยังอยู่ ภารกิจจะสั่งขึ้นบินต่อ
+- **เปลี่ยนทีเดียวทั้งภารกิจ** ทำทีละสถานะ ทดสอบบนโต๊ะแล้วจึงบินจริง

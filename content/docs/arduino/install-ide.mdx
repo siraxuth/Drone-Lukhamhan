@@ -1,0 +1,218 @@
+---
+title: "1. ติดตั้ง Arduino IDE และอัปโหลดโค้ด"
+description: ติดตั้งบน Windows, macOS, Linux เพิ่มไลบรารี เลือกบอร์ด Nano อัปโหลด และแก้ error ที่เจอบ่อย
+---
+
+Arduino IDE คือโปรแกรมที่ใช้เขียนโค้ด แปลงเป็นภาษาเครื่อง (คอมไพล์) แล้วส่งเข้าบอร์ด (อัปโหลด) มีสองรุ่น 1.8.x แบบเก่า และ 2.x แบบใหม่ที่ช่วยเติมคำและขีดเส้นใต้ error ให้ แนะนำ 2.x
+
+<Figure caption="เส้นทางของโค้ดตั้งแต่เขียนจนรันบนบอร์ด และการตั้งค่าสามข้อในเมนู Tools ที่ต้องถูกก่อนกดอัปโหลด">
+  <BuildFlow />
+</Figure>
+
+## 1. ติดตั้ง
+
+โหลดจาก [arduino.cc/en/software](https://www.arduino.cc/en/software) เลือกให้ตรงกับระบบของเครื่อง
+
+<Tabs items={['Windows', 'macOS', 'Linux']}>
+<Tab value="Windows">
+
+<Steps>
+<Step>
+
+เลือก "Windows Win 10 and newer, 64 bits" แล้วกด Download
+
+</Step>
+<Step>
+
+เปิดไฟล์ `.exe` ที่โหลดมา กด Next จนจบ
+
+</Step>
+<Step>
+
+ถ้ามีหน้าต่างถามติดตั้งไดรเวอร์ (driver) ให้กด Install ทุกอัน
+
+</Step>
+<Step>
+
+เปิดโปรแกรม ควรเห็นหน้าต่างโค้ดว่างที่มี `setup()` กับ `loop()`
+
+</Step>
+</Steps>
+
+พอร์ตจะขึ้นเป็น `COM3`, `COM4` ฯลฯ ถ้าเสียบสายแล้วไม่เห็นพอร์ต ดูที่ Device Manager ว่ามีอุปกรณ์ใหม่โผล่ตอนเสียบไหม
+
+</Tab>
+<Tab value="macOS">
+
+<Steps>
+<Step>
+
+เช็กชนิดซีพียู: เมนู Apple → About This Mac ดูบรรทัด Chip
+
+</Step>
+<Step>
+
+Apple M1 ขึ้นไป เลือก "macOS Apple Silicon" ส่วน Intel เลือก "macOS Intel"
+
+</Step>
+<Step>
+
+เปิดไฟล์ `.dmg` แล้วลากไอคอน Arduino IDE ไปที่โฟลเดอร์ Applications
+
+</Step>
+<Step>
+
+เปิดครั้งแรกถ้าขึ้น "developer cannot be verified" ไปที่ System Settings → Privacy & Security เลื่อนหา Arduino IDE แล้วกด Open Anyway
+
+</Step>
+</Steps>
+
+พอร์ตขึ้นเป็น `/dev/cu.usbserial-…` หรือ `/dev/cu.usbmodem…` บอร์ดโคลนต้องลงไดรเวอร์ CH340 ก่อน แล้วรีสตาร์ทเครื่อง
+
+</Tab>
+<Tab value="Linux">
+
+โหลดไฟล์ `.tar.gz` ของ IDE 2.x แล้วแตกไปไว้ที่ `/opt`
+
+```bash
+sudo tar -xzf arduino-ide_2.x.x_Linux_64bit.tar.gz -C /opt
+sudo mv /opt/arduino-ide_* /opt/arduino-ide
+sudo chmod +x /opt/arduino-ide/arduino-ide
+```
+
+ลินุกซ์ห้ามผู้ใช้ทั่วไปเปิดพอร์ต USB ต้องเพิ่มตัวเองเข้ากลุ่ม `dialout` แล้วล็อกเอาต์/ล็อกอินใหม่
+
+```bash
+sudo usermod -aG dialout $USER
+```
+
+พอร์ตขึ้นเป็น `/dev/ttyUSB0` หรือ `/dev/ttyACM0` ถ้าอยากได้ไอคอนในเมนู ต้องสร้างไฟล์ `~/.local/share/applications/arduino-ide.desktop` ชี้ไปที่ `/opt/arduino-ide/arduino-ide` (วิธีเต็มอยู่ในคู่มือบทที่ 1.2 ของชมรม)
+
+</Tab>
+</Tabs>
+
+## 2. ดาวน์โหลดโค้ดตัวอย่างของชมรม
+
+โค้ดที่ทั้งเว็บนี้อ้างถึงคือโปรเจกต์ `drone_sanam5` รวมไว้เป็นไฟล์เดียวให้โหลดได้เลย ทุกอย่างที่บทเรียนสอนอยู่ในนี้ ตัดแค่ไฟล์และโค้ดที่ไม่มีใครเรียกใช้ออกแล้ว
+
+<a href="/downloads/drone_sanam5.zip" download className="not-prose my-4 inline-flex min-h-11 items-center gap-2 squircle-xl bg-brand-blue px-5 text-base font-semibold text-white hover:opacity-90">ดาวน์โหลด drone_sanam5.zip (ประมาณ 23 KB)</a>
+
+ในไฟล์มี 18 ไฟล์: ไฟล์หลัก `drone_sanam5.ino`, ชุดคำสั่ง (`protocol.hpp/.cpp`, `DroneEasy.hpp/.cpp`), ค่าตั้ง (`config.hpp`, `mode_config.hpp`), ภารกิจของแต่ละโหมด และไฟล์เซอร์โว/ยิง/เจาะลูกโป่ง ไม่มีไฟล์คู่มือผู้ผลิตหรือตัวสร้างเอกสาร หน้าที่ของแต่ละไฟล์อยู่ใน [โครงสร้างโปรเจกต์](/docs/arduino/project-structure)
+
+<Steps>
+<Step>
+
+กดปุ่มด้านบนเพื่อโหลดไฟล์ `drone_sanam5.zip`
+
+</Step>
+<Step>
+
+คลิกขวาที่ไฟล์ เลือก Extract / แตกไฟล์ (Windows: Extract All, macOS: ดับเบิลคลิก)
+
+</Step>
+<Step>
+
+ตรวจว่าได้โฟลเดอร์ชื่อ **`drone_sanam5`** และข้างในมี `drone_sanam5.ino` ชื่อโฟลเดอร์ต้องตรงกับชื่อไฟล์ `.ino` หลักเป๊ะๆ ถ้าโฟลเดอร์ซ้อนกันสองชั้น (`drone_sanam5/drone_sanam5/`) ให้ใช้ชั้นใน หรือเปลี่ยนชื่อโฟลเดอร์ให้ตรง ไม่งั้น IDE จะถามว่าจะสร้างโฟลเดอร์ใหม่ให้
+
+</Step>
+<Step>
+
+ย้ายโฟลเดอร์ไปไว้ที่เก็บ Sketch ของ Arduino (ปกติคือ `Documents/Arduino/`) แล้วเปิดไฟล์ `drone_sanam5.ino` ด้วย Arduino IDE ไฟล์อื่นในโฟลเดอร์จะเปิดเป็นแท็บให้เอง
+
+</Step>
+<Step>
+
+เปิดแท็บ `mode_config.hpp` เลือกโหมดบินโดยแก้บรรทัด `ACTIVE_FLIGHT_MODE` (อธิบายใน [โหมดบิน](/docs/code/modes)) แล้วบันทึก
+
+</Step>
+</Steps>
+
+ทดสอบคอมไพล์กับ Arduino Nano (ATmega328P Old Bootloader) ครบทั้ง 3 โหมดผ่านหมด โหมด Mission ใช้พื้นที่โปรแกรม 7,032 ไบต์ (22% ของ 30,720) โหมด Aviation Mastery 5,654 ไบต์ โหมด Innovation Challenge 6,768 ไบต์ ส่วนหน่วยความจำตัวแปรใช้ 389 ไบต์ (18% ของ 2,048) ยังไม่ได้ทดสอบบินกับโดรนจริงในรอบนี้ ทดสอบในที่โล่งก่อนทุกครั้ง
+
+<Callout type="warn" title="โหลดจากที่อื่นมา ให้เปิดอ่านก่อนอัปโหลด">
+ไฟล์ zip นี้เป็นของชมรมและเผยแพร่ในเว็บนี้ ถ้าได้โค้ดจากเพื่อนหรือเว็บอื่น ให้อ่าน `.ino` หลักและ `config.hpp` ก่อนอัปโหลดทุกครั้ง โดยเฉพาะค่าที่เกี่ยวกับมอเตอร์ เซอร์โว และความสูง
+</Callout>
+
+## 3. เพิ่มไลบรารี
+
+ไลบรารีคือโค้ดสำเร็จรูปที่คนอื่นเขียนไว้ให้เรียกใช้ คู่มือชมรมระบุว่าโปรเจกต์ใช้ไลบรารีภายนอก **IRremote** หนึ่งตัว ส่วน `Wire` (I2C) มากับ IDE อยู่แล้ว
+
+โค้ดชุดล่าสุดของชมรมที่ใช้ศึกษาในเว็บนี้ (`drone_sanam5`) ไม่มีบรรทัด `#include <IRremote.h>` เลย และคอมไพล์ผ่านบนเครื่องที่ไม่ได้ลง IRremote แต่ถ้าโปรเจกต์ของคุณ include มัน ให้ติดตั้งดังนี้
+
+<Steps>
+<Step>
+
+เมนู Sketch → Include Library → Manage Libraries
+
+</Step>
+<Step>
+
+พิมพ์ `IRremote` ในช่องค้นหา
+
+</Step>
+<Step>
+
+เลือก "IRremote by shirriff, z3t0, ArminJo" กด Install
+
+</Step>
+</Steps>
+
+## 4. ตั้งค่าบอร์ดก่อนอัปโหลด
+
+เสียบสาย Type-C เข้าช่อง **Nano** ที่ข้างโดรน (อย่าเสียบช่อง FC ที่ด้านหน้า) แล้วเลือกในเมนู Tools
+
+| เมนู | เลือก |
+|---|---|
+| Board | Arduino Nano |
+| Processor | ATmega328P (Old Bootloader) |
+| Port | พอร์ตที่เพิ่งโผล่ตอนเสียบสาย |
+
+เรื่อง **Old Bootloader**: Nano รุ่นใหม่และบอร์ดโคลนส่วนใหญ่ใช้ตัวเก่า เลือกผิดจะอัปโหลดไม่ผ่าน ขึ้นข้อความ "not in sync" ถ้ายังไม่ผ่านให้ลองสลับเป็น "ATmega328P" ธรรมดา
+
+### ตัวอย่างชีวิตจริง: เลือกซองจดหมายให้ตรงขนาด
+
+ซองผิดขนาด จดหมายก็เข้าไม่ได้ แม้ที่อยู่ถูก บอร์ดกับ Processor เหมือนกัน ที่อยู่คือ Port ต้องถูกทั้งสามอย่าง
+
+## 5. อัปโหลด
+
+1. เปิดโฟลเดอร์ `drone_sanam5` ดับเบิลคลิก `drone_sanam5.ino`
+2. กดปุ่มติ๊กถูก (Verify) เพื่อคอมไพล์ก่อน ถ้าไม่มี error สีแดง ไปต่อ
+3. กดปุ่มลูกศรขวา (Upload) หรือ Ctrl+U
+4. รอจนขึ้น "Done uploading."
+
+ผลคอมไพล์ของโปรเจกต์ชมรมทั้งชุด (ที่ทดสอบด้วย `arduino-cli` สำหรับ Nano แบบ Old Bootloader) ได้ว่า
+
+```text
+Sketch uses 7032 bytes (22%) of program storage space. Maximum is 30720 bytes.
+Global variables use 389 bytes (18%) of dynamic memory, leaving 1659 bytes for local variables. Maximum is 2048 bytes.
+```
+
+โปรแกรมใช้ Flash 22% และ RAM 18% ยังเหลือพอให้เพิ่มโค้ด
+
+<Callout type="info" title="ใช้บรรทัดคำสั่งแทนได้">
+`arduino-cli` ทำสิ่งเดียวกับปุ่ม Verify/Upload จากเทอร์มินัล คอมไพล์: `arduino-cli compile -b arduino:avr:nano:cpu=atmega328old drone_sanam5` อัปโหลดเพิ่ม `-u -p /dev/ttyUSB0`
+</Callout>
+
+## 6. error ที่เจอบ่อย
+
+| ข้อความ | สาเหตุ | วิธีแก้ |
+|---|---|---|
+| `avrdude: ser_open(): can't open device` | ยังไม่ได้เลือก Port หรือไม่มีสิทธิ์ | Tools → Port เลือกใหม่ ลินุกซ์ให้ตรวจกลุ่ม `dialout` |
+| `not in sync: resp=0x00` | เลือก Processor ผิด หรือ Serial Monitor เปิดค้าง | ลองสลับ Old Bootloader ปิด Serial Monitor |
+| `'xxx' was not declared in this scope` | สะกดชื่อผิด หรือยังไม่ได้ประกาศ | ตรวจตัวพิมพ์เล็ก/ใหญ่ ตรวจว่าไฟล์ที่ประกาศอยู่ในโฟลเดอร์เดียวกัน |
+| `No such file or directory` ตอน include | ไม่ได้ลงไลบรารี หรือชื่อไฟล์ผิด | ติดตั้งผ่าน Library Manager |
+| `Low memory available` | ตัวแปรใช้ RAM ใกล้เต็ม | ลดตัวแปรโกลบอล ย้ายข้อความไป PROGMEM |
+| ไม่มี Port ให้เลือก | สายชาร์จอย่างเดียว ช่อง USB ผิด ไม่มีไดรเวอร์ | เปลี่ยนสาย เสียบช่อง Nano ลงไดรเวอร์ CH340 |
+
+## ลองทำ
+
+1. ติดตั้ง IDE แล้วเปิดตัวอย่าง File → Examples → 01.Basics → Blink เลือก Board กับ Port กด Verify อย่างเดียวก่อน ดูว่าขึ้นขนาดโปรแกรมกี่ไบต์
+2. เปิด `drone_sanam5` กด Verify เทียบตัวเลขกับด้านบน
+3. ถอดสาย USB แล้วเสียบใหม่ ดูว่า Port ไหนหายไปแล้วโผล่กลับมา นั่นคือพอร์ตของ Nano
+
+## พังตรงไหนบ่อย
+
+- **เสียบ Type-C ผิดช่อง** อัปโหลดค้าง หรือไม่เห็นพอร์ต
+- **Serial Monitor เปิดอยู่ตอนอัปโหลด** พอร์ตถูกจอง ปิดหน้าต่างนี้ก่อน
+- **มี error ในไฟล์โหมดที่ไม่ได้เลือก** ทุกไฟล์ `.ino` ในโฟลเดอร์ถูกรวมคอมไพล์ด้วยกัน error ที่ไหนก็ล้มทั้งชุด ดูหน้า [โครงสร้างโปรเจกต์](/docs/arduino/project-structure)
+- **ใช้สายที่ชาร์จได้อย่างเดียว** ไม่มีสายข้อมูล คอมไม่เห็นบอร์ด

@@ -1,0 +1,164 @@
+---
+title: "4. โครงสร้างโปรเจกต์ drone_sanam5"
+description: ทุกไฟล์ในโปรเจกต์ทำหน้าที่อะไร โหมดบินเลือกยังไง และค่าคงที่อยู่ไฟล์ไหน
+---
+
+โปรเจกต์ของชมรมไม่ได้อยู่ในไฟล์เดียว มี 18 ไฟล์ (ตรงกับไฟล์ที่ดาวน์โหลดได้ใน [ติดตั้ง Arduino IDE](/docs/arduino/install-ide)) ทั้งนี้เพื่อให้แก้ทีละส่วนโดยไม่กระทบส่วนอื่น หน้านี้เป็นแผนที่ว่าอะไรอยู่ที่ไหน
+
+## 1. กฎของ Arduino ที่ต้องรู้ก่อน
+
+- Sketch คือ **โฟลเดอร์** ชื่อโฟลเดอร์ต้องตรงกับไฟล์ `.ino` หลัก (`drone_sanam5/drone_sanam5.ino`)
+- ไฟล์ `.ino` ทุกไฟล์ในโฟลเดอร์ถูก **ต่อรวมเป็นไฟล์เดียว** ก่อนคอมไพล์ จึงเรียกฟังก์ชันข้ามไฟล์ได้โดยไม่ต้อง `#include`
+- เพราะรวมเป็นก้อนเดียว **ชื่อฟังก์ชันห้ามซ้ำ** และ **error ในไฟล์ไหนก็ล้มทั้งชุด** แม้เป็นโหมดที่ไม่ได้เลือก
+- ไฟล์ `.hpp` และ `.cpp` ไม่ได้ถูกรวมแบบนั้น `.hpp` ต้อง `#include` เอง
+
+### ตัวอย่างชีวิตจริง: สมุดเล่มเดียวหลายบท
+
+ลองนึกถึงสมุดจดที่แต่ละบทอยู่ในกระดาษคนละแผ่นแต่เย็บเป็นเล่มเดียวกัน อ่านบทไหนก็อ้างถึงบทอื่นได้ แต่ถ้าสองบทตั้งชื่อหัวข้อเหมือนกันสับสนทันที ไฟล์ `.ino` ก็เหมือนกัน
+
+## 2. ไฟล์ทั้งหมด
+
+<Files>
+  <Folder name="drone_sanam5" defaultOpen>
+    <File name="drone_sanam5.ino" />
+    <File name="mode_config.hpp" />
+    <File name="config.hpp" />
+    <File name="Drone_Mission.ino" />
+    <File name="Aviation_Mastery.ino" />
+    <File name="Drone_Innovation_Challenge.ino" />
+    <File name="shooting.ino" />
+    <File name="poke_controls.ino" />
+    <File name="poke_controls.h" />
+    <File name="Servo.ino" />
+    <File name="Servo_Degree.ino" />
+    <File name="Test_ball.ino" />
+    <File name="DroneEasy.hpp" />
+    <File name="DroneEasy.cpp" />
+    <File name="protocol.hpp" />
+    <File name="protocol.cpp" />
+    <File name="LegacyActions.hpp" />
+    <File name="README.ino" />
+  </Folder>
+</Files>
+
+ไฟล์ที่ไม่ได้ใช้ในโปรแกรมถูกตัดออกจากชุดดาวน์โหลดแล้ว (ตัวสร้างเอกสาร PDF, `ledStrip.hpp` ที่ include ไฟล์ซึ่งไม่มีอยู่ และฟังก์ชันที่ไม่มีใครเรียก) ที่เหลือทุกไฟล์ถูกใช้จริง
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `drone_sanam5.ino` | ไฟล์หลัก มี `setup()` และ `loop()` ตัวกระจายโหมด |
+| `mode_config.hpp` | เลือกโหมดบิน ที่เดียว บรรทัดเดียว |
+| `config.hpp` | ค่าคงที่: ความสูง ระยะเจาะ ms ต่อ cm พัลส์เซอร์โว เวลาหมุน |
+| `Drone_Mission.ino` | โหมด 1: ปล่อยบอล/เจาะ/ยิง ผูกปุ่ม KEY 1–14 |
+| `Aviation_Mastery.ino` | โหมด 2: ชุดบินสนาม Aviation Mastery |
+| `Drone_Innovation_Challenge.ino` | โหมด 3: โหมดสำหรับ Innovation Challenge |
+| `shooting.ino` | ฟังก์ชันยิง: `swipe_left_S1()` และรอความสูงนิ่งก่อนยิง |
+| `poke_controls.ino` + `.h` | ฟังก์ชันเจาะลูกโป่ง `advance_and_poke_straight()` |
+| `Servo.ino` | ส่งพัลส์ตรงๆ `release_servo_angle()` ปล่อยบอล |
+| `Servo_Degree.ino` | แปลงองศาเป็นพัลส์ |
+| `Test_ball.ino` | ชุดทดสอบเซอร์โวปล่อยบอล |
+| `DroneEasy.hpp/.cpp` | คลาส `DroneEasy` และวัตถุ `drone` ห่อคำสั่งให้เรียกง่าย |
+| `protocol.hpp/.cpp` | คลาส `Arduino` และวัตถุ `pArduino` คุย I2C กับ FC |
+| `LegacyActions.hpp` | ประกาศชื่อฟังก์ชันของ `.ino` ให้ไฟล์ `.cpp` เรียกได้ |
+| `README.ino` | ไฟล์อธิบายอยู่ในรูปคอมเมนต์ ไม่มีโค้ดทำงาน |
+
+## 3. ใครเรียกใคร
+
+<Figure caption="ลำดับการเรียก: mode_config เลือกโหมด → drone_sanam5.ino กระจายไปที่ไฟล์โหมด → โหมดเรียก drone → drone เรียก pArduino → I2C → FC">
+  <ProjectMap />
+</Figure>
+
+โค้ดนี้ใช้สองชั้นห่อกัน
+
+- `pArduino->move_forward_cm(100)` ชั้นล่าง ใช้ชื่อแบบ snake_case อยู่ใน `protocol.cpp`
+- `drone.moveForward(100)` ชั้นบน ใช้ชื่อแบบ camelCase อยู่ใน `DroneEasy.cpp` และเรียก `pArduino` อีกที
+
+โหมดบินใหม่ๆ เขียนด้วย `drone.*` เพราะอ่านง่ายกว่า ส่วน `pArduino->*` ยังมีใน `shooting.ino`, `poke_controls.ino` และ `config.hpp`
+
+## 4. mode_config.hpp: เลือกโหมดบรรทัดเดียว
+
+```cpp
+// mode_config.hpp
+#define FLIGHT_MODE_DRONE_MISSION              1
+#define FLIGHT_MODE_AVIATION_MASTERY           2
+#define FLIGHT_MODE_DRONE_INNOVATION_CHALLENGE 3
+
+#define ACTIVE_FLIGHT_MODE   FLIGHT_MODE_DRONE_MISSION
+```
+
+`#define` คือคำสั่งให้ตัวประมวลผลก่อนคอมไพล์ "ค้นหาแล้วแทนที่" ชื่อข้างซ้ายด้วยค่าด้านขวา ไม่ใช้ RAM เลย อยากสลับโหมดก็แก้ `FLIGHT_MODE_DRONE_MISSION` เป็นชื่ออื่นแล้วอัปโหลดใหม่
+
+## 5. drone_sanam5.ino: ตัวกระจายโหมด
+
+```cpp
+// drone_sanam5.ino
+#if  ACTIVE_FLIGHT_MODE == FLIGHT_MODE_DRONE_MISSION
+  #define MODE_SETUP  setupDroneMissionMode
+  #define MODE_LOOP   loopDroneMissionMode
+#elif ACTIVE_FLIGHT_MODE == FLIGHT_MODE_AVIATION_MASTERY
+  #define MODE_SETUP  setupAviationMasteryMode
+  #define MODE_LOOP   loopAviationMasteryMode
+#elif ACTIVE_FLIGHT_MODE == FLIGHT_MODE_DRONE_INNOVATION_CHALLENGE
+  #define MODE_SETUP  setupDroneInnovationChallengeMode
+  #define MODE_LOOP   loopDroneInnovationChallengeMode
+#else
+  #error "ACTIVE_FLIGHT_MODE ตั้งค่าไม่ถูก — เปิด mode_config.hpp แล้วตั้งเป็น FLIGHT_MODE_* ตัวใดตัวหนึ่ง"
+#endif
+
+void setup() {
+  drone.beginDefault();   // เริ่มระบบ + I2C กับ Flight Controller (ทุกโหมดใช้ร่วมกัน)
+  MODE_SETUP();           // setup เฉพาะของโหมดที่เลือก
+}
+
+void loop() {
+  MODE_LOOP();            // loop เฉพาะของโหมดที่เลือก (คอยอ่านปุ่มจากรีโมท)
+}
+```
+
+`#if / #elif / #else` ทำงานตอน **คอมไพล์** เลือกชื่อฟังก์ชันของโหมดที่ตั้งไว้ ที่เหลือไม่ถูกรวมเข้าโปรแกรม ถ้าตั้งเลขผิด `#error` หยุดคอมไพล์พร้อมข้อความชัดเจน ดีกว่าให้ผ่านแล้วโดรนเงียบ
+
+ในโหมด Mission `loop()` ที่ถูกเรียกคือฟังก์ชันที่ผูกปุ่มเข้ากับ handler
+
+```cpp
+// Drone_Mission.ino
+void loopDroneMissionMode() {
+  drone.onKey1(DroneMission_KEY_1_handle);
+  drone.onKey2(DroneMission_KEY_2_handle);
+  drone.onKey3(DroneMission_KEY_3_handle);
+  // ... ถึง KEY 14
+}
+```
+
+`DroneMission_KEY_1_handle` ไม่มีวงเล็บ เพราะเป็นการส่ง "ตัวฟังก์ชัน" ไปให้ `onKey1` ถือไว้เรียกทีหลัง (อธิบายที่หน้า [ฟังก์ชันและอาร์เรย์](/docs/arduino/cpp-functions-arrays))
+
+## 6. config.hpp: ค่าที่แก้บ่อยที่สุด
+
+ค่าที่จูนตามสนามอยู่ที่นี่หมด
+
+```cpp
+// config.hpp
+constexpr uint16_t HEIGHT_FLIGHT   = 100;
+constexpr uint16_t HEIGHT_SHOOT    = 120;
+constexpr float MS_PER_CM_FWD       = 15.46f;
+constexpr float MS_PER_CM_BACK      = 15.16f;
+
+const int S_CLOSE = 1500;
+const int S_LEFT  = 1200;
+const int S_RIGHT = 2000;
+```
+
+`constexpr` กับ `const` คือค่าคงที่ที่ห้ามเปลี่ยน ใช้ชื่อแทนเลขดิบเพื่อให้โค้ดอ่านออก `HEIGHT_SHOOT` ชัดกว่า `120`
+
+บรรทัด `MS_PER_CM_FWD = 15.46f` มีความหมายว่า บินไปข้างหน้า 1 cm ใช้เวลา 15.46 ms ฟังก์ชัน `move_forward_cm(100)` จึง `delay` ประมาณ 1,546 ms คู่มือชมรมบอกให้ทดสอบบิน 100 cm จริง วัดระยะ แล้วปรับค่านี้
+
+## ลองทำ
+
+1. เปิด `mode_config.hpp` เปลี่ยน `ACTIVE_FLIGHT_MODE` เป็น `FLIGHT_MODE_AVIATION_MASTERY` แล้วกด Verify ดูขนาดโปรแกรม (ที่ทดสอบไว้: โหมด Mission 7,032 ไบต์ โหมด Aviation Mastery 5,654 ไบต์ เล็กลงเพราะโค้ดโหมดอื่นไม่ถูกใช้ จึงไม่ถูกใส่ลงชิป)
+2. แก้เป็นเลขที่ไม่มี เช่น `#define ACTIVE_FLIGHT_MODE 9` กด Verify จะเห็น `#error` พร้อมข้อความไทยของจริง แล้วแก้กลับ
+3. หาว่า `HEIGHT_SHOOT` ถูกใช้กี่ที่ด้วย `grep -n HEIGHT_SHOOT *.ino *.hpp *.cpp`
+
+## พังตรงไหนบ่อย
+
+- **ชื่อฟังก์ชันซ้ำข้ามไฟล์** เช่น เขียนฟังก์ชัน `blink()` ในสองไฟล์ `.ino` จะขึ้น `redefinition of ...`
+- **error ในไฟล์โหมดที่ไม่ใช้** ล้มทั้งชุด ต้องแก้ หรือคอมเมนต์ออกทั้งไฟล์
+- **แก้ `config.hpp` แล้วค่าไม่เปลี่ยน** ลืมกดอัปโหลดใหม่ ค่าพวกนี้ถูกฝังตอนคอมไพล์
+- **ใช้ `#include` กับไฟล์ `.ino`** ไม่ต้อง และอย่าทำ ไฟล์ `.ino` รวมกันให้เองแล้ว

@@ -1,0 +1,9 @@
+{
+  "title": "เสริม: อิเล็กทรอนิกส์",
+  "pages": [
+    "arduino-board",
+    "wiring-i2c",
+    "servo-pwm",
+    "power-and-noise"
+  ]
+}

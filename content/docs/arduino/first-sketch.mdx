@@ -1,0 +1,117 @@
+---
+title: "3. สเก็ตช์แรก: Blink และ Serial"
+description: เขียน setup() กับ loop() ให้ LED กระพริบ แล้วพิมพ์ข้อความกลับมาดูในคอม
+---
+
+<Callout type="info" title="ยังไม่เคยเขียนโปรแกรม?">
+คำว่าตัวแปร ฟังก์ชัน วัตถุ และเมธอด อธิบายจากศูนย์ไว้ที่ [อ่านโค้ดให้ออก](/docs/arduino/read-code) อ่านหน้านั้นก่อนจะง่ายกว่ามาก
+</Callout>
+
+โปรแกรม Arduino เรียกว่า **สเก็ตช์ (sketch)** ทุกอันมีสองฟังก์ชันที่ขาดไม่ได้ ถ้าขาดตัวใดตัวหนึ่ง คอมไพล์ไม่ผ่าน
+
+<Figure caption="setup() ทำครั้งเดียวตอนเปิดบอร์ดหรือกดรีเซ็ต จากนั้น loop() ทำซ้ำไปเรื่อยๆ จนปิดไฟ">
+  <SetupLoop />
+</Figure>
+
+### ตัวอย่างชีวิตจริง: เปิดร้านขายของ
+
+ตอนเช้าคุณ "ตั้งร้าน" ครั้งเดียว กางโต๊ะ เปิดไฟ เอาของออกมาวาง นั่นคือ `setup()` จากนั้นคุณ "ขายของ" ซ้ำๆ รับลูกค้า ทอนเงิน รับลูกค้าคนต่อไป นั่นคือ `loop()` ไม่มีใครตั้งร้านใหม่ทุกครั้งที่ลูกค้ามา
+
+## 1. Blink: กระพริบ LED
+
+บอร์ด Nano มี LED ติดบอร์ดต่ออยู่ที่ขา 13 Arduino เตรียมชื่อ `LED_BUILTIN` ไว้ให้แทนเลข 13 ลองโค้ดนี้
+
+```cpp
+void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);   // LED_BUILTIN = ขา 13 บน Nano
+}
+
+void loop() {
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(500);
+  digitalWrite(LED_BUILTIN, LOW);
+  delay(500);
+}
+```
+
+ตัวอย่างนี้ทดสอบคอมไพล์สำหรับ Nano แล้ว ได้ 924 ไบต์ (3% ของที่เก็บโปรแกรม)
+
+อ่านทีละบรรทัด
+
+- `pinMode(LED_BUILTIN, OUTPUT)` บอกชิปว่าขานี้ "ส่งไฟออก" ต้องทำก่อนใช้ขาเสมอ ทำใน `setup()`
+- `digitalWrite(..., HIGH)` ป้อน 5 V ที่ขา LED ติด
+- `delay(500)` หยุดรอ 500 มิลลิวินาที (ครึ่งวินาที)
+- `digitalWrite(..., LOW)` ขาเป็น 0 V LED ดับ
+
+<Figure caption="สัญญาณที่ขา 13: สูง 500 ms ต่ำ 500 ms วนซ้ำ ตรงกับโค้ดข้างบนบรรทัดต่อบรรทัด">
+  <BlinkWave />
+</Figure>
+
+รอบหนึ่งใช้ 1,000 ms ดังนั้นกระพริบ 1 ครั้งต่อวินาที (1 Hz)
+
+### เทียบกับโค้ดโดรน
+
+สัญญาณเซอร์โวในหน้า [เซอร์โวและ PWM](/docs/electronics/servo-pwm) ก็คือ `digitalWrite HIGH` → รอ → `LOW` → รอ แบบเดียวกัน แต่ใช้ `delayMicroseconds` (ไมโครวินาที) เพราะจังหวะสั้นกว่ามาก
+
+```cpp
+// Servo.ino (release_servo_angle)
+digitalWrite(port_pin, HIGH);
+delayMicroseconds(pulseWidth);
+digitalWrite(port_pin, LOW);
+delayMicroseconds(20000 - pulseWidth);
+```
+
+## 2. Serial: ให้บอร์ดพูดกลับมา
+
+LED ไม่บอกว่าตัวแปรเป็นเท่าไร ต้องให้บอร์ดพิมพ์ข้อความผ่านสาย USB ไปที่ **Serial Monitor** (เมนู Tools → Serial Monitor หรือ Ctrl+Shift+M)
+
+```cpp
+int count = 0;
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(LED_BUILTIN, OUTPUT);
+}
+
+void loop() {
+  count++;
+  Serial.print("รอบที่ ");
+  Serial.println(count);
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(500);
+  digitalWrite(LED_BUILTIN, LOW);
+  delay(500);
+}
+```
+
+ทดสอบคอมไพล์แล้วได้ 2,244 ไบต์ ตัวแปรโกลบอลใช้ 210 ไบต์ (ส่วนใหญ่เป็นบัฟเฟอร์ของ Serial เอง)
+
+- `Serial.begin(9600)` เปิดช่องคุยด้วยความเร็ว 9600 บิตต่อวินาที (baud) **ต้องตั้งเลขเดียวกันที่มุมล่างขวาของ Serial Monitor** ไม่งั้นเห็นตัวอักษรขยะ โค้ดชมรมก็ใช้ 9600 ใน `beginDefault()`
+- `Serial.print` พิมพ์ต่อท้ายไม่ขึ้นบรรทัดใหม่ `Serial.println` ขึ้นบรรทัดใหม่
+- `count++` เพิ่มค่า `count` ทีละ 1
+
+ผลลัพธ์ที่ควรเห็น
+
+```text
+รอบที่ 1
+รอบที่ 2
+รอบที่ 3
+```
+
+<Callout type="info" title="ในโค้ดโดรน">
+`DroneEasy::beginDefault()` เรียก `Serial.begin(9600)` ให้แล้ว แต่ไม่มีที่ไหนเรียก `Serial.print` เลย (บรรทัดเดียวที่เป็นคอมเมนต์ใน `protocol.cpp`) อยากดูค่าอะไรก็เพิ่ม `Serial.println(...)` ได้ทันที เช่น พิมพ์ `pArduino->get_height_cm()` หลัง `pArduino->poll()`
+</Callout>
+
+## ลองทำ
+
+1. อัปโหลด Blink แล้วเปลี่ยน `500` เป็น `100` ทั้งสองที่ ดูว่าเร็วขึ้นกี่เท่า (คำตอบ: 5 เท่า)
+2. ในสเก็ตช์ Serial เปลี่ยนเป็นพิมพ์ `millis()` แทน `count` (ดูหน้า [millis](/docs/arduino/time-millis)) ค่าควรเพิ่มทีละประมาณ 1000
+3. ลองเปลี่ยน baud ใน Serial Monitor เป็น 115200 โดยไม่แก้โค้ด แล้วดูว่าเห็นอะไร (คำตอบ: ตัวอักษรขยะ)
+
+## พังตรงไหนบ่อย
+
+- **ลืม `pinMode`** LED ติดสลัวหรือไม่ติด
+- **ลืมเซมิโคลอน `;`** ขึ้น `expected ';' before ...` ที่บรรทัดถัดไป ให้ดูบรรทัดก่อนหน้า error
+- **ตัวพิมพ์เล็ก/ใหญ่** `digitalwrite` ไม่ใช่ `digitalWrite` ขึ้น `was not declared`
+- **Serial Monitor เป็นตัวอักษรขยะ** baud ไม่ตรงกับ `Serial.begin`
+- **ไม่เห็นข้อความเลย** Serial Monitor เลือกพอร์ตผิด หรือเปิดไว้ตอนอัปโหลดแล้วพอร์ตหลุด ปิดแล้วเปิดใหม่

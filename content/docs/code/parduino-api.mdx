@@ -1,0 +1,180 @@
+---
+title: "3. pArduino-> คำสั่งชั้นล่างสุด"
+description: ทุกเมธอดใน protocol.hpp/.cpp ตาราง dir 1–7 ตารางรหัส F_* และแพ็กเก็ต I2C 6 ไบต์
+---
+
+`pArduino` เป็นตัวแปรเดียวที่ชมรมใช้คุยกับโดรน ประกาศไว้ใน `protocol.hpp` ว่า `extern Arduino *pArduino;` และสร้างใน `protocol.cpp` ทุกคำสั่งในหน้านี้เรียกในรูป `pArduino->take_off()` หรือ `pArduino->set_height(110)` คำสั่ง `drone.*` ที่ใช้ทุกวัน ([หน้าถัดไป](/docs/code/drone-easy)) ก็แค่ห่อคำสั่งเหล่านี้อีกชั้น
+
+เปรียบกับการสั่งอาหารผ่านพนักงาน: `pArduino->` คือการเขียนใบสั่งส่งเข้าครัว ห้องครัว (Flight Controller) ทำอาหารเอง เราไม่ต้องรู้ว่ามันจุดไฟยังไง
+
+## 1. แต่ละคำสั่งทำอะไรจริงๆ
+
+<CmdDemo steps={["pArduino->take_off();", "pArduino->set_height(110);", "pArduino->move_forward_cm(200);", "pArduino->set_yaw(1, 90);", "pArduino->move_forward_cm(200);", "pArduino->auto_land();"]} caption="ลำดับคำสั่ง pArduino-> ที่ใช้บ่อยสุด กดทีละบรรทัดเพื่อดูว่าโดรนทำอะไร" />
+
+เมธอดแบบ "ส่งคำสั่ง" ทุกตัวทำสิ่งเดียวกัน คือเขียนลง `m_i2cData` ซึ่งมี 6 ไบต์
+
+<Figure caption="m_i2cData 6 ไบต์ ไบต์ 0 นับคำสั่งใหม่ ไบต์ 1 คือรหัส F_* ไบต์ 2–5 คือค่าที่ส่งไปด้วย ตัวอย่างสามคำสั่ง">
+  <I2cPacket />
+</Figure>
+
+```cpp
+// protocol.cpp
+void Arduino::set_direction(uint8_t dir, uint8_t speed) {
+  m_i2cData[0]++;
+  m_i2cData[1] = Arduino::F_DIRECTION;
+  m_i2cData[2] = dir;
+  m_i2cData[3] = speed;
+}
+```
+
+ไบต์ 0 บวกขึ้นทีละหนึ่งทุกครั้งที่สั่ง ฝั่ง Flight Controller เห็นเลขเปลี่ยนจึงรู้ว่ามีคำสั่งใหม่ ถ้าสั่งซ้ำด้วยค่าเดิมก็ยังนับเป็นคำสั่งใหม่
+
+## 2. ตารางรหัส F_*
+
+รหัสอยู่ใน `enum _FUNCTION_SEND` (ส่วน private ของคลาส)
+
+| ชื่อ | รหัส | เมธอดที่ใช้ |
+| --- | --- | --- |
+| `F_NONE` | 0 | ไม่มี |
+| `F_ARM` | 1 | `take_off()` |
+| `F_DISARM` | 2 | `stop_motor()` |
+| `F_AUTO_LAND` | 3 | `auto_land()` |
+| `F_CALIBRATION` | 4 | `calibration()` |
+| `F_ROTATE` | 5 | `rotate()` |
+| `F_FLIP` | 6 | ไม่มีเมธอดใช้ (`flip()` เป็นฟังก์ชันว่าง) |
+| `F_SPEED` | 7 | ไม่มีเมธอดใช้ |
+| `F_CIRCLE` | 8 | `circle_360()` |
+| `F_JUMP` | 9 | `jump()` |
+| `F_MOTOR` | 12 | `motor(num, speed)` |
+| `F_POS` | 14 | `set_pos(x, y)` และ `set_height(z)` |
+| `F_DIRECTION` | 15 | `set_direction(dir, speed)` |
+| `F_YAW_ROTATE` | 16 | `set_yaw(rotate, angle)` |
+| `F_PICTURE` | 31 | `picture()` |
+| `F_VIDEO_BEGIN` | 32 | `video_begin()` |
+| `F_VIDEO_END` | 33 | `video_end()` |
+| `F_CLOSE_JUMP` | 37 | `jump_end()` |
+
+<Callout type="info" title="set_height กับ set_pos ใช้รหัสเดียวกัน">
+ในโค้ดของชมรม `set_height(z)` เขียนรหัส 14 แล้วใส่ z ในไบต์ 2–3 ส่วน `set_pos(x, y)` เขียนรหัส 14 เหมือนกัน ใส่ x ในไบต์ 2–3 และ y ในไบต์ 4–5 ว่า Flight Controller ตีความสองแบบนี้ต่างกันอย่างไรไม่มีบอกในไฟล์ของชมรม ถ้าจะใช้ `set_pos` ให้ทดสอบกับโดรนจริงก่อน
+</Callout>
+
+## 3. คำสั่งพื้นฐาน
+
+```cpp
+pArduino->calibration();   // ตั้งศูนย์ไจโร ต้องวางโดรนนิ่ง
+pArduino->take_off();      // ขึ้นบิน
+pArduino->auto_land();     // ลงจอดเอง
+pArduino->stop_motor();    // หยุดมอเตอร์ทันที (ฉุกเฉิน)
+```
+
+- `calibrateAndDelay(ms)` = `calibration()` แล้ว `delay(ms)` ในคำสั่งเดียว
+- `stop_motor()` ตัดมอเตอร์ทันที โดรนจะตกจากที่สูง ใช้เมื่อฉุกเฉินจริงเท่านั้น
+- `rotate()`, `circle_360()`, `jump()`, `jump_end()`, `picture()`, `video_begin()`, `video_end()` ส่งรหัสตามตารางโดยไม่มีพารามิเตอร์ ไม่ถูกใช้ในภารกิจ Mission ของชมรม
+
+## 4. set_direction(dir, speed): ทิศทาง
+
+<Figure caption="dir 1–4 บินในแนวราบตามหัวโดรน dir 5–6 ขึ้น-ลง dir 7 คือหยุดนิ่งอยู่กับที่ (poshold) speed ใช้ 1 ช้า 2 ปกติ 3 เร็ว">
+  <DirMap />
+</Figure>
+
+| dir | ทิศ | เมธอดสั้นที่ใช้ dir นี้ |
+| --- | --- | --- |
+| 1 | หน้า | `move_forward_cm` |
+| 2 | หลัง | `move_backward_cm` |
+| 3 | ซ้าย | `move_left_cm` |
+| 4 | ขวา | `move_right_cm` |
+| 5 | ขึ้น | `up(speed, time)` |
+| 6 | ลง | `down(speed, time)` |
+| 7 | ลอยนิ่ง | `poshold(speed)` |
+
+ค่า speed ในคอมเมนต์ของ `protocol.cpp` ระบุว่าเป็น ช้า, ปกติ, เร็ว ค่าตั้งต้นของคำสั่งเดินระยะคือ 2 และของคำสั่ง `*_fast` คือ 3
+
+`set_direction(1, 2)` เป็นคำสั่ง "เริ่มบินไปหน้า" และ**ไม่มีวันจบเอง** โดรนบินไปเรื่อยๆ จนกว่าจะมีคำสั่งใหม่ จึงต้องตามด้วย `set_direction(7, ...)` เสมอ นี่คือเหตุที่ `move_forward_cm` ต้องมี `delay` ตรงกลางแล้วจบด้วย `poshold`
+
+เปรียบกับรถที่เหยียบคันเร่งค้าง: ไม่ปล่อยเท้ารถก็ไม่หยุด
+
+## 5. set_yaw, set_height, motor
+
+```cpp
+pArduino->set_yaw(1, 90);    // 1 = ขวา 2 = ซ้าย (ดูใน yaw_soft_stop) มุมเป็นองศา
+pArduino->set_height(110);   // เป้าความสูง 110 ซม.
+// motor(num, speed) ส่งเลขมอเตอร์กับ speed ไปตรงๆ ดูหมายเหตุด้านล่าง
+```
+
+- `set_yaw(rotate, angle)` ใส่มุม 2 ไบต์ (ไบต์ 3 ต่ำ ไบต์ 4 สูง) รายละเอียดอยู่ที่ [หมุนหัวโดรน](/docs/code/yaw-control)
+- `set_height(z)` สั่งความสูง ดู [คุมความสูง](/docs/code/height-control)
+- `motor(num, speed)` ส่งเลขมอเตอร์กับค่าความเร็วไปตรงๆ ชมรมไม่ได้ใช้ใน `.ino` ปัจจุบัน ค่าที่ใช้ได้ต้องดูจากคู่มือผู้ผลิต ห้ามทดลองขณะติดใบพัด
+
+## 6. คำสั่งเดินตามระยะ
+
+```cpp
+// protocol.cpp
+void Arduino::move_forward_cm(uint16_t distance_cm, uint8_t speed) {
+  set_direction(1, speed);
+  delay(ms_round(distance_cm * MS_PER_CM_FWD));
+  poshold(speed);
+}
+```
+
+| เมธอด | ค่าตั้งต้น speed | ใช้ค่า ms/cm | หยุดท้ายด้วย poshold |
+| --- | --- | --- | --- |
+| `move_forward_cm(cm, speed)` | 2 | `MS_PER_CM_FWD` | ใช่ |
+| `move_backward_cm(cm, speed)` | 2 | `MS_PER_CM_BACK` | ใช่ |
+| `move_left_cm(cm, speed)` | 2 | `MS_PER_CM_LEFT` | ใช่ |
+| `move_right_cm(cm, speed)` | 2 | `MS_PER_CM_RIGHT` | ใช่ |
+| `move_forward_fast(cm, speed)` | 3 | `MS_PER_CM_FWD_FAST` | ไม่ (คอมเมนต์ทิ้งไว้) |
+| `move_backward_fast(cm, speed)` | 3 | `MS_PER_CM_BACK_FAST` | ไม่ |
+| `move_left_fast(cm, speed)` | 3 | `MS_PER_CM_LEFT_FAST` | ไม่ |
+| `move_right_fast(cm, speed)` | 3 | `MS_PER_CM_RIGHT_FAST` | ไม่ |
+
+`*_fast` ไม่เบรก เหมาะกับท่อนที่ตามด้วยคำสั่งอื่นต่อเลย
+
+## 7. poshold และขึ้น-ลง
+
+```cpp
+pArduino->poshold(2);                 // = set_direction(7, 2)
+pArduino->poshold_heights(110, 2);    // set_height(110) แล้ว set_direction(7, 2)
+pArduino->set_heights(110);           // = set_height(110)
+pArduino->up(2, 500);                 // set_direction(5, 2) แล้ว delay(500)
+pArduino->down(2, 500);               // set_direction(6, 2) แล้ว delay(500)
+```
+
+`up` และ `down` **ไม่หยุดเอง** ต้องตามด้วย `poshold` หรือ `set_height`
+
+## 8. อ่านค่าจากโดรน
+
+```cpp
+pArduino->poll();                       // ขอข้อมูล 8 ไบต์จาก FC
+uint16_t h = pArduino->get_height_cm(); // รวมไบต์ 0 กับ 1 เป็นความสูง
+```
+
+`get_height_cm()` อ่านจาก `m_externData` ที่ `poll()` เติมให้ ไม่เรียก `poll()` ก่อนก็ได้ค่าเก่า
+
+## 9. smooth_set_height
+
+```cpp
+pArduino->smooth_set_height(120, 10, 200);  // เป้า 120 ทีละ 10 ซม. รอ 200 ms
+```
+
+อธิบายเต็มและข้อควรระวังอยู่ที่ [คุมความสูง](/docs/code/height-control)
+
+## 10. keyDo
+
+```cpp
+pArduino->keyDo(Arduino::KEY_1, myHandler);
+```
+
+ตรวจว่าปุ่มบนรีโมทถูกกดใหม่หรือไม่ แล้วเรียกฟังก์ชัน ดู [ปุ่มรีโมท](/docs/code/remote-keys)
+
+## ลองทำ
+
+1. เปิด `protocol.hpp` ไล่ดูชื่อเมธอดทั้งหมดเทียบกับหน้านี้ มีตัวไหนที่ยังไม่รู้จัก
+2. คำนวณว่า `pArduino->move_left_cm(100)` ส่ง `set_direction` ด้วยค่าอะไร และรอกี่ ms (ตอบ: dir 3, speed 2, 100 × 15.65 = 1565 ms)
+3. เขียนฟังก์ชันที่บินหน้า 50 ซม. แล้วหยุดลอย โดยใช้ `set_direction` กับ `delay` กับ `poshold` เท่านั้น แล้วเทียบกับ `move_forward_cm(50)`
+
+## พังตรงไหนบ่อย
+
+- **ลืม poshold** หลัง `set_direction` ตัวเอง โดรนไหลไปไม่หยุด
+- **ส่งคำสั่งถี่เกินไป** สองคำสั่งติดกันโดยไม่มี `delay` คำสั่งหลังเขียนทับคำสั่งแรกก่อน FC จะอ่านทัน
+- **ใช้ `motor()` ขณะติดใบพัด** ใบพัดหมุนทันที
+- **คิดว่า `flip()` ทำงาน** ฟังก์ชันนี้ว่างเปล่าใน `protocol.cpp` เรียกไปก็ไม่เกิดอะไร

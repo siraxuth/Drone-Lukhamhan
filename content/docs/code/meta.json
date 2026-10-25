@@ -1,0 +1,17 @@
+{
+  "title": "3. เขียนโค้ดสั่งโดรน",
+  "pages": [
+    "connect",
+    "basic-commands",
+    "parduino-api",
+    "drone-easy",
+    "distance-time",
+    "yaw-control",
+    "height-control",
+    "remote-keys",
+    "first-flight",
+    "modes",
+    "debugging",
+    "config-reference"
+  ]
+}

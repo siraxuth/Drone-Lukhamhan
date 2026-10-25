@@ -1,0 +1,123 @@
+---
+title: "8. ปุ่มรีโมท KEY1–14"
+description: keyDo ตรวจขอบสัญญาณปุ่ม ทำให้กดหนึ่งครั้งเรียก handler หนึ่งครั้ง และวิธีผูก onKey1 ถึง onKey14
+---
+
+บนรีโมทมีปุ่มที่ผูกกับภารกิจ ชมรมเรียกว่า KEY1 ถึง KEY14 เมื่อกดปุ่ม โดรนต้องรู้ว่า "ใครถูกกด" แล้วเรียกฟังก์ชันของภารกิจนั้นหนึ่งครั้งพอ เหมือนกดกริ่งประตู: กดค้างสิบวินาทีก็ไม่ได้แปลว่ากริ่งดังสิบครั้ง
+
+## 1. เลขปุ่มมาจากไหน
+
+<Figure caption="กดปุ่มที่รีโมท → FC ส่งเลขปุ่มมาให้ Arduino ทาง I2C → receiveEvent เก็บไว้ใน m_remoteKey → keyDo เทียบเลขแล้วเรียกฟังก์ชัน">
+  <KeyFlow />
+</Figure>
+
+เลขปุ่มอยู่ใน `enum _FUNCTION_READ` ของ `protocol.hpp`
+
+| ชื่อ | ค่า |
+| --- | --- |
+| `NONE` | 0 (ไม่มีปุ่มถูกกด) |
+| `KEY_1` ถึง `KEY_14` | 1 ถึง 14 |
+| `RESET_INDEX` | 15 |
+
+ฝั่งรับ `receiveEvent` อ่านไบต์สุดท้ายที่ FC ส่งมา แล้วเก็บใน `m_remoteKey`
+
+```cpp
+// protocol.cpp
+void Arduino::receiveEvent(int howMany) {
+  while (1 < Wire.available()) {
+    char c = Wire.read();
+  }
+  int x = Wire.read();
+  m_remoteKey = x;
+}
+```
+
+## 2. keyDo: ตรวจขอบสัญญาณ (edge detect)
+
+```cpp
+// protocol.cpp
+void Arduino::keyDo(uint8_t key, void (*func)(void)) {
+  if (m_remoteKey != m_prevKey) {
+    if (m_remoteKey == Arduino::NONE) {
+      m_prevKey = Arduino::NONE;
+      return;
+    }
+    if (key == m_remoteKey) {
+      m_prevKey = m_remoteKey;
+      delay(1);
+      func();
+    }
+  }
+}
+```
+
+อ่านเป็นภาษาคน:
+
+1. ถ้าปุ่มตอนนี้ **เหมือน** ปุ่มที่จำไว้ ไม่ทำอะไร (ยังเป็นการกดค้างครั้งเดิม)
+2. ถ้าปุ่มตอนนี้เป็น `NONE` แปลว่าปล่อยแล้ว ล้างความจำเป็น `NONE`
+3. ถ้าปุ่มตอนนี้เป็นปุ่มที่เรากำลังรอ จำไว้ แล้วเรียกฟังก์ชัน **หนึ่งครั้ง**
+
+<Figure caption="กดค้าง KEY3 หลายรอบของ loop: ฟังก์ชันถูกเรียกครั้งเดียวที่รอบแรก รอบถัดไปข้ามเพราะ m_prevKey ตรงกับปุ่มที่ค้างอยู่ ปล่อยปุ่มแล้ว m_prevKey จึงกลับเป็น NONE">
+  <KeyEdge />
+</Figure>
+
+เหตุผลที่ต้องจำค่าเดิม: `loop()` วนเร็วมาก (หลายพันรอบต่อวินาที) ถ้าไม่จำ การกดครั้งเดียวจะสั่งบินซ้ำหลายพันรอบ
+
+## 3. ผูกปุ่มด้วย onKey
+
+`drone.onKey1` ถึง `drone.onKey14` เป็นทางลัดของ `pArduino->keyDo(Arduino::KEY_N, handler)` และมี `drone.onKey(เลข, handler)` สำหรับเลขตรงๆ
+
+```cpp
+// Drone_Mission.ino
+void loopDroneMissionMode() {
+  drone.onKey1(DroneMission_KEY_1_handle);
+  drone.onKey2(DroneMission_KEY_2_handle);
+  drone.onKey3(DroneMission_KEY_3_handle);
+  // ... KEY4 ถึง KEY9 เหมือนกัน
+  drone.onKey10(KEY1_mode1);
+  drone.onKey12(DroneMission_KEY_12_handle);
+  drone.onKey13(DroneMission_KEY_13_handle);
+  drone.onKey14(DroneMission_KEY_14_handle);
+}
+```
+
+ที่น่าสังเกต: KEY10 เรียก `KEY1_mode1` (ท่าบินเดียวกับ KEY1 แบบที่ 1) และ KEY11 ไม่ได้ผูกในโหมดนี้ มีบรรทัดที่ถูกคอมเมนต์ทิ้งไว้
+
+| โหมด | ปุ่มที่ผูกใน loop |
+| --- | --- |
+| Drone Mission | KEY1–10, 12, 13, 14 |
+| Aviation Mastery | KEY1–4 |
+| Drone Innovation Challenge | KEY1, 2, 3, 4, 6 |
+
+## 4. handler คือฟังก์ชันธรรมดา
+
+handler ต้องเป็นฟังก์ชัน `void ชื่อ(void)` ไม่รับค่า ไม่คืนค่า เขียนภารกิจทั้งหมดข้างใน เช่น `MyFirstMission` ใน [ภารกิจแรก](/docs/code/first-flight)
+
+```cpp
+void MyShortHop() {
+  drone.calibration();
+  delay(3000);
+  drone.takeOff();
+  delay(4000);
+  drone.fw(100);
+  drone.autoLand();
+}
+
+// ใน loop ของโหมด
+drone.onKey11(MyShortHop);
+```
+
+ข้อควรระวังสำคัญ: ขณะ handler ทำงาน (ใช้เวลาเป็นสิบวินาที) `loop()` ถูกบล็อก ปุ่มอื่นจะไม่ถูกตรวจจนกว่าจะจบ ถ้าอยากยกเลิกกลางทางต้องกดลงจอดบนรีโมทโดยตรง
+
+## ลองทำ
+
+1. ผูกฟังก์ชันที่เปิด `Serial.println("hello")` กับ KEY11 แล้วเปิด Serial Monitor (9600) กดปุ่มดู
+2. กดปุ่มค้างสามวินาที ข้อความออกกี่ครั้ง (ตอบ: ครั้งเดียว)
+3. อ่าน `loopAviationMasteryMode` ใน `Aviation_Mastery.ino` แล้วหาว่าปุ่มไหนว่างอยู่
+
+## พังตรงไหนบ่อย
+
+- **กดแล้วไม่เกิดอะไร** ไม่ได้ผูก `onKeyN` ใน `loop` ของโหมดที่เลือกอยู่ หรือเลือกโหมดผิด
+- **ผูกปุ่มเดียวกันซ้ำสองฟังก์ชัน** ทำงานแค่ตัวที่อยู่บรรทัดบน เพราะตัวแรกจำปุ่มไว้แล้ว ตัวที่สองจึงเห็นว่าเป็นการกดค้างเดิมและข้าม
+- **handler ยาวแล้วอยากเปลี่ยนใจ** ทำไม่ได้ในโค้ด ต้องใช้รีโมท
+- **เขียน `delay` ใน `loop` ตัวเอง** ทำให้พลาดปุ่ม เพราะ `keyDo` ต้องถูกเรียกถี่ๆ

@@ -1,0 +1,13 @@
+{
+  "title": "เสริม: ฟิสิกส์ของโดรน",
+  "pages": [
+    "forces",
+    "rotors-and-torque",
+    "motion-axes",
+    "motor-mixing",
+    "control-pid",
+    "sensors",
+    "battery-power",
+    "dead-reckoning"
+  ]
+}

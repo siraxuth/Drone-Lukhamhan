@@ -1,0 +1,15 @@
+{
+  "title": "2. Arduino และ C++",
+  "pages": [
+    "install-ide",
+    "read-code",
+    "first-sketch",
+    "project-structure",
+    "cpp-variables",
+    "cpp-control-flow",
+    "cpp-functions-arrays",
+    "cpp-pointers-classes",
+    "cpp-advanced",
+    "time-millis"
+  ]
+}
