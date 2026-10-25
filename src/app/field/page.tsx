@@ -6,6 +6,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Button } from '@/components/ui/button';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { Header } from '@/sections/Header';
+import { SiteFooter } from '@/sections/SiteFooter';
 import { Tour } from '@/components/Tour';
 import { fieldTour } from '@/lib/tours';
 import { FieldExplorer } from '@/field/FieldExplorer';
@@ -92,6 +93,7 @@ export default function FieldPage() {
           <Button size="lg" className="h-12 px-6 text-base" render={<Link href="/simulator" />} nativeButton={false}>เปิดตัวจำลอง <ArrowRight className="size-5" aria-hidden /></Button>
         </section>
       </main>
+      <SiteFooter />
     </>
   );
 }

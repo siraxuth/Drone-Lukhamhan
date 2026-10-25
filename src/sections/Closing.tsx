@@ -1,9 +1,8 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Logo } from '@/components/brand/Logo';
-import { SITE } from '@/lib/site';
 import { Makers } from '@/sections/Makers';
+import { SiteFooter } from '@/sections/SiteFooter';
 
 export function Closing() {
   return (
@@ -19,17 +18,7 @@ export function Closing() {
         </div>
       </section>
       <Makers />
-      <footer className="border-t border-line px-4 py-10">
-        <div className="mx-auto flex max-w-[84rem] flex-wrap items-center justify-between gap-4 text-base text-muted-foreground">
-          <Logo />
-          <p>© {new Date().getFullYear()} ชมรมโดรน โรงเรียนลือคำหาญวารินชำราบ</p>
-          <nav aria-label="ลิงก์ท้ายเว็บ" className="flex flex-wrap items-center gap-x-5">
-            <Link href="/team" className="inline-flex min-h-11 items-center hover:text-foreground">ผู้จัดทำ</Link>
-            <Link href="/changelog" className="inline-flex min-h-11 items-center hover:text-foreground">v{SITE.version} · บันทึกการเปลี่ยนแปลง</Link>
-            <Link href="/login" className="inline-flex min-h-11 items-center hover:text-foreground">เข้าสู่ระบบ</Link>
-          </nav>
-        </div>
-      </footer>
+      <SiteFooter />
     </>
   );
 }

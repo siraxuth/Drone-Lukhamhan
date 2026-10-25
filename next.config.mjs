@@ -10,6 +10,8 @@ const config = {
   outputFileTracingIncludes: {
     '/sitemap.xml': ['./CHANGELOG.md'],
     '/changelog': ['./CHANGELOG.md'],
+    // ท้ายเว็บอ่าน CHANGELOG.md เพื่อโชว์ "มีอะไรใหม่" ทุกหน้า
+    '/**': ['./CHANGELOG.md'],
   },
   async headers() {
     const security = [

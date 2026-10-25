@@ -6,6 +6,7 @@ import { notFound } from 'next/navigation';
 import { MapPin, PlayCircle, Plane } from 'lucide-react';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { Header } from '@/sections/Header';
+import { SiteFooter } from '@/sections/SiteFooter';
 import { Button } from '@/components/ui/button';
 import { getWork, getWorks } from '@/lib/works';
 import { clean } from '@/lib/rich';
@@ -114,6 +115,7 @@ export default async function WorkPage({ params }: { params: Promise<{ id: strin
           </section>
         )}
       </main>
+      <SiteFooter />
     </>
   );
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { Header } from '@/sections/Header';
+import { SiteFooter } from '@/sections/SiteFooter';
 import { getReleases } from '@/lib/changelog';
 import { SITE } from '@/lib/site';
 
@@ -43,6 +44,7 @@ export default function ChangelogPage() {
           ))}
         </ol>
       </main>
+      <SiteFooter />
     </>
   );
 }

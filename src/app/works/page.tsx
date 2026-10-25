@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Plane } from 'lucide-react';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { Header } from '@/sections/Header';
+import { SiteFooter } from '@/sections/SiteFooter';
 import { getWorks } from '@/lib/works';
 
 export const metadata: Metadata = { title: 'ผลงานทั้งหมด', description: 'ผลงานที่ผ่านมาของชมรมโดรน โรงเรียนลือคำหาญวารินชำราบ รวมภารกิจปล่อยสัมภาระ เจาะลูกโป่ง และยิงเป้า', alternates: { canonical: '/works' } };
@@ -34,6 +35,7 @@ export default async function WorksPage() {
           ))}
         </ul>
       </main>
+      <SiteFooter />
     </>
   );
 }

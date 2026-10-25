@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { Header } from '@/sections/Header';
+import { SiteFooter } from '@/sections/SiteFooter';
 import { Button } from '@/components/ui/button';
 
 export default function NotFound() {
@@ -13,6 +14,7 @@ export default function NotFound() {
         <p className="text-lg text-muted-foreground">ลิงก์อาจพิมพ์ผิดหรือหน้านี้ถูกย้ายไปแล้ว</p>
         <Button size="lg" className="h-12 text-base" render={<Link href="/" />} nativeButton={false}>กลับหน้าแรก</Button>
       </main>
+      <SiteFooter />
     </>
   );
 }

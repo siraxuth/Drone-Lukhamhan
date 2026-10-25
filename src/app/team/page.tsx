@@ -6,6 +6,7 @@ import { JsonLd } from '@/components/JsonLd';
 import { MakerPhoto } from '@/components/MakerPhoto';
 import { Button } from '@/components/ui/button';
 import { Header } from '@/sections/Header';
+import { SiteFooter } from '@/sections/SiteFooter';
 import { Ribbon } from '@/sections/Ribbon';
 import { members } from '@/lib/team';
 import { abs, OG_IMAGE, SITE } from '@/lib/site';
@@ -102,6 +103,7 @@ export default function TeamPage() {
           </div>
         </section>
       </main>
+      <SiteFooter />
     </>
   );
 }
