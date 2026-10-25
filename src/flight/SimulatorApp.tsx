@@ -125,7 +125,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
         </div>
 
         {/* ขวา: สนาม กดเล่นตรงนี้ (บนมือถืออยู่ก่อน) */}
-        <div className="grid gap-3 lg:sticky lg:top-24 max-lg:order-1">
+        <div data-tour="sim-stage" className="grid gap-3 lg:sticky lg:top-24 max-lg:order-1">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-lg font-bold">สนาม · {sc.title}</h2>
             <p className="text-base text-muted-foreground">ลองกดเล่นได้เลย ไม่ต้องแก้อะไรก่อน</p>

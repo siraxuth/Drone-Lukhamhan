@@ -6,6 +6,8 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Button } from '@/components/ui/button';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { Header } from '@/sections/Header';
+import { Tour } from '@/components/Tour';
+import { fieldTour } from '@/lib/tours';
 import { FieldExplorer } from '@/field/FieldExplorer';
 import { currentSeason as s } from '@/rules';
 
@@ -25,6 +27,7 @@ export default function FieldPage() {
   return (
     <>
       <Header />
+      <Tour id="field" steps={fieldTour} />
       <Breadcrumbs items={[{ label: 'สนามและกติกา' }]} />
       <main className="mx-auto grid max-w-[84rem] gap-16 px-4 pb-32 pt-4 sm:px-6 xl:px-10">
         <header className="grid max-w-4xl gap-4">
@@ -38,9 +41,11 @@ export default function FieldPage() {
           </ul>
         </header>
 
+        <div data-tour="field-explorer">
         <Suspense fallback={<div className="h-96 animate-pulse squircle-3xl bg-surface-2" />}>
           <FieldExplorer season={s} />
         </Suspense>
+        </div>
 
         <section aria-labelledby="more" className="grid gap-4">
           <h2 id="more" className="font-display text-2xl font-extrabold sm:text-3xl">ข้อมูลอื่นที่ควรรู้</h2>

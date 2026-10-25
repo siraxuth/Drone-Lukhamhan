@@ -11,6 +11,8 @@ import { Steps } from '@/sections/Steps';
 import { Field } from '@/sections/Field';
 import { Showcase } from '@/sections/Showcase';
 import { Closing } from '@/sections/Closing';
+import { Tour } from '@/components/Tour';
+import { homeTour } from '@/lib/tours';
 
 export const revalidate = 60;
 
@@ -23,6 +25,7 @@ export default function Home() {
       <SmoothScroll />
       <SceneLayer />
       <Hud />
+      <Tour id="home" steps={homeTour} waitForLoader />
       <Header /> 
       <main className="relative z-10">
         <Stage />

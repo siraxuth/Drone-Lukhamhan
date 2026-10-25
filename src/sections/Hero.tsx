@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import { ChevronsDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 /**
@@ -18,10 +19,11 @@ export function Hero() {
           <span className="block">ชมรมโดรน</span>
           <span className="block text-muted-foreground">ลือคำหาญฯ</span>
         </h1>
-        <div className="mt-8 flex flex-wrap gap-3">
+        <div data-tour="hero-cta" className="mt-8 flex w-fit max-w-full flex-wrap gap-3">
           <Button size="lg" className="h-12 px-7 text-base" render={<Link href="/#showcase" />} nativeButton={false}>ดูผลงานของเรา</Button>
           <Button size="lg" variant="outline" className="h-12 px-7 text-base" render={<Link href="/simulator" />} nativeButton={false}>ลองบินจำลอง</Button>
         </div>
+        <p className="mt-6 flex items-center gap-2 text-base text-muted-foreground"><ChevronsDown className="size-5 animate-bounce motion-reduce:animate-none" aria-hidden /> เลื่อนลงเพื่อดูโดรนและผลงาน โดรนด้านหลังหมุนตามที่เลื่อน</p>
       </div>
     </div>
   );

@@ -6,6 +6,8 @@ import { SimulatorApp } from '@/flight/SimulatorApp';
 import { getScenarios } from '@/lib/scenario-data';
 import { JsonLd } from '@/components/JsonLd';
 import { simulatorSchema } from '@/lib/schema';
+import { Tour } from '@/components/Tour';
+import { simulatorTour } from '@/lib/tours';
 
 export const revalidate = 60;
 export const metadata: Metadata = { title: 'ตัวจำลองการบิน', alternates: { canonical: '/simulator' }, description: 'เขียนโค้ดสั่งโดรนแล้วดูบินในสนาม 3 มิติขนาดจริง มีโจทย์ฝึกบนสนามกริด 5×5 เมตร ห่วง จุดผ่าน และต้นแบบภารกิจแข่ง' };
@@ -15,6 +17,7 @@ export default async function Page() {
   return (
     <>
       <Header />
+      <Tour id="simulator" steps={simulatorTour} />
       <JsonLd data={simulatorSchema()} />
       <Breadcrumbs items={[{ label: 'ตัวจำลองการบิน' }]} />
       <Suspense fallback={<div className="p-24 text-center text-muted-foreground">กำลังโหลด…</div>}>
