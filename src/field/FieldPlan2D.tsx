@@ -28,6 +28,7 @@ export function FieldPlan2D({
     return { x: Math.max(-lim, Math.min(lim, x)), y: Math.max(-lim, Math.min(lim, y)) };
   };
   const hd = drone ? heading(drone.yaw) : null;
+  const custom = !!scene && scene.pattern !== 'standard'; // โจทย์ฝึกวางวัตถุเอง: ไม่วาดแท่น/ลูกโป่ง/เป้าของสนามแข่ง
 
   return (
     <svg
@@ -55,12 +56,12 @@ export function FieldPlan2D({
         {scene && <ScenePlanLayer pattern={scene.pattern} objects={scene.objects} visits={scene.visits} />}
 
         {/* แท่นทิ้ง/Check Point วงกลม */}
-        {event.field.platforms && FIELD.platform.positions.map(([x, y], i) => (
+        {!custom && event.field.platforms && FIELD.platform.positions.map(([x, y], i) => (
           <circle key={i} cx={x} cy={y} r={FIELD.platform.radius} fill="#1d3fae" stroke="#fff" strokeWidth={0.04} />
         ))}
 
         {/* เสาลูกโป่ง */}
-        {event.field.balloons && FIELD.balloons.groups.flatMap((g, gi) => [-1, 0, 1].map((k) => {
+        {!custom && event.field.balloons && FIELD.balloons.groups.flatMap((g, gi) => [-1, 0, 1].map((k) => {
           const x = g.center[0] + (g.along === 'x' ? k * FIELD.balloons.spacing : 0);
           const y = g.center[1] + (g.along === 'y' ? k * FIELD.balloons.spacing : 0);
           return (
@@ -72,7 +73,7 @@ export function FieldPlan2D({
         }))}
 
         {/* เป้ายิง + วงห้ามยิงในระยะ 1 ม. */}
-        {event.field.targets && FIELD.target.positions.map(([x, y], i) => (
+        {!custom && event.field.targets && FIELD.target.positions.map(([x, y], i) => (
           <g key={i}>
             <circle cx={x} cy={y} r={FIELD.target.minShootDistance} fill="none" stroke="#4aa3ff" strokeWidth={0.03} strokeDasharray="0.12 0.1" />
             <rect x={x - 0.5} y={y - 0.04} width={1} height={0.08} fill="#f28c00" />

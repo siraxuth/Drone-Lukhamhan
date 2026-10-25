@@ -102,25 +102,33 @@ function Waypoint({ o, spec, playheadRef }: { o: Extract<SceneObject, { type: 'w
 
 function Hoop({ o, spec, playheadRef }: { o: Extract<SceneObject, { type: 'hoop' }>; spec: SceneSpec; playheadRef?: React.RefObject<number> }) {
   const reg = useVisited(o.id, spec, playheadRef);
-  const w = o.size ?? 1, bottom = Math.max(0, ((o.zMin ?? 55) - 12) / 100), top = ((o.zMax ?? 150) + 12) / 100, h = top - bottom, t = 0.045;
+  // โครงห่วงตามที่เอนจินใช้ชน: เสา 2 ข้างตั้งจากพื้น คานล่าง/คานบนห่างจากช่องลอด 12 ซม. ฐานถ่วงรองใต้เสาทั้งสองข้าง
+  const w = o.size ?? 1, bottom = Math.max(0, ((o.zMin ?? 55) - 12) / 100), top = ((o.zMax ?? 150) + 12) / 100, t = 0.045;
+  const foot = 0.42, footH = 0.035;
   return (
     <group position={p3(o.x, o.y)} rotation={[0, -((o.yaw ?? 0) * Math.PI) / 180, 0]}>
-      {[[0, bottom + h / 2, -w / 2 - t / 2, t, h + t * 2], [0, bottom + h / 2, w / 2 + t / 2, t, h + t * 2]].map(([x, y, z, tt, hh], i) => (
-        <mesh key={i} position={[x, y, z]}>
-          <boxGeometry args={[tt, hh, tt]} />
-          <meshBasicMaterial ref={(m) => reg(m, ORANGE)} color={ORANGE} />
-        </mesh>
+      {[-1, 1].map((side) => (
+        <group key={side}>
+          <mesh position={[side * (w / 2 + t / 2), (top + t) / 2, 0]}>
+            <boxGeometry args={[t, top + t, t]} />
+            <meshBasicMaterial ref={(m) => reg(m, ORANGE)} color={ORANGE} />
+          </mesh>
+          <mesh position={[side * (w / 2 + t / 2), footH / 2, 0]}>
+            <boxGeometry args={[0.13, footH, foot]} />
+            <meshStandardMaterial color="#2a2f3a" roughness={0.7} />
+          </mesh>
+          <mesh position={[side * (w / 2 + t / 2), footH + 0.012, 0]}>
+            <boxGeometry args={[0.1, 0.024, 0.1]} />
+            <meshStandardMaterial color="#454c5c" roughness={0.6} metalness={0.3} />
+          </mesh>
+        </group>
       ))}
       {[bottom - t / 2, top + t / 2].map((y, i) => (
         <mesh key={i} position={[0, y, 0]}>
-          <boxGeometry args={[t, t, w + t * 2]} />
+          <boxGeometry args={[w + t * 2, t, t]} />
           <meshBasicMaterial ref={(m) => reg(m, ORANGE)} color={ORANGE} />
         </mesh>
       ))}
-      <mesh position={[0, bottom + h / 2, 0]}>
-        <planeGeometry args={[0.001, 0.001]} />
-        <meshBasicMaterial visible={false} />
-      </mesh>
     </group>
   );
 }

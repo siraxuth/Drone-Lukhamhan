@@ -61,6 +61,7 @@ export function ScenePlanLayer({ pattern, objects, visits = {}, selected, labels
               {ring}
               <g transform={`translate(${o.x} ${o.y}) rotate(${-(o.yaw ?? 0)})`}>
                 <line x1={-w} y1={0} x2={w} y2={0} stroke={done ? '#22c55e' : COLOR.hoop} strokeWidth={0.1} strokeLinecap="round" />
+                {[-w, w].map((fx) => <rect key={fx} x={fx - 0.05} y={-0.21} width={0.1} height={0.42} fill="#475066" />)}
                 <path d="M0 0.12 L0.1 -0.05 L-0.1 -0.05Z" transform="translate(0 0.25)" fill={done ? '#22c55e' : COLOR.hoop} />
               </g>
             </g>

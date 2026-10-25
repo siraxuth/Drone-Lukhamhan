@@ -245,13 +245,26 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
                 </div>
               )}
               {selected.type === 'hoop' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <Num label="ทิศที่ลอด (0 = เหนือ-ใต้ 90 = ตะวันออก-ตก)" unit="องศา" step={45} value={selected.yaw ?? 0} onChange={(v) => patch(selected.id, { yaw: v ?? 0 })} />
-                  <Num label="คะแนน" value={selected.points ?? 15} min={0} onChange={(v) => patch(selected.id, { points: v ?? 0 })} />
-                  <Num label="ความกว้างช่อง" unit="ม." step={0.1} min={0.3} value={selected.size ?? 1} onChange={(v) => patch(selected.id, { size: v })} />
-                  <span />
-                  <Num label="ความสูงช่องต่ำสุด" unit="ซม." value={selected.zMin ?? 55} onChange={(v) => patch(selected.id, { zMin: v })} />
-                  <Num label="ความสูงช่องสูงสุด" unit="ซม." value={selected.zMax ?? 150} onChange={(v) => patch(selected.id, { zMax: v })} />
+                <div className="grid gap-3">
+                  <div className="grid gap-1.5">
+                    <p className="text-sm text-muted-foreground">หมุนห่วง (ทิศที่โดรนลอดผ่าน)</p>
+                    <div role="radiogroup" aria-label="หมุนห่วง" className="grid grid-cols-4 gap-2">
+                      {[{ v: 0, l: 'เหนือ-ใต้', a: '↕' }, { v: 45, l: 'เฉียง 45°', a: '⤢' }, { v: 90, l: 'ตะวันออก-ตก', a: '↔' }, { v: 135, l: 'เฉียง 135°', a: '⤡' }].map((d) => (
+                        <button key={d.v} type="button" role="radio" aria-checked={((((selected.yaw ?? 0) % 180) + 180) % 180) === d.v} onClick={() => patch(selected.id, { yaw: d.v })}
+                          className={`grid min-h-12 place-items-center squircle-xl border px-1 py-1.5 text-sm transition-colors ${((((selected.yaw ?? 0) % 180) + 180) % 180) === d.v ? 'border-brand-blue bg-brand-blue/10 font-bold' : 'border-line hover:bg-surface-2'}`}>
+                          <span className="text-lg leading-none">{d.a}</span>{d.l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Num label="องศาที่หมุน (กรอกเองได้)" unit="องศา" step={15} value={selected.yaw ?? 0} onChange={(v) => patch(selected.id, { yaw: v ?? 0 })} />
+                    <Num label="ความกว้างช่อง" unit="ม." step={0.1} min={0.3} value={selected.size ?? 1} onChange={(v) => patch(selected.id, { size: v })} />
+                    <Num label="ขอบล่างของช่องสูงจากพื้น" unit="ซม." value={selected.zMin ?? 55} min={0} onChange={(v) => patch(selected.id, { zMin: v })} />
+                    <Num label="ขอบบนของช่องสูงจากพื้น" unit="ซม." value={selected.zMax ?? 150} min={0} onChange={(v) => patch(selected.id, { zMax: v })} />
+                    <Num label="คะแนนที่ลอดผ่าน" value={selected.points ?? 15} min={0} onChange={(v) => patch(selected.id, { points: v ?? 0 })} />
+                  </div>
+                  <p className="squircle-xl bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">ห่วงมีเสา คานบน-ล่าง และฐานตั้งพื้นจริง โดรนต้องผ่านกลางช่องตามความสูงที่ตั้ง ถ้าเฉี่ยวเสาหรือคานโดรนจะตกและจบภารกิจ</p>
                 </div>
               )}
               {selected.type === 'platform' && <Num label="รัศมีแท่น" unit="ม." step={0.1} min={0.2} value={selected.r ?? 0.5} onChange={(v) => patch(selected.id, { r: v })} />}

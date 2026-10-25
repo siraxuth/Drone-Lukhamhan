@@ -234,6 +234,7 @@ export function simulate(code: string, cfg: FlightConfig): Result {
         y += (vy * BRAKE_MS) / 2;
         t += BRAKE_MS;
         scanNeedleContacts(firstFrame, line);
+        hoopCrash(firstFrame, line);
     };
     /** หมุนด้วยมือได้บนแท่นเริ่มและแท่นวงกลมเมื่อโดรนลงจอดแล้ว */
     const onPadNow = () => (padC === null ? !flying : onPadAt(x, y));
@@ -295,6 +296,55 @@ export function simulate(code: string, cfg: FlightConfig): Result {
             }
         }
     };
+    /**
+     * ชนโครงห่วง: ตรวจเส้นทางบินทุก ~2 ซม. เทียบโครงห่วง (เสา 2 ข้างตั้งจากพื้น + คานบน + คานล่าง)
+     * ถ้าศูนย์กลางโดรนเข้าในระยะตัวเครื่อง (~11 ซม.) ของโครง → ตัดเส้นทาง ณ จุดชน แล้วโดรนตกลงพื้น (จบภารกิจ)
+     * ช่องลอดคือ |ข้าง| ≤ ครึ่งความกว้าง และความสูงอยู่ใน zMin–zMax · ใต้คานล่างบินลอดได้ถ้าต่ำพอ
+     */
+    const hoopCrash = (firstFrame: number, line: number) => {
+        const hoops = cfg.hoops ?? [];
+        if (!flying || !hoops.length) return false;
+        const BAR = 4.5, BODY = 11, DEPTH = BAR / 2 + 5;
+        for (let i = firstFrame; i < frames.length - 1; i++) {
+            const a = frames[i], b = frames[i + 1];
+            const len = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+            const steps = Math.max(1, Math.ceil(len / 2));
+            for (let st = 1; st <= steps; st++) {
+                const u = st / steps;
+                const px = a.x + (b.x - a.x) * u, py = a.y + (b.y - a.y) * u, pz = a.z + (b.z - a.z) * u;
+                for (const h of hoops) {
+                    const nx = Math.sin(rad(h.yaw)), ny = -Math.cos(rad(h.yaw));
+                    const along = (px - h.x) * nx + (py - h.y) * ny;
+                    if (Math.abs(along) > DEPTH) continue;
+                    const lat = (px - h.x) * -ny + (py - h.y) * nx;
+                    const half = h.size / 2;
+                    const bottomEdge = Math.max(0, h.zMin - 12 - BAR), topEdge = h.zMax + 12 + BAR;
+                    const inGap = Math.abs(lat) <= half && pz >= h.zMin && pz <= h.zMax;
+                    const outer = Math.abs(lat) <= half + BAR + BODY;
+                    const hit = !inGap && outer && pz <= topEdge + 7 && (Math.abs(lat) > half || pz >= bottomEdge - 5);
+                    if (!hit) continue;
+                    // ตัดเส้นทางที่จุดชน
+                    const tHit = a.t + (b.t - a.t) * u;
+                    frames.length = i + 1;
+                    frames.push({ t: tHit, x: px, y: py, z: pz, yaw: a.yaw + (b.yaw - a.yaw) * u });
+                    const vx = (b.x - a.x) / Math.max(1, b.t - a.t), vy = (b.y - a.y) / Math.max(1, b.t - a.t);
+                    x = px; y = py; z = pz; t = tHit; yaw = frames[frames.length - 1].yaw;
+                    ev({ kind: "error", line, text: `บรรทัด ${line}: โดรนชนโครงห่วง "${h.id}" ที่ความสูง ${Math.round(pz)} ซม. แล้วตกลงพื้น`, at: { x: px, y: py, z: pz }, id: h.id, ok: false });
+                    // ตกอย่างอิสระ (g = 980 ซม./วินาที²) ไถลต่ออีกเล็กน้อยตามแรงเฉื่อย
+                    const drop = Math.max(0, z - LEG_CM);
+                    const fallMs = Math.sqrt((2 * drop) / 980) * 1000;
+                    for (const f of [0.2, 0.4, 0.6, 0.8, 1]) {
+                        const tau = fallMs * f;
+                        frames.push({ t: t + tau, x: x + vx * tau * 0.25, y: y + vy * tau * 0.25, z: z - 0.5 * 980 * (tau / 1000) ** 2, yaw });
+                    }
+                    x += vx * fallMs * 0.25; y += vy * fallMs * 0.25; z = LEG_CM; t += fallMs;
+                    flying = false; crashed = true; cruise = null;
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
     const inHoopBox = () => Math.abs(x - cfg.start.x) <= cfg.hoop.half && Math.abs(y - cfg.start.y) <= cfg.hoop.half;
 
     /** เดินทางเป็นเส้นตรงต่อเนื่อง ตัดที่เวลาหมด และเช็กการลอดห่วงตอนออกจากกรอบ */
@@ -344,6 +394,7 @@ export function simulate(code: string, cfg: FlightConfig): Result {
         t += ms * k;
         push();
         scanNeedleContacts(firstFrame, line);
+        if (hoopCrash(firstFrame, line)) return false;
         if (k < 1) {
             timedOut = true;
             ev({ kind: "warn", text: "หมดเวลา 2 นาที 30 วินาที โดรนหยุดทำงาน" });
