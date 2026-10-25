@@ -39,6 +39,8 @@ type Props = {
   /** ปุ่มเล่นใหญ่ตรงกลางสนามเมื่อยังไม่เคยเล่น */
   bigPlay?: boolean;
   onResult?: (r: Result | null) => void;
+  /** เรียกเมื่อโดรนบินจบ (ใช้กับบทสอน) */
+  onFinish?: (r: Result) => void;
   /** คำที่ใช้บนปุ่ม */
   playLabel?: string;
   /** โจทย์ฝึก: ตั้งค่าเอนจินและวัตถุบนสนามเอง (ไม่ใส่ = สนามแข่งจริงตามประเภท) */
@@ -52,7 +54,7 @@ type Props = {
  * เครื่องเล่นการบินจำลอง: รันโค้ดผ่าน engine แล้วเล่นบนสนาม 3 มิติ พร้อมเสียง
  * ใช้ทั้งหน้า /field (เดโมโค้ดตัวอย่าง) และ /simulator (โค้ดที่ผู้ใช้เขียนเอง)
  */
-export function FlightRunner({ event, code, bigPlay = true, onResult, playLabel = 'เริ่มจำลองการบิน', config, scene, maxPoints }: Props) {
+export function FlightRunner({ event, code, bigPlay = true, onResult, onFinish, playLabel = 'เริ่มจำลองการบิน', config, scene, maxPoints }: Props) {
   const cfg = useMemo(() => config ?? buildConfig(event.id), [config, event.id]);
   // จุดวางโดรนตอนเริ่ม (ตามโจทย์) · สูงเท่าแท่น 20 ซม. ถ้าเริ่มบนฐาน ไม่งั้นเริ่มบนพื้น
   const { HOME, IDLE } = useMemo(() => {
@@ -72,6 +74,8 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, playLabel 
   const [highlight, setHighlight] = useState<ShotHighlight>(null);
   const [shotCallout, setShotCallout] = useState<{ id: number; ok: boolean; points: number; target?: string } | null>(null);
   const [popCallout, setPopCallout] = useState<{ id: number; points: number; target: string } | null>(null);
+  const [dropCallout, setDropCallout] = useState<{ id: number; points: number; balls: number; target: string } | null>(null);
+  const dropSequence = useRef(0);
   const [landingCallout, setLandingCallout] = useState<{ id: number; points: number; target: string } | null>(null);
   const [log, setLog] = useState<SimEvent[]>([]);
   const [muted, setMuted] = useState(false);
@@ -118,7 +122,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, playLabel 
     shotSequence.current = 0;
     popSequence.current = 0;
     landingSequence.current = 0;
-    setPose2d(HOME); setResult(null); setPlaying(false); setDone(false); setNow(0); setMarks(NO_MARKS); setHighlight(null); setShotCallout(null); setPopCallout(null); setLandingCallout(null); setLog([]); setHolding(false); setLoaded({ L: 0, R: 0 }); actRef.current.mode = 'idle';
+    setPose2d(HOME); setResult(null); setPlaying(false); setDone(false); setNow(0); setMarks(NO_MARKS); setHighlight(null); setShotCallout(null); setPopCallout(null); setDropCallout(null); setLandingCallout(null); setLog([]); setHolding(false); setLoaded({ L: 0, R: 0 }); actRef.current.mode = 'idle';
     onResult?.(null);
   }, [onResult]);
 
@@ -170,6 +174,12 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, playLabel 
       const c = p ? toField(p.x, p.y) : toField(e.at.x, e.at.y);
       const n = e.n ?? 1, gap = (e.dur ?? 300) / Math.max(1, n);
       const fromL = e.from?.L ?? 0;
+      // คะแนนเด้งเมื่อบอลชุดนี้ตกถึงแท่นครบ
+      later(() => {
+        const id = ++dropSequence.current;
+        setDropCallout({ id, points: e.points ?? 0, balls: n, target: p?.id ?? e.id ?? '' });
+        later(() => setDropCallout((current) => current?.id === id ? null : current), 1300 / sp);
+      }, ((n - 1) * gap + 300) / sp);
       for (let i = 0; i < n; i++) {
         later(() => setLoaded((l) => (i < fromL ? { ...l, L: Math.max(0, l.L - 1) } : { ...l, R: Math.max(0, l.R - 1) })), (i * gap) / sp);
         later(() => {
@@ -217,6 +227,8 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, playLabel 
     } else if (e.kind === 'error') a?.sfx('error');
   }, [cfg.platforms]);
 
+  useEffect(() => { if (done && result) onFinish?.(result); }, [done, result, onFinish]);
+
   const tick = useCallback((ts: number) => {
     const r = resultRef.current;
     if (!r) return;
@@ -246,8 +258,9 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, playLabel 
     p.x = fld.x; p.y = fld.y; p.alt = f.z / 100; p.yaw = f.yaw;
     p.pitch += (tp - p.pitch) * k; p.roll += (tr - p.roll) * k;
     // ใบพัด: ดับก่อนขึ้นบิน เร่งหลังขึ้นบิน ดับหลังลงจอด
-    const want = c.airborne ? 1 : 0;
-    c.spin += (want - c.spin) * (1 - Math.exp(-dt * 3));
+    // ช่วงสตาร์ทหลัง takeOff: รอบใบพัดไต่จากช้าไปเร็วตามที่ผู้เขียน delay ไว้ (ยกตัวเมื่อครบ 3000 ms)
+    if (!c.airborne && (f.rpm ?? 0) > 0) c.spin = f.rpm ?? 0;
+    else c.spin += ((c.airborne ? 1 : 0) - c.spin) * (1 - Math.exp(-dt * 3));
     p.spin = c.spin;
     c.speed += (clamp(sp / 1.2, 0, 1) - c.speed) * (1 - Math.exp(-dt * 4));
     audio.current?.motor(c.spin, c.speed);
@@ -361,6 +374,15 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, playLabel 
           )}
         </div>
         <div className="pointer-events-none absolute inset-x-0 top-[25%] z-10 flex justify-center px-4" aria-live="polite">
+          {dropCallout && (
+            <div key={dropCallout.id} className="flight-shot-pop border border-emerald-300/70 bg-[#10261d]/90 px-5 py-2 text-center text-white squircle-2xl shadow-[0_14px_50px_rgba(52,211,153,.35)] backdrop-blur-xl">
+              <div className="text-[10px] font-black text-emerald-200">BALL IN!</div>
+              <div className="text-2xl font-black text-amber-200 sm:text-3xl">{dropCallout.points > 0 ? `+${dropCallout.points} คะแนน` : dropCallout.points < 0 ? `${dropCallout.points} คะแนน` : 'ไม่ได้คะแนน'}</div>
+              <div className="text-xs font-semibold text-emerald-100">บอล {dropCallout.balls} ลูก · {dropCallout.target}</div>
+            </div>
+          )}
+        </div>
+        <div className="pointer-events-none absolute inset-x-0 top-[25%] z-10 flex justify-center px-4" aria-live="polite">
           {landingCallout && (
             <div key={landingCallout.id} className="flight-shot-pop border border-sky-300/70 bg-[#102338]/90 px-5 py-2 text-center text-white squircle-2xl shadow-[0_14px_50px_rgba(56,189,248,.35)] backdrop-blur-xl">
               <div className="text-[10px] font-black  text-sky-200">CHECKPOINT LANDED</div>
@@ -398,6 +420,25 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, playLabel 
           <Button variant="ghost" className="h-10 px-3 text-base" onClick={() => setMode(mode === '3d' ? '2d' : '3d')} disabled={mode === 'pending'}>{mode === '3d' ? 'ดูแบบ 2 มิติ' : 'ดูแบบ 3 มิติ'}</Button>
         </div>
       </div>
+
+      {/* สถานะการบิน: ตก/ชน/พัง หรือบินสำเร็จ */}
+      {done && result && (() => {
+        const crash = result.events.find((e) => e.kind === 'error' && e.t > 0);
+        const crashed = !!crash && /ตก|ชน|นอกสนาม|ยังไม่ได้ขึ้นบิน/.test(crash.text);
+        const first = result.events.find((e) => e.kind === 'error');
+        const warns = result.events.filter((e) => e.kind === 'warn').length;
+        const tone = first ? 'border-brand-red/50 bg-brand-red/10 text-brand-red' : warns ? 'border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+        return (
+          <div role="status" className={`flex items-start gap-3 squircle-xl border px-4 py-3 ${tone}`}>
+            <span aria-hidden className="text-2xl leading-none">{first ? (crashed ? '💥' : '⚠️') : warns ? '⚠️' : '✅'}</span>
+            <div className="min-w-0 text-base">
+              <p className="font-bold">{first ? (crashed ? 'โดรนตก / ชน / พัง' : 'โค้ดมีข้อผิดพลาด') : warns ? 'บินจบ แต่มีคำเตือน' : 'บินสำเร็จ ไม่ตก ไม่ชน'}</p>
+              {first && <p className="mt-0.5 text-sm">{first.text}</p>}
+              {!first && warns > 0 && <p className="mt-0.5 text-sm">ดูรายละเอียดในบันทึกการบินด้านล่าง</p>}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* บันทึกการบิน + สรุปคะแนน */}
       {(events.length > 0 || (done && result)) && (

@@ -1,3 +1,4 @@
+import { styleError, type Style } from "./style";
 /**
  * เอนจินจำลองการบินบนสนามจริง 10×10 ม. (ไม่ผูกกับ UI)
  * - คำสั่งสะท้อน DroneEasy ของโค้ดชมรม (drone_sanam5) และค่า ms/ซม. จาก config.hpp
@@ -42,6 +43,8 @@ export type FreeHoop = { id: string; x: number; y: number; size: number; yaw: nu
 export type Waypoint = { id: string; x: number; y: number; r: number; zMin: number; zMax: number; points: number; order?: number };
 
 export type FlightConfig = {
+    /** โหมดการเขียนโค้ด: any = ง่าย · drone = บังคับ drone. · parduino = บังคับ pArduino-> */
+    style?: Style;
     start: { x: number; y: number };
     pad: { half: number };
     hoop: { half: number; zMin: number; zMax: number };
@@ -63,7 +66,8 @@ export type FlightConfig = {
     waypoints?: Waypoint[];
 };
 
-export type Frame = { t: number; x: number; y: number; z: number; yaw: number };
+/** rpm = รอบใบพัด 0–1 (ช่วงสตาร์ทหมุนจากช้าไปเร็วตาม delay หลัง takeOff) */
+export type Frame = { t: number; x: number; y: number; z: number; yaw: number; rpm?: number };
 export type EventKind = "info" | "warn" | "error" | "drop" | "pop" | "shot" | "shot_b" | "land" | "takeoff" | "hold";
 export type SimEvent = {
     t: number;
@@ -97,35 +101,94 @@ export type Result = {
 
 type Call = { name: string; args: number[]; line: number };
 
-/** แยกโค้ดเป็นรายการคำสั่ง ไม่ใช้ eval จึงปลอดภัยแม้ผู้ใช้พิมพ์อะไรก็ได้ */
-export function parse(code: string): { calls: Call[]; errors: SimEvent[] } {
+/**
+ * ชื่อเมธอดของโค้ดจริง (pArduino-> และ drone.) → คำสั่งของเอนจิน
+ * to = ชื่อคำสั่งในเอนจิน · pick = เลือกอาร์กิวเมนต์ที่ใช้ (เช่น set_yaw(ทิศ, องศา) → ±องศา) · ไม่มีใน map = ใช้ชื่อเดิม
+ */
+const ALIAS: Record<string, { to: string; pick?: (a: number[]) => number[] }> = {
+    take_off: { to: "takeOff" },
+    auto_land: { to: "autoLand" },
+    stopmotor: { to: "settle", pick: () => [0] },
+    stop_motor: { to: "settle", pick: () => [0] },
+    set_height: { to: "sh" }, set_heights: { to: "sh" }, smooth_set_height: { to: "sh" }, sethight: { to: "sh" },
+    smoothsetheight: { to: "sh" }, holdheight: { to: "sh" }, poshold_heights: { to: "sh" },
+    move_forward_cm: { to: "fw" }, move_backward_cm: { to: "bw" }, move_left_cm: { to: "ml" }, move_right_cm: { to: "mr" },
+    move_forward_fast: { to: "fw" }, move_backward_fast: { to: "bw" }, move_left_fast: { to: "ml" }, move_right_fast: { to: "mr" },
+    moveforward: { to: "fw" }, movebackward: { to: "bw" }, moveleft: { to: "ml" }, moveright: { to: "mr" },
+    movefastforward: { to: "fw" }, movefastbackward: { to: "bw" }, movefastleft: { to: "ml" }, movefastright: { to: "mr" },
+    // set_yaw(1, 90) = ขวา 90° · set_yaw(2, 90) = ซ้าย 90°
+    set_yaw: { to: "yaw", pick: (a) => [(a[0] === 2 ? -1 : 1) * (a[1] ?? 0)] },
+    setyaw: { to: "yaw", pick: (a) => [(a[0] === 2 ? -1 : 1) * (a[1] ?? 0)] },
+    calibrate_and_delay: { to: "calibration" },
+};
+
+/** ข้ามเงียบๆ: โครงสเก็ตช์ Arduino ที่ตัวจำลองไม่ต้องใช้ (ไม่กระทบการบิน) */
+const IGNORE = [
+    /^#/, /^void\s+\w+\s*\(\s*(void)?\s*\)$/, /^(int|void)\s+main\s*\(.*\)$/,
+    /^(?:Serial|Wire|SPI)\s*\.\s*\w+\s*\(.*\)$/, /^(?:pinMode|digitalWrite)\s*\(.*\)$/,
+    /^(?:drone\s*\.\s*|pArduino\s*->\s*)(?:beginDefault|begin|poll|keyDo|raw)\s*\(.*\)$/,
+    /^(?:return)\b.*$/, /^else$/, /^while\s*\(\s*(?:true|1)\s*\)$/,
+];
+const DECL = /^(?:static\s+)?(?:const\s+)?(?:u?int(?:8|16|32)?_t|int|long|unsigned\s+long|unsigned\s+int|short|float|byte|uint16_t)\s+(\w+)\s*=\s*(-?\d+(?:\.\d+)?)$/;
+
+/** แยกโค้ดเป็นรายการคำสั่ง ไม่ใช้ eval จึงปลอดภัยแม้ผู้ใช้พิมพ์อะไรก็ได้
+ *  รับทั้ง `takeOff();` `drone.takeOff();` และ `pArduino->take_off();` รวมโครง setup()/loop() และค่าคงที่ตัวเลขแบบสเก็ตช์จริง */
+export function parse(code: string, style: Style = "any"): { calls: Call[]; errors: SimEvent[] } {
     const calls: Call[] = [];
     const errors: SimEvent[] = [];
+    const consts = new Map<string, number>();
+    let inBlock = false;
     code.split("\n").forEach((raw, i) => {
-        const line = raw.replace(/\/\/.*$/, "").trim();
-        if (!line) return;
-        for (const stmt of line
-            .split(";")
-            .map(s => s.trim())
-            .filter(Boolean)) {
-            const m =
-                /^(?:drone\.)?([A-Za-z_]\w*)\s*\(\s*([^)]*)\)$/.exec(stmt) ??
-                /^(?:drone\.)?([A-Za-z_]\w*)()$/.exec(stmt);
+        // ตัดคอมเมนต์ // และ /* */ (คงเลขบรรทัดไว้)
+        let text = "";
+        for (let k = 0; k < raw.length; k++) {
+            if (inBlock) { if (raw[k] === "*" && raw[k + 1] === "/") { inBlock = false; k++; } continue; }
+            if (raw[k] === "/" && raw[k + 1] === "*") { inBlock = true; k++; continue; }
+            if (raw[k] === "/" && raw[k + 1] === "/") break;
+            text += raw[k];
+        }
+        // C++ ต้องจบคำสั่งด้วย ; (บรรทัดที่จบด้วย { } หรือเป็นหัวฟังก์ชัน/#include ไม่ต้อง)
+        const tl = text.trim();
+        if (tl && !/[;{}]$/.test(tl) && !IGNORE.some(r => r.test(tl)) && !/^(?:if|for|while|else|switch)\b/.test(tl)) {
+            errors.push({ t: 0, kind: "error", line: i + 1, text: `บรรทัด ${i + 1}: ลืมเครื่องหมาย ; ท้ายคำสั่ง "${tl}"` });
+            return;
+        }
+        // ปีกกาแยกคำสั่งเหมือน ; (void setup() { a(); b(); } ทั้งบรรทัดก็ได้)
+        for (let stmt of text.replace(/[{}]/g, ";").split(";").map(s => s.trim()).filter(Boolean)) {
+            if (IGNORE.some(r => r.test(stmt))) continue;
+            const decl = DECL.exec(stmt);
+            if (decl) { consts.set(decl[1], Number(decl[2])); continue; }
+            const m = /^(?:drone\s*\.\s*|pArduino\s*->\s*|pArduino\s*\.\s*)?([A-Za-z_]\w*)\s*\(\s*([^)]*)\)$/.exec(stmt);
+            if (!m && /^(?:drone\s*\.\s*|pArduino\s*->\s*)?[A-Za-z_]\w*$/.test(stmt)) {
+                errors.push({ t: 0, kind: "error", line: i + 1, text: `บรรทัด ${i + 1}: "${stmt}" ลืมวงเล็บ () (ถ้าเป็นคำสั่งต้องเขียน ${stmt}();)` });
+                continue;
+            }
             if (!m) {
                 errors.push({
                     t: 0,
                     kind: "error",
                     line: i + 1,
-                    text: `บรรทัด ${i + 1}: อ่านคำสั่งไม่ออก "${stmt}" (ลืมวงเล็บหรือเปล่า?)`,
+                    text: `บรรทัด ${i + 1}: อ่านคำสั่งไม่ออก "${stmt}" (ลืมวงเล็บหรือเปล่า?) · ตัวจำลองยังไม่รองรับ if / for / while`,
                 });
                 continue;
             }
-            const args = m[2] ? m[2].split(",").map(a => Number(a.trim())) : [];
+            let args = m[2]
+                ? m[2].split(",").map(a => {
+                      const tok = a.trim();
+                      return consts.has(tok) ? (consts.get(tok) as number) : Number(tok);
+                  })
+                : [];
             if (args.some(a => Number.isNaN(a))) {
-                errors.push({ t: 0, kind: "error", line: i + 1, text: `บรรทัด ${i + 1}: ค่าในวงเล็บต้องเป็นตัวเลข` });
+                errors.push({ t: 0, kind: "error", line: i + 1, text: `บรรทัด ${i + 1}: ค่าในวงเล็บต้องเป็นตัวเลข (หรือชื่อค่าคงที่ที่ประกาศไว้ข้างบน)` });
                 continue;
             }
-            calls.push({ name: m[1], args, line: i + 1 });
+            const prefix = /^drone\s*\./.test(stmt) ? "drone" : /^pArduino/.test(stmt) ? "parduino" : null;
+            const se = styleError(style, prefix, m[1]);
+            if (se) { errors.push({ t: 0, kind: "error", line: i + 1, text: `บรรทัด ${i + 1}: ${se}` }); continue; }
+            let name = m[1];
+            const al = ALIAS[name] ?? ALIAS[name.toLowerCase()];
+            if (al) { name = al.to; if (al.pick) args = al.pick(args); }
+            calls.push({ name, args, line: i + 1 });
         }
     });
     return { calls, errors };
@@ -192,7 +255,7 @@ function evalExtras(frames: Frame[], cfg: FlightConfig): { visits: Result["visit
 }
 
 export function simulate(code: string, cfg: FlightConfig): Result {
-    const { calls, errors } = parse(code);
+    const { calls, errors } = parse(code, cfg.style ?? "any");
     const events: SimEvent[] = [...errors];
     const padC = cfg.padAt === undefined ? cfg.start : cfg.padAt; // null = ไม่มีฐาน
     const onPadAt = (px: number, py: number) => padC !== null && Math.abs(px - padC.x) <= cfg.pad.half && Math.abs(py - padC.y) <= cfg.pad.half;
@@ -204,7 +267,6 @@ export function simulate(code: string, cfg: FlightConfig): Result {
     const mag = { L: 0, R: 0 }; // ชุดบอลซ้าย (ประตู 1&4) และขวา (ประตู 2&3)
     const frames: Frame[] = [{ t, x, y, z, yaw }];
     let flying = false,
-        calibrated = false,
         crashed = false,
         timedOut = false;
     let leftHoop = false,
@@ -217,7 +279,12 @@ export function simulate(code: string, cfg: FlightConfig): Result {
     const bestRing = new Map<string, number>(); // เป้า → วงที่น้อยที่สุดที่ยิงถูก (กติกา: นับลูกคะแนนน้อยสุด)
     let shotsMade = 0;
 
-    const push = () => frames.push({ t, x, y, z, yaw });
+    /** ตั้งศูนย์/สตาร์ทมอเตอร์ในโค้ดจริงเป็นแค่ "ส่งคำสั่ง" ไม่รอให้เสร็จ: ผู้เขียนต้อง delay เอง */
+    const CALIB_MS = 3000, SPINUP_MS = 3000;
+    let calibStart: number | null = null; // เวลาที่สั่ง calibration ล่าสุด (null = ยังไม่เคยสั่ง)
+    let armedAt: number | null = null; // เวลาที่สั่ง takeOff แต่ยังไม่ยกตัว
+    const rpmNow = () => (flying ? 1 : armedAt !== null ? Math.min(1, Math.max(0, (t - armedAt) / SPINUP_MS)) : 0);
+    const push = () => frames.push({ t, x, y, z, yaw, rpm: rpmNow() });
     /** ความเร็วเดินทางล่าสุด (ซม./มิลลิวินาที) ของคำสั่งเดินที่เพิ่งจบ ใช้คำนวณระยะเบรก */
     let cruise: { vx: number; vy: number } | null = null;
     /** เบรกหลังคำสั่งเดิน (poshold ท้ายคำสั่งในโค้ดจริง): ลดความเร็วเป็นศูนย์ ไหลต่อไปอีก v·T/2 */
@@ -410,6 +477,24 @@ export function simulate(code: string, cfg: FlightConfig): Result {
         const info = (text: string) => ev({ kind: "info", line: c.line, text });
         const needFly = (what: string) => {
             if (flying) return true;
+            if (armedAt !== null) {
+                // takeOff สั่งแล้ว: ใบพัดต้องหมุนไต่ขึ้นครบ SPINUP_MS ถึงจะยกตัว (เวลา delay หลัง takeOff ยิ่งนาน ยิ่งยกตัวช้าลง)
+                const waited = t - armedAt;
+                if (waited >= SPINUP_MS - 1) {
+                    armedAt = null;
+                    flying = true;
+                    leftHoop = !inHoopBox();
+                    ev({ kind: "takeoff", line: c.line, text: `ใบพัดหมุนเต็มที่หลังรอ ${Math.round(waited)} ms · ยกตัวขึ้น (ลอยสูงจากแท่น ${TAKEOFF_CM} ซม.)`, at: { x, y, z } });
+                    travel(0, 0, TAKEOFF_CM, 0, TAKEOFF_CM * MS_PER_CM_CLIMB * 2, c.line);
+                    return true;
+                }
+                ev({ kind: "error", line: c.line, text: `บรรทัด ${c.line}: สั่ง ${what} หลัง takeOff แค่ ${Math.round(waited)} ms ใบพัดยังหมุนไม่เร็วพอ โดรนบินไม่ขึ้น (ต้อง delay(${SPINUP_MS}) ขึ้นไปหลัง takeOff())` });
+                crashed = true;
+                armedAt = null;
+                t += 600; // ใบพัดค่อยๆ หยุด
+                push();
+                return false;
+            }
             ev({ kind: "error", line: c.line, text: `บรรทัด ${c.line}: โดรนยังไม่ได้ขึ้นบิน สั่ง ${what} ไม่ได้` });
             crashed = true;
             return false;
@@ -418,36 +503,39 @@ export function simulate(code: string, cfg: FlightConfig): Result {
         switch (name) {
             case "calibration":
             case "calibrateanddelay":
-            case "calibrate":
+            case "calibrate": {
                 if (flying) {
                     ev({ kind: "warn", line: c.line, text: "ปรับเทียบไจโรขณะบิน ไม่ควรทำ ต้องทำก่อนขึ้นบิน" });
                     break;
                 }
-                t += 3000;
-                calibrated = true;
-                push();
-                info("ตั้งศูนย์เสร็จ (รอ 3 วินาที)");
+                calibStart = t;
+                if (name !== "calibration") {
+                    // calibrateAndDelay(ms) = calibration + delay(ms) ในคำสั่งเดียว
+                    t += Math.max(0, a ?? 0);
+                    push();
+                    info(`ตั้งศูนย์ไจโรและรอ ${a ?? 0} ms`);
+                } else info(`เริ่มตั้งศูนย์ไจโร (ต้อง delay อย่างน้อย ${CALIB_MS} ms ก่อนสั่ง takeOff)`);
                 break;
+            }
             case "takeoff":
-                if (flying) {
+                if (flying || armedAt !== null) {
                     ev({ kind: "warn", line: c.line, text: "โดรนบินอยู่แล้ว" });
                     break;
                 }
-                if (!calibrated)
+                if (calibStart === null)
                     ev({
                         kind: "warn",
                         line: c.line,
                         text: "ยังไม่ได้ calibration ก่อนขึ้นบิน โดรนจริงอาจเอียงหรือลอยไม่นิ่ง",
                     });
-                flying = true;
-                leftHoop = !inHoopBox();
-                ev({
-                    kind: "takeoff",
-                    line: c.line,
-                    text: `ขึ้นบิน (ลอยสูงจากแท่น ${TAKEOFF_CM} ซม.)`,
-                    at: { x, y, z },
-                });
-                travel(0, 0, TAKEOFF_CM, 0, TAKEOFF_CM * MS_PER_CM_CLIMB * 2, c.line);
+                else if (t - calibStart < CALIB_MS - 1) {
+                    ev({ kind: "error", line: c.line, text: `บรรทัด ${c.line}: สั่ง takeOff หลัง calibration แค่ ${Math.round(t - calibStart)} ms ไจโรยังตั้งศูนย์ไม่เสร็จ โดรนบินไม่ขึ้น (ต้อง delay(${CALIB_MS}) ขึ้นไปหลัง calibration())` });
+                    crashed = true;
+                    break;
+                }
+                armedAt = t;
+                push();
+                ev({ kind: "info", line: c.line, text: `สั่ง takeOff แล้ว ใบพัดเริ่มหมุน ต้องรอ delay(${SPINUP_MS}) ขึ้นไป โดรนถึงจะยกตัว` });
                 break;
             case "sh":
             case "setheight": {
@@ -527,6 +615,7 @@ export function simulate(code: string, cfg: FlightConfig): Result {
                 break;
             }
             case "autoland": {
+                if (!flying && armedAt !== null && !needFly("autoLand()")) break;
                 if (!flying) {
                     ev({ kind: "warn", line: c.line, text: "โดรนอยู่บนพื้นแล้ว" });
                     break;
@@ -803,6 +892,7 @@ export function simulate(code: string, cfg: FlightConfig): Result {
         }
     }
 
+    if (!crashed && !timedOut && armedAt !== null) ev({ kind: "warn", text: "สั่ง takeOff แล้วแต่โปรแกรมจบก่อนโดรนจะยกตัว (ต้อง delay อย่างน้อย 3000 ms หลัง takeOff)" });
     if (!crashed && !timedOut && flying) ev({ kind: "warn", text: "จบโปรแกรมแล้วโดรนยังบินอยู่ อย่าลืม autoLand()" });
     if (!crashed && !timedOut && !landedOnPad && !flying && calls.length)
         ev({ kind: "warn", text: "ยังไม่ได้ลงจอดบนแท่น Takeoff จึงยังไม่หยุดเวลา" });
@@ -871,6 +961,7 @@ export function frameAt(frames: Frame[], t: number): Frame {
                 y: a.y + (b.y - a.y) * k,
                 z: a.z + (b.z - a.z) * k,
                 yaw: a.yaw + (b.yaw - a.yaw) * k,
+                rpm: (a.rpm ?? 0) + ((b.rpm ?? 0) - (a.rpm ?? 0)) * k,
             };
         }
     }
