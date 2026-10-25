@@ -13,6 +13,9 @@ export class FlightAudio {
   private bus: GainNode | null = null; // ทางเข้าของเอฟเฟกต์ (ผ่านเสียงสะท้อน)
   private motorGain: GainNode | null = null;
   private motorOscs: OscillatorNode[] = [];
+  private motorRatio: number[] = [];
+  private whine: OscillatorNode | null = null;
+  private whineGain: GainNode | null = null;
   private motorFilter: BiquadFilterNode | null = null;
   private airFilter: BiquadFilterNode | null = null;
   private airGain: GainNode | null = null;
@@ -63,41 +66,66 @@ export class FlightAudio {
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     this.noiseBuf = buf;
 
-    // เสียงมอเตอร์: สามเหลี่ยม 2 ตัวเพี้ยนเล็กน้อย + ไซน์ต่ำ → low-pass นุ่ม → สั่นช้าๆ เหมือนใบพัด
+    // เสียงโดรนควอดคอปเตอร์จริง: มอเตอร์ 4 ตัวหมุนไม่เท่ากันเล็กน้อย (จึงมีเสียงหึ่งแกว่งเป็นจังหวะ)
+    // แต่ละตัวเป็นคลื่นฟันเลื่อยที่มีฮาร์มอนิกของใบพัดครบชุด → ผ่านฟิลเตอร์ที่เปิด/ปิดตามรอบ
+    // ซ้อนด้วยเสียงลมตีใบพัด (สัญญาณรบกวนย่านกลาง-สูง) กับเสียงหวีดมอเตอร์ไฟฟ้าบางๆ
+    const FINE = [1, 1.012, 0.991, 1.021]; // อัตราส่วนรอบของมอเตอร์แต่ละตัว
     this.motorFilter = ctx.createBiquadFilter();
     this.motorFilter.type = 'lowpass';
-    this.motorFilter.frequency.value = 320;
-    this.motorFilter.Q.value = 0.7;
+    this.motorFilter.frequency.value = 900;
+    this.motorFilter.Q.value = 0.8;
+    const body = ctx.createBiquadFilter(); // ตัวเครื่อง/โครงสะท้อนเสียงย่านกลาง
+    body.type = 'peaking';
+    body.frequency.value = 780;
+    body.Q.value = 1.1;
+    body.gain.value = 5;
     this.motorGain = ctx.createGain();
     this.motorGain.gain.value = 0;
-    const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 0.12;
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 17;
-    lfo.connect(lfoGain).connect(this.motorGain.gain);
-    for (const [type, detune] of [['triangle', 0], ['triangle', 7], ['sine', -1200]] as const) {
+    const voices = ctx.createGain();
+    voices.gain.value = 0.22;
+    // รอบสั่นเล็กน้อย (ลมปะทะ/ระบบคุมการทรงตัวปรับรอบตลอดเวลา)
+    const jitter = ctx.createOscillator();
+    jitter.frequency.value = 7.3;
+    const jitterDepth = ctx.createGain();
+    jitterDepth.gain.value = 14; // เซ็นต์
+    jitter.connect(jitterDepth);
+    for (const k of FINE) {
       const o = ctx.createOscillator();
-      o.type = type;
-      o.frequency.value = 90;
-      o.detune.value = detune;
-      o.connect(this.motorFilter);
+      o.type = 'sawtooth';
+      o.frequency.value = 200 * k;
+      o.detune.value = 0;
+      jitterDepth.connect(o.detune);
+      o.connect(voices);
       o.start();
       this.motorOscs.push(o);
+      this.motorRatio.push(k);
     }
-    lfo.start();
-    this.motorFilter.connect(this.motorGain).connect(this.master);
+    jitter.start();
+    voices.connect(this.motorFilter).connect(body).connect(this.motorGain).connect(this.master);
 
-    // ลมจากใบพัดเบาๆ
+    // เสียงหวีดของมอเตอร์ (ความถี่สูง เบามาก)
+    this.whine = ctx.createOscillator();
+    this.whine.type = 'sine';
+    this.whine.frequency.value = 2600;
+    this.whineGain = ctx.createGain();
+    this.whineGain.gain.value = 0;
+    this.whine.connect(this.whineGain).connect(this.master);
+    this.whine.start();
+
+    // เสียงลมตีใบพัด: กว้างตั้งแต่ย่านกลางถึงสูง
     const air = ctx.createBufferSource();
     air.buffer = buf;
     air.loop = true;
+    const airHp = ctx.createBiquadFilter();
+    airHp.type = 'highpass';
+    airHp.frequency.value = 450;
     this.airFilter = ctx.createBiquadFilter();
-    this.airFilter.type = 'bandpass';
-    this.airFilter.frequency.value = 500;
-    this.airFilter.Q.value = 0.6;
+    this.airFilter.type = 'lowpass';
+    this.airFilter.frequency.value = 2500;
+    this.airFilter.Q.value = 0.5;
     this.airGain = ctx.createGain();
     this.airGain.gain.value = 0;
-    air.connect(this.airFilter).connect(this.airGain).connect(this.master);
+    air.connect(airHp).connect(this.airFilter).connect(this.airGain).connect(this.master);
     air.start();
   }
 
@@ -110,12 +138,17 @@ export class FlightAudio {
   motor(level: number, speed: number) {
     if (!this.ctx || !this.motorGain || !this.motorFilter || !this.airGain || !this.airFilter) return;
     const now = this.ctx.currentTime;
-    const f = 62 + level * 38 + speed * 22;
-    for (const o of this.motorOscs) o.frequency.setTargetAtTime(o.type === 'sine' ? f : f * 2, now, 0.15);
-    this.motorFilter.frequency.setTargetAtTime(220 + level * 260 + speed * 220, now, 0.2);
-    this.motorGain.gain.setTargetAtTime(level * 0.07, now, 0.25);
-    this.airFilter.frequency.setTargetAtTime(380 + level * 250 + speed * 450, now, 0.25);
-    this.airGain.gain.setTargetAtTime(level * (0.035 + speed * 0.035), now, 0.3);
+    // รอบเครื่อง: ลอยนิ่ง (level ~0.7) ราว 290 Hz · เร่งตอนบินเร็วแล้วเสียงสูงขึ้นเล็กน้อย
+    const f = 110 + level * 260 + speed * 70;
+    this.motorOscs.forEach((o, i) => o.frequency.setTargetAtTime(f * this.motorRatio[i], now, 0.12));
+    this.motorFilter.frequency.setTargetAtTime(500 + level * 1500 + speed * 700, now, 0.15);
+    this.motorGain.gain.setTargetAtTime(level * (0.2 + speed * 0.05), now, 0.2);
+    this.airFilter.frequency.setTargetAtTime(1200 + level * 2600 + speed * 1400, now, 0.2);
+    this.airGain.gain.setTargetAtTime(level * (0.04 + speed * 0.05), now, 0.25);
+    if (this.whine && this.whineGain) {
+      this.whine.frequency.setTargetAtTime(1900 + level * 1700 + speed * 400, now, 0.15);
+      this.whineGain.gain.setTargetAtTime(level * 0.006, now, 0.2);
+    }
   }
 
   private tone(freq: number, dur: number, opts: { type?: OscillatorType; gain?: number; to?: number; at?: number; attack?: number } = {}) {
@@ -171,8 +204,8 @@ export class FlightAudio {
     switch (kind) {
       case 'count': this.tone(523, 0.22, { gain: 0.1, attack: 0.03 }); break;
       case 'go': this.tone(784, 0.5, { gain: 0.12, attack: 0.03 }); this.tone(1175, 0.7, { gain: 0.09, at: 0.08, attack: 0.03 }); break;
-      case 'takeoff': this.noise(1.4, { type: 'bandpass', from: 200, to: 1500, gain: 0.1, q: 0.6 }); this.tone(110, 1.3, { type: 'sine', to: 220, gain: 0.08, attack: 0.2 }); break;
-      case 'land': this.noise(1.1, { type: 'bandpass', from: 1500, to: 220, gain: 0.08, q: 0.6 }); this.tone(220, 0.7, { to: 110, gain: 0.1, attack: 0.05 }); break;
+      case 'takeoff': this.noise(1.2, { type: 'bandpass', from: 600, to: 2800, gain: 0.05, q: 0.5 }); break;
+      case 'land': this.noise(0.9, { type: 'bandpass', from: 2400, to: 500, gain: 0.05, q: 0.5 }); break;
       case 'load': for (let i = 0; i < 4; i++) this.tone(330 + i * 40, 0.12, { type: 'triangle', gain: 0.05, at: i * 0.22, attack: 0.01 }); break;
       case 'hold': this.noise(0.35, { type: 'bandpass', from: 1100, to: 300, gain: 0.07, q: 0.7 }); this.tone(392, 0.35, { gain: 0.07, attack: 0.02 }); this.tone(587, 0.5, { gain: 0.07, at: 0.12, attack: 0.02 }); break;
       case 'drop': this.tone(520, 0.12, { to: 240, gain: 0.07, attack: 0.01 }); break;
@@ -188,7 +221,8 @@ export class FlightAudio {
   stopMotor() { this.motor(0, 0); }
 
   dispose() {
-    this.motorOscs.forEach((o) => { try { o.stop(); } catch { /* หยุดไปแล้ว */ } });
+    [...this.motorOscs, this.whine].forEach((o) => { try { o?.stop(); } catch { /* หยุดไปแล้ว */ } });
+    this.motorOscs = []; this.motorRatio = [];
     void this.ctx?.close();
     this.ctx = null;
   }
