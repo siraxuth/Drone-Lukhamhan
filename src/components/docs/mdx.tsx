@@ -10,6 +10,7 @@ import { Bytes } from './Bytes';
 import { MsPerCmCalc, ServoCalc, ThrustCalc } from './Calculators';
 import { CmdDemo } from './demo/CmdDemo';
 import { Figure } from './Figure';
+import { ProjectFiles } from './ProjectFiles';
 import { TryInSimulator } from './TryInSimulator';
 import { Waveform } from './Waveform';
 import { advancedFigures } from './figures/advanced';
@@ -43,7 +44,7 @@ export function getMDXComponents(extra?: MDXComponents): MDXComponents {
     ...defaultMdxComponents,
     Cards, Card,
     Accordion, Accordions, File, Files, Folder, Step, Steps, Tab, Tabs,
-    Figure, CmdDemo, Bytes, Waveform, TryInSimulator, ThrustCalc, MsPerCmCalc, ServoCalc,
+    Figure, ProjectFiles, CmdDemo, Bytes, Waveform, TryInSimulator, ThrustCalc, MsPerCmCalc, ServoCalc,
     ...startFigures, ...physicsFigures, ...electronicsFigures, ...arduinoFigures,
     ...codeFigures, ...mechanismsFigures, ...competeFigures, ...advancedFigures,
     ...extra,

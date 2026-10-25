@@ -18,47 +18,28 @@ description: ทุกไฟล์ในโปรเจกต์ทำหน้�
 
 ## 2. ไฟล์ทั้งหมด
 
-<Files>
-  <Folder name="drone_sanam5" defaultOpen>
-    <File name="drone_sanam5.ino" />
-    <File name="mode_config.hpp" />
-    <File name="config.hpp" />
-    <File name="Drone_Mission.ino" />
-    <File name="Aviation_Mastery.ino" />
-    <File name="Drone_Innovation_Challenge.ino" />
-    <File name="shooting.ino" />
-    <File name="poke_controls.ino" />
-    <File name="poke_controls.h" />
-    <File name="Servo.ino" />
-    <File name="Servo_Degree.ino" />
-    <File name="Test_ball.ino" />
-    <File name="DroneEasy.hpp" />
-    <File name="DroneEasy.cpp" />
-    <File name="protocol.hpp" />
-    <File name="protocol.cpp" />
-    <File name="LegacyActions.hpp" />
-    <File name="README.ino" />
-  </Folder>
-</Files>
+กดชื่อไฟล์ในต้นไม้เพื่ออ่านโค้ดจริงของไฟล์นั้น คัดลอกหรือดาวน์โหลดได้ ทุกไฟล์เป็นชุดเดียวกับที่ดาวน์โหลดได้ในหน้าติดตั้ง
 
-ไฟล์ที่ไม่ได้ใช้ในโปรแกรมถูกตัดออกจากชุดดาวน์โหลดแล้ว (ตัวสร้างเอกสาร PDF, `ledStrip.hpp` ที่ include ไฟล์ซึ่งไม่มีอยู่ และฟังก์ชันที่ไม่มีใครเรียก) ที่เหลือทุกไฟล์ถูกใช้จริง
+<ProjectFiles />
+
+ไฟล์ที่ไม่ได้ใช้ในโปรแกรมถูกตัดออกจากชุดดาวน์โหลดแล้ว (ตัวสร้างเอกสาร PDF, `ledStrip.hpp` ที่ include ไฟล์ซึ่งไม่มีอยู่ และฟังก์ชันที่ไม่มีใครเรียก) ไฟล์ที่เหลือ 18 ไฟล์ถูกคอมไพล์รวมกันทั้งหมด แต่ `Test_ball.ino` ไม่มีโหมดไหนเรียกฟังก์ชันในไฟล์ (ไว้เรียกเองตอนทดสอบ) และ `README.ino` ไม่มีโค้ดทำงาน
 
 | ไฟล์ | หน้าที่ |
 |---|---|
 | `drone_sanam5.ino` | ไฟล์หลัก มี `setup()` และ `loop()` ตัวกระจายโหมด |
 | `mode_config.hpp` | เลือกโหมดบิน ที่เดียว บรรทัดเดียว |
 | `config.hpp` | ค่าคงที่: ความสูง ระยะเจาะ ms ต่อ cm พัลส์เซอร์โว เวลาหมุน |
-| `Drone_Mission.ino` | โหมด 1: ปล่อยบอล/เจาะ/ยิง ผูกปุ่ม KEY 1–14 |
-| `Aviation_Mastery.ino` | โหมด 2: ชุดบินสนาม Aviation Mastery |
-| `Drone_Innovation_Challenge.ino` | โหมด 3: โหมดสำหรับ Innovation Challenge |
-| `shooting.ino` | ฟังก์ชันยิง: `swipe_left_S1()` และรอความสูงนิ่งก่อนยิง |
-| `poke_controls.ino` + `.h` | ฟังก์ชันเจาะลูกโป่ง `advance_and_poke_straight()` |
-| `Servo.ino` | ส่งพัลส์ตรงๆ `release_servo_angle()` ปล่อยบอล |
-| `Servo_Degree.ino` | แปลงองศาเป็นพัลส์ |
-| `Test_ball.ino` | ชุดทดสอบเซอร์โวปล่อยบอล |
+| `Drone_Mission.ino` | โหมด 1: ปล่อยบอล/เจาะ/ยิง ผูกปุ่ม KEY 1–10 และ 12–14 (ไม่มี KEY 11) |
+| `Aviation_Mastery.ino` | โหมด 2: ชุดบินสนาม Aviation Mastery ผูกปุ่ม KEY 1–4 |
+| `Drone_Innovation_Challenge.ino` | โหมด 3: ชุดภารกิจ Innovation Challenge ผูกปุ่ม KEY 1–4 และ 6 (KEY 5 ถูกคอมเมนต์ปิดไว้) |
+| `shooting.ino` | ยิงลูกดอก: `swipe_left_S1()` `swipe_right_S1()` (และชุด S2) กับชุด `reach_height_shoot_*()` ที่ไปความสูงยิงแล้วรอให้นิ่งก่อน |
+| `poke_controls.ino` + `.h` | เจาะลูกโป่ง: `advance_and_poke_straight()` และ `advance_and_poke_k6()` |
+| `Servo.ino` | ปล่อยบอล `drop_payload()` และส่งพัลส์ตรงๆ ด้วย `release_servo_angle()` |
+| `Servo_Degree.ino` | แปลงองศาเป็นพัลส์ `servo_degree_to_pulse()` และสั่งเซอร์โวด้วยองศา `release_servo_degree()` |
+| `Test_ball.ino` | ฟังก์ชันทดสอบ `test_release_the_ball()` กับ `target_shooting()` ยังไม่มีโหมดไหนเรียก |
 | `DroneEasy.hpp/.cpp` | คลาส `DroneEasy` และวัตถุ `drone` ห่อคำสั่งให้เรียกง่าย |
 | `protocol.hpp/.cpp` | คลาส `Arduino` และวัตถุ `pArduino` คุย I2C กับ FC |
-| `LegacyActions.hpp` | ประกาศชื่อฟังก์ชันของ `.ino` ให้ไฟล์ `.cpp` เรียกได้ |
+| `LegacyActions.hpp` | ประกาศชื่อฟังก์ชันของ `.ino` (เซอร์โว ยิง) ให้ `DroneEasy.hpp` เรียกใช้ได้ |
 | `README.ino` | ไฟล์อธิบายอยู่ในรูปคอมเมนต์ ไม่มีโค้ดทำงาน |
 
 ## 3. ใครเรียกใคร
@@ -123,8 +104,11 @@ void loop() {
 void loopDroneMissionMode() {
   drone.onKey1(DroneMission_KEY_1_handle);
   drone.onKey2(DroneMission_KEY_2_handle);
-  drone.onKey3(DroneMission_KEY_3_handle);
-  // ... ถึง KEY 14
+  // ... KEY 3 ถึง KEY 9 แบบเดียวกัน
+  drone.onKey10(KEY1_mode1);          // KEY 10 เรียก KEY1_mode1() ไม่มี KEY 11
+  drone.onKey12(DroneMission_KEY_12_handle);
+  drone.onKey13(DroneMission_KEY_13_handle);
+  drone.onKey14(DroneMission_KEY_14_handle);
 }
 ```
 
@@ -132,7 +116,7 @@ void loopDroneMissionMode() {
 
 ## 6. config.hpp: ค่าที่แก้บ่อยที่สุด
 
-ค่าที่จูนตามสนามอยู่ที่นี่หมด
+ค่าที่จูนตามสนามและแก้บ่อยที่สุดอยู่ที่นี่ (ตัดมาเฉพาะบางบรรทัด)
 
 ```cpp
 // config.hpp
@@ -148,11 +132,11 @@ const int S_RIGHT = 2000;
 
 `constexpr` กับ `const` คือค่าคงที่ที่ห้ามเปลี่ยน ใช้ชื่อแทนเลขดิบเพื่อให้โค้ดอ่านออก `HEIGHT_SHOOT` ชัดกว่า `120`
 
-บรรทัด `MS_PER_CM_FWD = 15.46f` มีความหมายว่า บินไปข้างหน้า 1 cm ใช้เวลา 15.46 ms ฟังก์ชัน `move_forward_cm(100)` จึง `delay` ประมาณ 1,546 ms คู่มือชมรมบอกให้ทดสอบบิน 100 cm จริง วัดระยะ แล้วปรับค่านี้
+บรรทัด `MS_PER_CM_FWD = 15.46f` มีความหมายว่า บินไปข้างหน้า 1 cm ใช้เวลา 15.46 ms สั่ง 100 cm จึงรอประมาณ 1,546 ms ในไฟล์จริงมีค่าเก่า `16.39f` คอมเมนต์ทิ้งไว้ข้างบนบรรทัดนี้ แสดงว่าค่านี้ถูกปรับมาแล้วอย่างน้อยหนึ่งครั้ง วิธีปรับเองคือสั่งบินจริง 100 cm วัดระยะที่ได้ แล้วแก้ตัวเลขตามสัดส่วน (ดูวิธีเต็มที่ [ระยะทางกับเวลา](/docs/code/distance-time))
 
 ## ลองทำ
 
-1. เปิด `mode_config.hpp` เปลี่ยน `ACTIVE_FLIGHT_MODE` เป็น `FLIGHT_MODE_AVIATION_MASTERY` แล้วกด Verify ดูขนาดโปรแกรม (ที่ทดสอบไว้: โหมด Mission 7,032 ไบต์ โหมด Aviation Mastery 5,654 ไบต์ เล็กลงเพราะโค้ดโหมดอื่นไม่ถูกใช้ จึงไม่ถูกใส่ลงชิป)
+1. เปิด `mode_config.hpp` เปลี่ยน `ACTIVE_FLIGHT_MODE` เป็น `FLIGHT_MODE_AVIATION_MASTERY` แล้วกด Verify ดูขนาดโปรแกรม (ที่คอมไพล์กับชุดดาวน์โหลดจริง บอร์ด Arduino Nano ATmega328P Old Bootloader: โหมด Mission 7,032 ไบต์ โหมด Aviation Mastery 5,654 ไบต์ โหมด Innovation Challenge 6,768 ไบต์ เล็กลงเพราะโค้ดโหมดอื่นไม่ถูกใช้ จึงไม่ถูกใส่ลงชิป)
 2. แก้เป็นเลขที่ไม่มี เช่น `#define ACTIVE_FLIGHT_MODE 9` กด Verify จะเห็น `#error` พร้อมข้อความไทยของจริง แล้วแก้กลับ
 3. หาว่า `HEIGHT_SHOOT` ถูกใช้กี่ที่ด้วย `grep -n HEIGHT_SHOOT *.ino *.hpp *.cpp`
 
