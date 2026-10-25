@@ -73,11 +73,10 @@ function makeArrow(color: string, clockwise: boolean) {
 
 function Drone({ url, onReady }: { url: string; onReady?: () => void }) {
   const { scene } = useGLTF(url);
-  // โมเดลถูกดึงและสร้างเสร็จแล้ว (ส่วนนี้ mount หลังพ้น Suspense) → รออีกสองเฟรมให้ภาพขึ้นจอก่อนค่อยบอกว่าพร้อม
+  // โมเดลถูกดึงและสร้างเสร็จแล้ว (ส่วนนี้ mount หลังพ้น Suspense) → รอเฟรมเดียวให้ภาพขึ้นจอก่อนค่อยบอกว่าพร้อม
   useEffect(() => {
-    let a = 0, b = 0;
-    a = requestAnimationFrame(() => { b = requestAnimationFrame(() => onReady?.()); });
-    return () => { cancelAnimationFrame(a); cancelAnimationFrame(b); };
+    const id = requestAnimationFrame(() => onReady?.());
+    return () => cancelAnimationFrame(id);
   }, [onReady]);
   const root = useRef<THREE.Group>(null);
   const view = useRef<THREE.Group>(null);

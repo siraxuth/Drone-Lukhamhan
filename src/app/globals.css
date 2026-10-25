@@ -494,7 +494,7 @@ html[data-scene3d="on"] .scene-poster { visibility: hidden; }
 .model-loader {
 	position: fixed; inset: 0; z-index: 100; display: grid; place-content: center; justify-items: center; gap: 14px;
 	background: var(--canvas); transition: opacity .35s ease, visibility .35s ease;
-	animation: model-loader-failsafe .01s 14s forwards;
+	animation: model-loader-failsafe .01s 4s forwards;
 }
 .model-loader[data-hide] { opacity: 0; visibility: hidden; pointer-events: none; }
 .model-loader-bar { position: relative; width: 140px; height: 3px; overflow: hidden; border-radius: 3px; background: color-mix(in oklab, var(--foreground) 14%, transparent); }

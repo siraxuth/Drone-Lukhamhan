@@ -44,7 +44,7 @@ export function SceneLayer() {
   const use3d = effective === 'low' || effective === 'high';
   const hide = ready || (effective === 'off' && mode !== 'pending') || (reduced && mode !== 'pending');
   useEffect(() => {
-    const t = setTimeout(() => setReady(true), 12000); // กันค้าง: เน็ตช้าจัดก็เปิดหน้าให้ใช้ก่อน
+    const t = setTimeout(() => setReady(true), 2600); // เพดานรวมไม่เกิน ~3 วินาทีนับจากเปิดหน้า: ช้ากว่านี้ก็เปิดหน้าให้ใช้ก่อน โมเดลค่อยโผล่ตามมา
     return () => clearTimeout(t);
   }, []);
 
