@@ -1,0 +1,491 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+@source "../../node_modules/fumadocs-ui/dist/**/*.js";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+	--color-canvas: var(--canvas);
+	--color-surface: var(--surface);
+	--color-surface-2: var(--surface-2);
+	--color-line: var(--line);
+	--color-emphasis: var(--emphasis);
+	--color-brand-blue: var(--brand-blue);
+	--color-brand-red: var(--brand-red);
+	--color-emphasis-foreground: var(--emphasis-foreground);
+	--color-foreground: var(--foreground);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-destructive: var(--destructive);
+	--color-background: var(--background);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--color-sidebar: var(--sidebar);
+	--color-sidebar-foreground: var(--sidebar-foreground);
+	--color-sidebar-primary: var(--sidebar-primary);
+	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+	--color-sidebar-accent: var(--sidebar-accent);
+	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+	--color-sidebar-border: var(--sidebar-border);
+	--color-sidebar-ring: var(--sidebar-ring);
+	--color-chart-1: var(--chart-1);
+	--color-chart-2: var(--chart-2);
+	--color-chart-3: var(--chart-3);
+	--color-chart-4: var(--chart-4);
+	--color-chart-5: var(--chart-5);
+	/* ฟอนต์เดียวทั้งเว็บ: Noto Sans Thai (ไทยและอังกฤษมาจากตระกูลเดียวกัน อ่านสบาย ไม่ลายตา) · โค้ดใช้ monospace ของระบบ */
+	--font-sans: "Noto Sans Thai Variable", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+	--font-display: var(--font-sans);
+	--font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
+	--radius-sm: 0.5rem;
+	--radius-md: 0.625rem;
+	--radius-lg: 0.75rem;
+	--radius-xl: 1rem;
+	--radius-2xl: 1.25rem;
+	--radius-3xl: 1.5rem;
+	--animate-line-shadow: line-shadow 15s linear infinite;
+	--animate-aurora: aurora 8s ease-in-out infinite alternate;
+	--animate-background-position-spin: background-position-spin 3000ms infinite alternate;
+	--animate-meteor: meteor 5s linear infinite;
+	--animate-marquee: marquee var(--duration) infinite linear;
+	--animate-marquee-vertical: marquee-vertical var(--duration) linear infinite;
+	--animate-shimmer-slide: shimmer-slide var(--speed) ease-in-out infinite alternate;
+	--animate-spin-around: spin-around calc(var(--speed) * 2) infinite linear;
+	--animate-ripple: ripple var(--duration,2s) ease calc(var(--i, 0)*.2s) infinite;
+	--animate-shiny-text: shiny-text 8s infinite;
+	--animate-gradient: gradient 8s linear infinite;
+	--animate-orbit: orbit calc(var(--duration)*1s) linear infinite;
+	--animate-blink-cursor: blink-cursor 1.2s step-end infinite;
+	--animate-shine: shine var(--duration) infinite linear;
+	--animate-pulse: pulse var(--duration) ease-out infinite;
+	--animate-pulse-ripple: pulse-ripple var(--duration) cubic-bezier(0.16, 1, 0.3, 1) infinite;
+	--animate-rippling: rippling var(--duration) ease-out;
+	--animate-rainbow: rainbow var(--speed, 2s) infinite linear;
+	--color-color-5: var(--color-5);
+	--color-color-4: var(--color-4);
+	--color-color-3: var(--color-3);
+	--color-color-2: var(--color-2);
+	--color-color-1: var(--color-1);
+  @keyframes line-shadow {
+  0% {
+    background-position: 0 0;
+		}
+  100% {
+    background-position: 100% -100%;
+		}
+	}
+  @keyframes aurora {
+  0% {
+    background-position: 0% 50%;
+    transform: rotate(-5deg) scale(0.9);
+		}
+  25% {
+    background-position: 50% 100%;
+    transform: rotate(5deg) scale(1.1);
+		}
+  50% {
+    background-position: 100% 50%;
+    transform: rotate(-3deg) scale(0.95);
+		}
+  75% {
+    background-position: 50% 0%;
+    transform: rotate(3deg) scale(1.05);
+		}
+  100% {
+    background-position: 0% 50%;
+    transform: rotate(-5deg) scale(0.9);
+		}
+	}
+  @keyframes background-position-spin {
+  0% {
+    background-position: top center;
+		}
+  100% {
+    background-position: bottom center;
+		}
+	}
+  @keyframes meteor {
+  0% {
+    transform: rotate(var(--angle)) translateX(0);
+    opacity: 1;
+		}
+  70% {
+    opacity: 1;
+		}
+  100% {
+    transform: rotate(var(--angle)) translateX(-500px);
+    opacity: 0;
+		}
+	}
+  @keyframes marquee {
+  from {
+    transform: translateX(0);
+		}
+  to {
+    transform: translateX(calc(-100% - var(--gap)));
+		}
+	}
+  @keyframes marquee-vertical {
+  from {
+    transform: translateY(0);
+		}
+  to {
+    transform: translateY(calc(-100% - var(--gap)));
+		}
+	}
+  @keyframes shimmer-slide {
+  to {
+    transform: translate(calc(100cqw - 100%), 0);
+		}
+	}
+  @keyframes spin-around {
+  0% {
+    transform: translateZ(0) rotate(0);
+		}
+  15%, 35% {
+    transform: translateZ(0) rotate(90deg);
+		}
+  65%, 85% {
+    transform: translateZ(0) rotate(270deg);
+		}
+  100% {
+    transform: translateZ(0) rotate(360deg);
+		}
+	}
+  @keyframes ripple {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+		}
+  50% {
+    transform: translate(-50%, -50%) scale(0.9);
+		}
+	}
+  @keyframes shiny-text {
+  0%, 90%, 100% {
+    background-position: calc(-100% - var(--shiny-width)) 0;
+		}
+  30%, 60% {
+    background-position: calc(100% + var(--shiny-width)) 0;
+		}
+	}
+  @keyframes gradient {
+  to {
+    background-position: var(--bg-size, 300%) 0;
+		}
+	}
+  @keyframes orbit {
+  0% {
+    transform: rotate(calc(var(--angle) * 1deg)) translateY(calc(var(--radius) * 1px)) rotate(calc(var(--angle) * -1deg));
+		}
+  100% {
+    transform: rotate(calc(var(--angle) * 1deg + 360deg)) translateY(calc(var(--radius) * 1px)) rotate(calc((var(--angle) * -1deg) - 360deg));
+		}
+	}
+  @keyframes blink-cursor {
+  0%, 49% {
+    opacity: 1;
+		}
+  50%, 100% {
+    opacity: 0;
+		}
+	}
+  @keyframes shine {
+  0% {
+    background-position: 0% 0%;
+		}
+  50% {
+    background-position: 100% 100%;
+		}
+  to {
+    background-position: 0% 0%;
+		}
+	}
+  @keyframes pulse {
+  0%, 100% {
+    boxShadow: 0 0 0 0 var(--pulse-color, oklch(from var(--bg) l c h / 0.5));
+		}
+  50% {
+    boxShadow: 0 0 0 var(--distance) var(--pulse-color, oklch(from var(--bg) l c h / 0.5));
+		}
+	}
+  @keyframes pulse-ripple {
+  0% {
+    boxShadow: 0 0 0 0 oklch(from var(--pulse-color, var(--bg)) l c h / 1);
+		}
+  100% {
+    boxShadow: 0 0 0 var(--distance) oklch(from var(--pulse-color, var(--bg)) l c h / 0);
+		}
+	}
+  @keyframes rippling {
+  0% {
+    opacity: 1;
+		}
+  100% {
+    transform: scale(2);
+    opacity: 0;
+		}
+	}
+  @keyframes rainbow {
+  0% {
+    background-position: 0%;
+		}
+  100% {
+    background-position: 200%;
+		}
+	}
+}
+
+:root {
+	color-scheme: light;
+	--radius: 1rem;
+	--canvas: oklch(0.985 0.002 247);
+	--surface: oklch(1 0 0);
+	--surface-2: oklch(0.965 0.003 247);
+	--line: oklch(0.9 0.004 247);
+	--brand-blue: oklch(0.54 0.19 250);
+	--brand-red: oklch(0.57 0.23 18);
+	--emphasis: oklch(0.35 0.012 260);
+	--emphasis-foreground: oklch(0.99 0 0);
+	--foreground: oklch(0.24 0.012 260);
+	--muted-foreground: oklch(0.44 0.012 260);
+	--destructive: oklch(0.55 0.19 25);
+	--background: var(--canvas);
+	--card: var(--surface);
+	--card-foreground: var(--foreground);
+	--popover: var(--surface);
+	--popover-foreground: var(--foreground);
+	--primary: var(--emphasis);
+	--primary-foreground: var(--emphasis-foreground);
+	--secondary: var(--surface-2);
+	--secondary-foreground: var(--foreground);
+	--muted: var(--surface-2);
+	--accent: var(--surface-2);
+	--accent-foreground: var(--foreground);
+	--border: var(--line);
+	--input: var(--line);
+	--ring: oklch(0.48 0.012 260);
+	--chart-1: oklch(0.35 0.012 260);
+	--chart-2: oklch(0.48 0.012 260);
+	--chart-3: oklch(0.6 0.01 260);
+	--chart-4: oklch(0.72 0.008 260);
+	--chart-5: oklch(0.82 0.006 260);
+	--sidebar: var(--surface-2);
+	--sidebar-foreground: var(--foreground);
+	--sidebar-primary: var(--emphasis);
+	--sidebar-primary-foreground: var(--emphasis-foreground);
+	--sidebar-accent: var(--surface);
+	--sidebar-accent-foreground: var(--foreground);
+	--sidebar-border: var(--line);
+	--sidebar-ring: var(--ring);
+	font-family: var(--font-sans);
+	font-optical-sizing: auto;
+	font-synthesis: none;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	--color-1: oklch(0.28 0.008 260);
+	--color-2: oklch(0.4 0.008 260);
+	--color-3: oklch(0.54 0.006 260);
+	--color-4: oklch(0.68 0.004 260);
+	--color-5: oklch(0.82 0.003 260);
+}
+
+* { box-sizing: border-box; }
+html { min-width: 320px; scroll-behavior: smooth; }
+body { margin: 0; background: var(--canvas); color: var(--foreground); }
+::selection { background: var(--line); color: var(--foreground); }
+body { line-height: 1.7; }
+@layer base { a { color: inherit; text-decoration: none; } }
+button, a { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid var(--emphasis); outline-offset: 4px; }
+
+/* ช่องค้นหาของ Fumadocs (Ctrl+K): ให้กรอบโฟกัสโค้งมนแบบ squircle แทนเส้นเหลี่ยม */
+[role="dialog"] input[type="text"],
+[role="dialog"] input:not([type]),
+[role="dialog"] input[type="search"] {
+  border-radius: 0.75rem;
+  corner-shape: squircle;
+  padding: 0.5rem 0.75rem;
+}
+[role="dialog"] input:focus-visible { outline: 2px solid color-mix(in oklab, var(--brand-blue) 70%, transparent); outline-offset: 2px; }
+:where([data-slot]) { corner-shape: squircle; }
+/* Magic UI parts that inherit or compute their radius still need the squircle curve. */
+[class*="rounded-[inherit]"], [class*="rounded-(--"], [class*="border-radius:var("] { corner-shape: squircle; }
+
+@utility squircle-sm { border-radius: 0.5rem; corner-shape: squircle; }
+@utility squircle-xl { border-radius: 0.75rem; corner-shape: squircle; }
+@utility squircle-2xl { border-radius: 1rem; corner-shape: squircle; }
+@utility squircle-3xl { border-radius: 1.5rem; corner-shape: squircle; }
+@utility squircle-panel { border-radius: 2rem; corner-shape: squircle; }
+
+/* Desktop pinned scene replaces the stacked hero, features and showcase. */
+.stage-on [data-classic] { display: none; }
+
+/* Staggered group reveal. The trigger attribute lives on an Astro wrapper, never on React-owned DOM. */
+@keyframes reveal-up { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }
+
+@keyframes flight-shot-pop {
+  0% { opacity: 0; transform: translateY(22px) scale(.68) rotate(-3deg); filter: blur(8px); }
+  55% { opacity: 1; transform: translateY(-5px) scale(1.1) rotate(1deg); filter: blur(0); }
+  78% { transform: translateY(2px) scale(.98) rotate(0); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.flight-shot-pop { animation: flight-shot-pop .42s cubic-bezier(.2,1.3,.3,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flight-shot-pop { animation: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+	.reveal-ready [data-reveal-group] [data-reveal-item] { opacity: 0; }
+	.reveal-ready [data-reveal-group][data-inview] [data-reveal-item] { animation: reveal-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i, 0) * 80ms); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+.dark {
+	color-scheme: dark;
+	--canvas: oklch(0.274 0.006 286);
+	--surface: oklch(0.31 0.006 286);
+	--surface-2: oklch(0.35 0.006 286);
+	--line: oklch(0.42 0.008 286);
+	--brand-blue: oklch(0.76 0.14 235);
+	--brand-red: oklch(0.72 0.19 15);
+	--emphasis: oklch(0.96 0.003 247);
+	--emphasis-foreground: oklch(0.24 0.012 260);
+	--foreground: oklch(0.97 0.002 247);
+	--muted-foreground: oklch(0.8 0.008 260);
+	--destructive: oklch(0.7 0.17 22);
+	--ring: oklch(0.78 0.01 260);
+	--chart-1: oklch(0.96 0.003 247);
+	--chart-2: oklch(0.82 0.006 260);
+	--chart-3: oklch(0.68 0.008 260);
+	--chart-4: oklch(0.54 0.01 260);
+	--chart-5: oklch(0.42 0.01 260);
+	--color-1: oklch(0.28 0.008 260);
+	--color-2: oklch(0.4 0.008 260);
+	--color-3: oklch(0.54 0.006 260);
+	--color-4: oklch(0.68 0.004 260);
+	--color-5: oklch(0.82 0.003 260);
+}
+  ::view-transition-old(root), ::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+}
+
+/* SmoothCursor sets body cursor to none; make links and buttons follow so only the component is visible. */
+body[style*="cursor: none"] * { cursor: none !important; }
+
+/* Fumadocs ใช้ token ชุดเดียวกับเว็บ */
+:root, .dark {
+	--color-fd-background: var(--canvas);
+	--color-fd-foreground: var(--foreground);
+	--color-fd-card: var(--surface);
+	--color-fd-muted: var(--surface-2);
+	--color-fd-muted-foreground: var(--muted-foreground);
+	--color-fd-border: var(--line);
+	--color-fd-primary: var(--brand-blue);
+	--color-fd-accent: var(--surface-2);
+	--color-fd-ring: var(--brand-blue);
+}
+
+/* ---------- Landing / pinned stage ---------- */
+.stage-panel { position: relative; margin-bottom: 3rem; }
+.stage.is-pinned .stage-panels { height: 22rem; }
+.stage.is-pinned .stage-panel { position: absolute; inset: 0 auto auto 0; margin: 0; }
+.stage.is-pinned .stage-grid { padding-block: 0; }
+[data-reveal-item] { will-change: auto; }
+.quote { font-family: var(--font-display); letter-spacing: -0.01em; }
+.code-pane { tab-size: 2; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+@keyframes hero-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
+@media (prefers-reduced-motion: reduce) { [class*="hero-float"] { animation: none !important; } }
+
+/* ---------- Seamless 3D landing ---------- */
+[data-slot="card"], .story-card {
+	background: color-mix(in oklab, var(--surface) 78%, transparent);
+	backdrop-filter: blur(14px);
+}
+.story-card { box-shadow: 0 20px 60px -30px color-mix(in oklab, var(--foreground) 35%, transparent); }
+body { background: var(--canvas); }
+
+/* ภาพนิ่งสำรอง: ซ่อน (แต่จองพื้นที่) เมื่อ 3D ทำงาน */
+html[data-scene3d="on"] .scene-poster { visibility: hidden; }
+/* การ์ดบน 3D: ไม่ใช้ backdrop-filter เพราะต้องเบลอใหม่ทุกเฟรม (หนักมากบนมือถือ) */
+[data-slot="card"], .story-card { backdrop-filter: none; background: color-mix(in oklab, var(--surface) 92%, transparent); }
+
+/* ---------- ฉาก "โดรนบินได้ยังไง?" ---------- */
+.story-panel { opacity: 0; transform: translateY(24px); transition: opacity .45s ease, transform .6s cubic-bezier(.22,1,.36,1); pointer-events: none; }
+.story-panel[data-state="past"] { transform: translateY(-24px); }
+.story-panel[data-state="on"] { opacity: 1; transform: none; pointer-events: auto; }
+.story-art .art { opacity: 0; transition: opacity .35s ease; }
+.story-art .art[data-on] { opacity: 1; }
+.story-art .draw { stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .9s cubic-bezier(.65,0,.35,1) var(--d, 0ms); }
+.story-art .art[data-on] .draw { stroke-dashoffset: 0; }
+.story-art .pop { opacity: 0; transform: translateY(6px); transform-box: fill-box; transition: opacity .4s ease var(--d, 0ms), transform .5s cubic-bezier(.22,1,.36,1) var(--d, 0ms); }
+.story-art .art[data-on] .pop { opacity: 1; transform: none; }
+.story-art .flow { stroke-dasharray: .12 .12; animation: wind-flow 1.1s linear infinite; }
+.story-art .meter { transform-box: fill-box; transform-origin: bottom; transform: scaleY(0); transition: transform .8s cubic-bezier(.22,1,.36,1) .2s; }
+.story-art .art[data-on] .meter { transform: scaleY(1); }
+.story-art text { paint-order: stroke; stroke: var(--canvas); stroke-width: 4px; stroke-linejoin: round; }
+@keyframes wind-flow { to { stroke-dashoffset: -.24; } }
+@media (prefers-reduced-motion: reduce) {
+  .story-art .flow { animation: none; }
+  .story-panel, .story-art .draw, .story-art .pop, .story-art .meter { transition: none; }
+}
+
+/* ฉาก "โดรนบินได้ยังไง?" ใช้ภาพเส้น SVG เต็มพื้นที่ → ซ่อนโดรน 3 มิติด้านหลังแบบนุ่มๆ */
+.stage-layer { transition: opacity .5s ease, transform .8s cubic-bezier(.22,1,.36,1); }
+.stage-layer[data-on="false"] { opacity: 0; pointer-events: none; }
+.stage-layer[data-from="up"][data-on="false"] { transform: translateY(-3rem); }
+.stage-layer[data-from="down"][data-on="false"] { transform: translateY(3rem); }
+@media (prefers-reduced-motion: reduce) { .stage-layer { transition: none; } }
+
+/* รายการเมนูใน Drawer ไล่ขึ้นทีละอัน */
+.drawer-item { animation: drawer-in .55s cubic-bezier(.22,1,.36,1) both; }
+@keyframes drawer-in { from { opacity: 0; transform: translateX(1.25rem); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .drawer-item { animation: none; } }
+
+/* เนื้อหาที่เขียนด้วยตัวแก้ข้อความ (admin และหน้าผลงาน) · ฟอนต์เดียวกับทั้งเว็บ */
+.rich { font-family: var(--font-sans); font-size: 1rem; line-height: 1.7; }
+.rich > * + * { margin-top: .6em; }
+.rich p { margin: 0; line-height: 1.7; }
+.rich h1 { font-size: 1.75rem; font-weight: 800; line-height: 1.25; margin-top: 1em; }
+.rich h2 { font-size: 1.4rem; font-weight: 800; line-height: 1.3; margin-top: .9em; }
+.rich h3 { font-size: 1.15rem; font-weight: 700; line-height: 1.35; margin-top: .8em; }
+.rich ul, .rich ol { padding-left: 1.6rem; }
+.rich ul { list-style: disc; } .rich ol { list-style: decimal; }
+.rich li { margin: 0; padding: 0; }
+.rich li + li { margin-top: .15em; }
+.rich li > p { margin: 0; }
+.rich li > ul, .rich li > ol { margin-top: .15em; }
+.rich blockquote { border-left: 3px solid var(--brand-blue); padding-left: 1rem; color: var(--muted-foreground); }
+.rich a { color: var(--brand-blue); text-decoration: underline; text-underline-offset: 3px; }
+.rich code { font-family: var(--font-mono); background: var(--surface-2); padding: .1rem .35rem; border-radius: .4rem; }
+.rich mark { background: color-mix(in oklab, var(--brand-blue) 28%, transparent); color: inherit; padding: 0 .15em; border-radius: .25em; }
+.rich hr { border: 0; border-top: 1px solid var(--line); margin: 1.2em 0; }
+.rich img { max-width: 100%; height: auto; border-radius: 1rem; corner-shape: squircle; display: block; margin: .8em 0; }
+.rich img[data-w="25"] { width: 25%; } .rich img[data-w="50"] { width: 50%; } .rich img[data-w="75"] { width: 75%; } .rich img[data-w="100"] { width: 100%; }
+.rich img[data-align="center"] { margin-inline: auto; } .rich img[data-align="right"] { margin-left: auto; }
+.rich img.ProseMirror-selectednode { outline: 3px solid var(--brand-blue); outline-offset: 3px; }
+.rich table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: .8em 0; }
+.rich th, .rich td { border: 1px solid var(--line); padding: .45rem .7rem; vertical-align: top; position: relative; }
+.rich th { background: var(--surface-2); font-weight: 700; text-align: left; }
+.rich .selectedCell::after { content: ""; position: absolute; inset: 0; background: color-mix(in oklab, var(--brand-blue) 18%, transparent); pointer-events: none; }
+.rich p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--muted-foreground); float: left; height: 0; pointer-events: none; }
