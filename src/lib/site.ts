@@ -20,3 +20,6 @@ export const SITE = {
 
 /** สร้าง URL เต็มจากพาธ */
 export const abs = (path = '/') => `${SITE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+
+/** ภาพแชร์ (Open Graph) ของทั้งเว็บ: public/brand/og.jpg ย่อจาก public/brand/ชมรมโดรน.jpg */
+export const OG_IMAGE = { url: '/brand/og.jpg', width: 1200, height: 675, alt: 'ชมรมโดรน โรงเรียนลือคำหาญวารินชำราบ · drone.dekgp.com' };

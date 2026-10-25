@@ -1,4 +1,4 @@
-import { abs, SITE } from './site';
+import { abs, OG_IMAGE, SITE } from './site';
 
 const org = {
   '@type': 'EducationalOrganization',
@@ -35,7 +35,7 @@ export function lessonSchema(p: { path: string; title: string; description?: str
     inLanguage: 'th-TH',
     url: abs(p.path),
     mainEntityOfPage: abs(p.path),
-    image: abs(`/og${p.path}`),
+    image: abs(OG_IMAGE.url),
     dateModified: p.modified,
     author: { '@id': abs('/#org') },
     publisher: { '@id': abs('/#org') },

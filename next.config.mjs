@@ -10,8 +10,6 @@ const config = {
   outputFileTracingIncludes: {
     '/sitemap.xml': ['./CHANGELOG.md'],
     '/changelog': ['./CHANGELOG.md'],
-    '/opengraph-image': ['./src/lib/fonts/**'],
-    '/og/docs/[[...slug]]': ['./src/lib/fonts/**'],
   },
   async headers() {
     const security = [

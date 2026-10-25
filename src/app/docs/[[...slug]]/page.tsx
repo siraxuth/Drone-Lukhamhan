@@ -7,6 +7,7 @@ import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { JsonLd } from '@/components/JsonLd';
 import { lessonSchema } from '@/lib/schema';
 import { latestRelease } from '@/lib/changelog';
+import { OG_IMAGE } from '@/lib/site';
 import type { Metadata } from 'next';
 
 export default async function Page(props: { params: Promise<{ slug?: string[] }> }) {
@@ -44,7 +45,7 @@ export async function generateMetadata(props: { params: Promise<{ slug?: string[
     title,
     description,
     alternates: { canonical: page.url },
-    openGraph: { type: 'article', title, description, url: page.url, locale: 'th_TH', publishedTime: latestRelease()?.date, images: [{ url: `/og${page.url}`, width: 1200, height: 630, alt: title }] },
-    twitter: { card: 'summary_large_image', title, description, images: [`/og${page.url}`] },
+    openGraph: { type: 'article', title, description, url: page.url, locale: 'th_TH', publishedTime: latestRelease()?.date, images: [{ ...OG_IMAGE, alt: title }] },
+    twitter: { card: 'summary_large_image', title, description, images: [OG_IMAGE.url] },
   };
 }

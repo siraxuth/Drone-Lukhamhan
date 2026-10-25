@@ -8,14 +8,14 @@ import { Button } from '@/components/ui/button';
 import { Header } from '@/sections/Header';
 import { Ribbon } from '@/sections/Ribbon';
 import { members } from '@/lib/team';
-import { abs, SITE } from '@/lib/site';
+import { abs, OG_IMAGE, SITE } from '@/lib/site';
 
 export const revalidate = 3600;
 export const metadata: Metadata = {
   title: 'ผู้จัดทำ',
   description: `คนเบื้องหลังเว็บ ${SITE.name}: เราพังมาก่อน คุณจะได้บินเลย รู้จักตั้น ศิรายุทธ แน่นสิงห์ นักพัฒนาวัย 15 ปีที่อยู่เบื้องหลังเว็บชมรมโดรนนี้`,
   alternates: { canonical: '/team' },
-  openGraph: { type: 'website', title: `ผู้จัดทำ · ${SITE.name}`, url: '/team'},
+  openGraph: { type: 'website', title: `ผู้จัดทำ · ${SITE.name}`, url: '/team', images: [OG_IMAGE] },
 };
 
 const stack = ['Next.js 16', 'React 19', 'Tailwind v4', 'Three.js', 'Fumadocs', 'Prisma', 'Neon Postgres', 'Better Auth', 'Cloudflare R2', 'Arduino C++', 'Vercel'];

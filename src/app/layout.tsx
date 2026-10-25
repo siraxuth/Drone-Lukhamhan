@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { RootProvider } from 'fumadocs-ui/provider/next';
 import '@fontsource-variable/noto-sans-thai';
 import './globals.css';
-import { SITE } from '@/lib/site';
+import { OG_IMAGE, SITE } from '@/lib/site';
 import { JsonLd } from '@/components/JsonLd';
 import { siteSchema } from '@/lib/schema';
 
@@ -17,8 +17,8 @@ export const metadata: Metadata = {
   publisher: SITE.school,
   category: 'education',
   alternates: { canonical: '/', languages: { 'th-TH': '/' } },
-  openGraph: { type: 'website', locale: SITE.locale, siteName: SITE.name, url: SITE.url, title: SITE.fullName, description: SITE.description },
-  twitter: { card: 'summary_large_image', title: SITE.fullName, description: SITE.description },
+  openGraph: { type: 'website', locale: SITE.locale, siteName: SITE.name, url: SITE.url, title: SITE.fullName, description: SITE.description, images: [OG_IMAGE] },
+  twitter: { card: 'summary_large_image', title: SITE.fullName, description: SITE.description, images: [OG_IMAGE.url] },
   robots: SITE.isProduction
     ? { index: true, follow: true, googleBot: { index: true, follow: true, 'max-image-preview': 'large', 'max-snippet': -1, 'max-video-preview': -1 } }
     : { index: false, follow: false },

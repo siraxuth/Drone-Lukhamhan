@@ -1,3 +1,4 @@
+import { OG_IMAGE } from '@/lib/site';
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -23,8 +24,8 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
     description: w.summary,
     alternates: { canonical: `/works/${w.id}` },
     robots: w.sample ? { index: false, follow: true } : undefined,
-    openGraph: { type: 'article', title: w.title, description: w.summary, url: `/works/${w.id}`, locale: 'th_TH', images: w.image ? [{ url: w.image, alt: w.title }] : undefined },
-    twitter: { card: 'summary_large_image', title: w.title, description: w.summary, images: w.image ? [w.image] : undefined },
+    openGraph: { type: 'article', title: w.title, description: w.summary, url: `/works/${w.id}`, locale: 'th_TH', images: w.image ? [{ url: w.image, alt: w.title }] : [OG_IMAGE] },
+    twitter: { card: 'summary_large_image', title: w.title, description: w.summary, images: [w.image ?? OG_IMAGE.url] },
   };
 }
 
