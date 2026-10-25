@@ -1,0 +1,827 @@
+/**
+ * เอนจินจำลองการบินบนสนามจริง 10×10 ม. (ไม่ผูกกับ UI)
+ * - คำสั่งสะท้อน DroneEasy ของโค้ดชมรม (drone_sanam5) และค่า ms/ซม. จาก config.hpp
+ * - คิดคะแนนตามกติกาในไฟล์ rules/season-*.ts
+ * หน่วย: ระยะ = ซม., เวลา = มิลลิวินาที · พิกัด x ขวา, y ลง (เหนืออยู่ด้านบน), กลางสนาม = (500, 500)
+ * ทิศหัวโดรน yaw: 0° = เหนือ, + = หมุนขวา (ตามเข็ม)
+ */
+
+export const FIELD_CM = 1000;
+export const TIME_LIMIT_MS = 150_000;
+
+/** ms ต่อ 1 ซม. จาก config.hpp — โดรนจริงใช้ dead-reckoning (เวลา × ความเร็ว) แบบเดียวกัน */
+export const MS_PER_CM = { fw: 15.46, bw: 15.16, ml: 15.65, mr: 15.65 } as const;
+const MS_PER_CM_CLIMB = 12;
+const MS_PER_DEG_YAW = 42; // yaw_block ใน config.hpp
+const YAW_SETTLE_MS = 220;
+const TAKEOFF_CM = 80;
+const SHOT_MIN_DIST_CM = 100;
+const NEEDLE_REACH_CM = 12;
+const NEEDLE_TOLERANCE_CM = 15;
+const SPEED_LIMIT_CM = 600;
+export const MAGAZINE_CAPACITY = 20; // บรรจุได้ทีละ 20 ลูกต่อชุด (ชุดซ้าย = ประตู 1&4, ชุดขวา = ประตู 2&3)
+const RELOAD_MS = 6500; // คนแข่งเดินมาบรรจุสัมภาระด้วยมือบนแท่น (ชุดซ้าย + ชุดขวา)
+const HAND_TURN_MS = 2500; // คนแข่งหมุนตัวโดรนด้วยมือบนแท่น
+const MS_PER_BALL = 80; // ปล่อยทั้งชุด 20 ลูกใช้ ~1.6 วินาที
+const HOLD_MS = 1200; // poshold: หยุดนิ่ง ล็อกตำแหน่ง
+// ท่าออกตัว/เบรกของโดรนจริง (ค่าประมาณเพื่อให้เห็นแรงกระชาก ไม่ใช่ค่าที่วัดจากโดรน)
+const ACC_MS = 220; // ออกตัว: เร่งจากนิ่งเป็นความเร็วเดินทางภายใน ~0.2 วินาที (เอียงหัวกระชาก)
+const BRAKE_MS = 350; // เบรก: ใน fw/bw/ml/mr มี poshold ท้ายคำสั่ง โดรนลดความเร็วแล้วไหลต่อเล็กน้อย (~10 ซม. ที่ความเร็วปกติ)
+export const PAD_TOP_CM = 20; // แท่น Takeoff / แท่นวงกลมสูง 20 ซม.
+/** z ในเอนจิน = ความสูงของ "กึ่งกลางโดรน" จากพื้นสนาม (ค่าเดียวกับที่ sh() สั่ง) · ขาโดรนต่ำกว่ากึ่งกลาง 7 ซม. จึงจอดบนแท่นที่ z = 27 */
+export const LEG_CM = 7.02;
+export const REST_CM = PAD_TOP_CM + LEG_CM;
+
+export type Gate = "ch1_ch4" | "ch2_ch3" | "any";
+export type Platform = { id: string; x: number; y: number; r: number; gates: Gate };
+export type Balloon = { id: string; x: number; y: number; z: number };
+export type Board = { id: string; x: number; y: number; cz: number; r: number };
+/** ห่วงอิสระ: ระนาบตั้งฉากกับทิศ yaw (0° = หันไปเหนือ) โดรนต้องผ่านช่องกว้าง size ซม. ที่ความสูงกึ่งกลางโดรน zMin–zMax */
+export type FreeHoop = { id: string; x: number; y: number; size: number; yaw: number; zMin: number; zMax: number; points: number };
+/** จุดผ่าน: โดรนต้องบินผ่านวงรัศมี r ซม. ที่ความสูง zMin–zMax · มี order = ต้องผ่านตามลำดับ */
+export type Waypoint = { id: string; x: number; y: number; r: number; zMin: number; zMax: number; points: number; order?: number };
+
+export type FlightConfig = {
+    start: { x: number; y: number };
+    pad: { half: number };
+    hoop: { half: number; zMin: number; zMax: number };
+    platforms: Platform[];
+    balloons: Balloon[];
+    boards: Board[];
+    /** ลูกบอลต่อแท่นสูงสุด (กติกา: 20 ลูก เกินหัก 1 คะแนน/ลูก) */
+    ballCap: number;
+    /** คะแนนต่อสิ่งที่ทำ (มาจากกติกา) */
+    points: { ball: number; balloon: number; platformLanding: number; padThroughHoop: number; padNoHoop: number };
+    boardRings: number[]; // วงกลาง → นอก
+    /** สนามฝึกอิสระ: ไม่ใช้ห่วงมาตรฐานเหนือแท่น และลงจอดบนแท่นฐานได้ 10 คะแนนเสมอ */
+    free?: boolean;
+    /** ฐาน (แท่นลงจอด): ไม่ระบุ = อยู่ที่จุดเริ่ม · null = ไม่มีฐาน ลงตรงไหนก็จบภารกิจ */
+    padAt?: { x: number; y: number } | null;
+    /** ทิศหัวโดรนตอนเริ่ม (องศา 0 = เหนือ) */
+    startYaw?: number;
+    hoops?: FreeHoop[];
+    waypoints?: Waypoint[];
+};
+
+export type Frame = { t: number; x: number; y: number; z: number; yaw: number };
+export type EventKind = "info" | "warn" | "error" | "drop" | "pop" | "shot" | "shot_b" | "land" | "takeoff" | "hold";
+export type SimEvent = {
+    t: number;
+    kind: EventKind;
+    text: string;
+    line?: number;
+    at?: { x: number; y: number; z: number };
+    ok?: boolean;
+    id?: string;
+    points?: number;
+    /** จำนวนบอลที่ปล่อย/บรรจุ (ใช้ซิงก์เสียงและภาพ) */ n?: number;
+    /** ระยะเวลาของเหตุการณ์ (มิลลิวินาที) */ dur?: number;
+    /** จำนวนบอลที่ปล่อยจากแต่ละชุด */ from?: { L: number; R: number };
+    /** ปลายทางของลูกดอก (สำหรับวาด) */ to?: { x: number; y: number; z: number };
+};
+export type Breakdown = { label: string; points: number };
+export type Result = {
+    frames: Frame[];
+    events: SimEvent[];
+    duration: number;
+    score: number;
+    breakdown: Breakdown[];
+    stopTime: number | null; // เวลาที่หยุดนาฬิกา (ลงจอดแท่น Takeoff)
+    landedOnPad: boolean;
+    throughHoop: boolean;
+    timedOut: boolean;
+    ok: boolean;
+    /** จุดผ่าน/ห่วงที่ทำสำเร็จ พร้อมเวลา (ใช้เปลี่ยนสีวัตถุในสนามตอนเล่น) */
+    visits: Array<{ id: string; kind: "waypoint" | "hoop"; t: number; points: number }>;
+};
+
+type Call = { name: string; args: number[]; line: number };
+
+/** แยกโค้ดเป็นรายการคำสั่ง ไม่ใช้ eval จึงปลอดภัยแม้ผู้ใช้พิมพ์อะไรก็ได้ */
+export function parse(code: string): { calls: Call[]; errors: SimEvent[] } {
+    const calls: Call[] = [];
+    const errors: SimEvent[] = [];
+    code.split("\n").forEach((raw, i) => {
+        const line = raw.replace(/\/\/.*$/, "").trim();
+        if (!line) return;
+        for (const stmt of line
+            .split(";")
+            .map(s => s.trim())
+            .filter(Boolean)) {
+            const m =
+                /^(?:drone\.)?([A-Za-z_]\w*)\s*\(\s*([^)]*)\)$/.exec(stmt) ??
+                /^(?:drone\.)?([A-Za-z_]\w*)()$/.exec(stmt);
+            if (!m) {
+                errors.push({
+                    t: 0,
+                    kind: "error",
+                    line: i + 1,
+                    text: `บรรทัด ${i + 1}: อ่านคำสั่งไม่ออก "${stmt}" (ลืมวงเล็บหรือเปล่า?)`,
+                });
+                continue;
+            }
+            const args = m[2] ? m[2].split(",").map(a => Number(a.trim())) : [];
+            if (args.some(a => Number.isNaN(a))) {
+                errors.push({ t: 0, kind: "error", line: i + 1, text: `บรรทัด ${i + 1}: ค่าในวงเล็บต้องเป็นตัวเลข` });
+                continue;
+            }
+            calls.push({ name: m[1], args, line: i + 1 });
+        }
+    });
+    return { calls, errors };
+}
+
+/** ชื่อคำสั่งแบบไม่สนตัวพิมพ์ใหญ่เล็กและขีดล่าง: auto_land = autoLand = AUTOLAND */
+const canon = (n: string) => n.toLowerCase().replace(/_/g, "");
+
+const rad = (d: number) => (d * Math.PI) / 180;
+/** เวกเตอร์ทิศหน้า (x ขวา, y ลง) ของ yaw */
+const dirOf = (yaw: number) => ({ x: Math.sin(rad(yaw)), y: -Math.cos(rad(yaw)) });
+
+
+/** ตรวจจุดผ่านและห่วงอิสระจากเส้นทางบินทั้งหมด (หลังจำลองเสร็จ) */
+function evalExtras(frames: Frame[], cfg: FlightConfig): { visits: Result["visits"]; breakdown: Breakdown[] } {
+    const visits: Result["visits"] = [];
+    const wps = cfg.waypoints ?? [];
+    const hoops = cfg.hoops ?? [];
+    if (!wps.length && !hoops.length) return { visits, breakdown: [] };
+    const done = new Set<string>();
+    const orders = [...new Set(wps.filter(w => w.order !== undefined).map(w => w.order as number))].sort((a, b) => a - b);
+    let nextIdx = 0;
+
+    for (let i = 1; i < frames.length; i++) {
+        const a = frames[i - 1], b = frames[i];
+        const len = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+        const steps = Math.max(1, Math.ceil(len / 4));
+        // จุดผ่าน: สุ่มตรวจตามเส้นทางทุก ~4 ซม.
+        for (let s = 0; s <= steps; s++) {
+            const u = s / steps;
+            const px = a.x + (b.x - a.x) * u, py = a.y + (b.y - a.y) * u, pz = a.z + (b.z - a.z) * u, pt = a.t + (b.t - a.t) * u;
+            for (const w of wps) {
+                if (done.has(w.id)) continue;
+                if (w.order !== undefined && w.order !== orders[nextIdx]) continue;
+                if (Math.hypot(px - w.x, py - w.y) <= w.r && pz >= w.zMin && pz <= w.zMax) {
+                    done.add(w.id);
+                    visits.push({ id: w.id, kind: "waypoint", t: pt, points: w.points });
+                    if (w.order !== undefined && !wps.some(o => !done.has(o.id) && o.order === w.order)) nextIdx++;
+                }
+            }
+        }
+        // ห่วง: เส้นทางช่วงนี้ตัดระนาบของห่วงภายในช่องหรือไม่
+        for (const h of hoops) {
+            if (done.has(h.id)) continue;
+            const nx = Math.sin(rad(h.yaw)), ny = -Math.cos(rad(h.yaw)); // ทิศตั้งฉากระนาบ (พิกัดเอนจิน y ลง)
+            const s0 = (a.x - h.x) * nx + (a.y - h.y) * ny, s1 = (b.x - h.x) * nx + (b.y - h.y) * ny;
+            if (s0 === s1 || s0 * s1 > 0) continue;
+            const u = s0 / (s0 - s1);
+            const qx = a.x + (b.x - a.x) * u, qy = a.y + (b.y - a.y) * u, qz = a.z + (b.z - a.z) * u;
+            const lateral = (qx - h.x) * ny * -1 + (qy - h.y) * nx; // ระยะเยื้องข้างตามแนวระนาบ
+            if (Math.abs(lateral) <= h.size / 2 && qz >= h.zMin && qz <= h.zMax) {
+                done.add(h.id);
+                visits.push({ id: h.id, kind: "hoop", t: a.t + (b.t - a.t) * u, points: h.points });
+            }
+        }
+    }
+    visits.sort((p, q) => p.t - q.t);
+    const wDone = visits.filter(v => v.kind === "waypoint");
+    const hDone = visits.filter(v => v.kind === "hoop");
+    const breakdown: Breakdown[] = [];
+    if (wps.length) breakdown.push({ label: `บินผ่านจุดผ่าน ${wDone.length}/${wps.length} จุด`, points: wDone.reduce((s, v) => s + v.points, 0) });
+    if (hoops.length) breakdown.push({ label: `ลอดห่วง ${hDone.length}/${hoops.length} ใบ`, points: hDone.reduce((s, v) => s + v.points, 0) });
+    return { visits, breakdown };
+}
+
+export function simulate(code: string, cfg: FlightConfig): Result {
+    const { calls, errors } = parse(code);
+    const events: SimEvent[] = [...errors];
+    const padC = cfg.padAt === undefined ? cfg.start : cfg.padAt; // null = ไม่มีฐาน
+    const onPadAt = (px: number, py: number) => padC !== null && Math.abs(px - padC.x) <= cfg.pad.half && Math.abs(py - padC.y) <= cfg.pad.half;
+    let x = cfg.start.x,
+        y = cfg.start.y,
+        z = onPadAt(cfg.start.x, cfg.start.y) ? REST_CM : LEG_CM, // เริ่มบนแท่น (สูง 20 ซม.) หรือบนพื้น
+        yaw = cfg.startYaw ?? 0,
+        t = 0;
+    const mag = { L: 0, R: 0 }; // ชุดบอลซ้าย (ประตู 1&4) และขวา (ประตู 2&3)
+    const frames: Frame[] = [{ t, x, y, z, yaw }];
+    let flying = false,
+        calibrated = false,
+        crashed = false,
+        timedOut = false;
+    let leftHoop = false,
+        throughHoop = true;
+    let stopTime: number | null = null,
+        landedOnPad = false;
+    const balls = new Map<string, number>(); // แท่น → จำนวนลูกที่ลง
+    const popped = new Set<string>();
+    const platformLanded = new Set<string>();
+    const bestRing = new Map<string, number>(); // เป้า → วงที่น้อยที่สุดที่ยิงถูก (กติกา: นับลูกคะแนนน้อยสุด)
+    let shotsMade = 0;
+
+    const push = () => frames.push({ t, x, y, z, yaw });
+    /** ความเร็วเดินทางล่าสุด (ซม./มิลลิวินาที) ของคำสั่งเดินที่เพิ่งจบ ใช้คำนวณระยะเบรก */
+    let cruise: { vx: number; vy: number } | null = null;
+    /** เบรกหลังคำสั่งเดิน (poshold ท้ายคำสั่งในโค้ดจริง): ลดความเร็วเป็นศูนย์ ไหลต่อไปอีก v·T/2 */
+    const brake = (line: number) => {
+        if (!cruise) return;
+        const firstFrame = frames.length - 1;
+        const { vx, vy } = cruise;
+        cruise = null;
+        for (const u of [0.25, 0.5, 0.75, 1]) {
+            const s = BRAKE_MS * (u - (u * u) / 2); // ระยะที่ไหลไป ณ ส่วน u ของช่วงเบรก (ความเร็วลดเป็นเส้นตรง)
+            frames.push({ t: t + BRAKE_MS * u, x: x + vx * s, y: y + vy * s, z, yaw });
+        }
+        x += (vx * BRAKE_MS) / 2;
+        y += (vy * BRAKE_MS) / 2;
+        t += BRAKE_MS;
+        scanNeedleContacts(firstFrame, line);
+    };
+    /** หมุนด้วยมือได้บนแท่นเริ่มและแท่นวงกลมเมื่อโดรนลงจอดแล้ว */
+    const onPadNow = () => (padC === null ? !flying : onPadAt(x, y));
+    const onPlatformNow = () => cfg.platforms.some(p => Math.hypot(p.x - x, p.y - y) <= p.r);
+    const handTurn = (deg: number, line: number) => {
+        if (flying) {
+            ev({ kind: "warn", line, text: `บรรทัด ${line}: หมุนโดรนด้วยมือได้เฉพาะตอนจอดอยู่บนแท่น` });
+            return;
+        }
+        if (!onPadNow() && !onPlatformNow()) {
+            ev({ kind: "warn", line, text: `บรรทัด ${line}: ต้องจอดบนแท่นก่อน คนแข่งจึงหมุนโดรนด้วยมือได้` });
+            return;
+        }
+        ev({
+            kind: "info",
+            line,
+            id: "turn",
+            n: deg,
+            dur: HAND_TURN_MS,
+            text: `คนแข่งหมุนตัวโดรนด้วยมือ ${deg > 0 ? "ตามเข็ม" : "ทวนเข็ม"} ${Math.abs(deg)}°`,
+        });
+        t += 700; // คนแข่งเดินเข้ามาจับโดรนก่อนเริ่มหมุน
+        push();
+        yaw += deg;
+        t += HAND_TURN_MS - 700;
+        push();
+    };
+    const ev = (e: Omit<SimEvent, "t">) => events.push({ t, ...e });
+    /** ตรวจปลายเข็มตัดผิวลูกโป่งตามเส้นทางทุกช่วงเฟรม รวมระยะไหลหลังเบรก */
+    const scanNeedleContacts = (firstFrame: number, line: number) => {
+        if (!flying || !cfg.balloons.length) return;
+        for (let i = firstFrame; i < frames.length - 1; i++) {
+            const a = frames[i], b = frames[i + 1];
+            const da = dirOf(a.yaw), db = dirOf(b.yaw);
+            const p0 = { x: a.x + da.x * NEEDLE_REACH_CM, y: a.y + da.y * NEEDLE_REACH_CM, z: a.z };
+            const p1 = { x: b.x + db.x * NEEDLE_REACH_CM, y: b.y + db.y * NEEDLE_REACH_CM, z: b.z };
+            const vx = p1.x - p0.x, vy = p1.y - p0.y, vz = p1.z - p0.z;
+            const len2 = vx * vx + vy * vy + vz * vz;
+            const hits: Array<{ balloon: Balloon; u: number }> = [];
+            for (const balloon of cfg.balloons) {
+                if (popped.has(balloon.id)) continue;
+                const ox = p0.x - balloon.x, oy = p0.y - balloon.y, oz = p0.z - balloon.z;
+                const c = ox * ox + oy * oy + oz * oz - NEEDLE_TOLERANCE_CM ** 2;
+                let u = 0;
+                if (c > 0 && len2 > 0) {
+                    const dot = ox * vx + oy * vy + oz * vz;
+                    const disc = dot * dot - len2 * c;
+                    if (disc < 0) continue;
+                    u = (-dot - Math.sqrt(disc)) / len2;
+                    if (u < 0 || u > 1) continue;
+                } else if (c > 0) continue;
+                hits.push({ balloon, u });
+            }
+            hits.sort((left, right) => left.u - right.u);
+            for (const { balloon, u } of hits) {
+                if (popped.has(balloon.id)) continue;
+                popped.add(balloon.id);
+                events.push({ t: a.t + (b.t - a.t) * u, kind: 'pop', line, text: `เข็มแตะลูกโป่ง "${balloon.id}" แตก +${cfg.points.balloon} คะแนน`, at: { x: balloon.x, y: balloon.y, z: balloon.z }, id: balloon.id, points: cfg.points.balloon, ok: true });
+            }
+        }
+    };
+    const inHoopBox = () => Math.abs(x - cfg.start.x) <= cfg.hoop.half && Math.abs(y - cfg.start.y) <= cfg.hoop.half;
+
+    /** เดินทางเป็นเส้นตรงต่อเนื่อง ตัดที่เวลาหมด และเช็กการลอดห่วงตอนออกจากกรอบ */
+    const travel = (dx: number, dy: number, dz: number, dyaw: number, ms: number, line: number, shape = false) => {
+        const firstFrame = frames.length - 1;
+        const remain = TIME_LIMIT_MS - t;
+        const k = ms > remain ? Math.max(0, remain / ms) : 1;
+        const sx = x,
+            sy = y;
+        if (flying && !leftHoop && (dx !== 0 || dy !== 0)) {
+            // หาจุดที่ออกจากกรอบห่วงบนเส้นทางนี้ (ตรวจแบบละเอียดทุก 1 ซม.)
+            const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) * k));
+            for (let s = 1; s <= steps; s++) {
+                const px = sx + (dx * k * s) / steps,
+                    py = sy + (dy * k * s) / steps;
+                if (Math.abs(px - cfg.start.x) > cfg.hoop.half || Math.abs(py - cfg.start.y) > cfg.hoop.half) {
+                    leftHoop = true;
+                    const okHoop = z >= cfg.hoop.zMin && z <= cfg.hoop.zMax;
+                    throughHoop = throughHoop && okHoop; // ทุกครั้งที่ออกจากแท่นต้องลอดห่วง
+                    if (!okHoop)
+                        ev({
+                            kind: "warn",
+                            line,
+                            text: `บรรทัด ${line}: ออกจากห่วงที่ความสูง ${Math.round(z)} ซม. ซึ่งอยู่นอกช่องห่วง (${cfg.hoop.zMin}–${cfg.hoop.zMax} ซม.) จะไม่นับว่าลอดห่วง`,
+                        });
+                    break;
+                }
+            }
+        }
+        // ค่า ms ต่อ ซม. ในโค้ดจริงวัดที่ "ตำแหน่งหยุดจริง" (รวมระยะไหลหลังเบรกแล้ว) จึงแบ่งระยะ = เร่ง + บินคงที่ + ไหลตอนเบรก
+        // เมื่อจบเบรกโดรนอยู่ที่ระยะที่สั่งพอดี ผลคะแนนของโปรแกรมเดิมจึงไม่เปลี่ยน
+        let fEnd = k; // ส่วนของระยะที่ถึง ณ เวลา ms (ก่อนเบรก)
+        if (shape && k === 1 && ms > ACC_MS * 2) {
+            const v = 1 / (ms - ACC_MS / 2 + BRAKE_MS / 2); // ส่วนของระยะต่อมิลลิวินาที ตอนบินคงที่
+            for (const u of [0.25, 0.5, 0.75, 1]) {
+                const tau = ACC_MS * u;
+                const f = (0.5 * tau * tau * v) / ACC_MS;
+                frames.push({ t: t + tau, x: sx + dx * f, y: sy + dy * f, z, yaw });
+            }
+            fEnd = v * (ms - ACC_MS / 2);
+            cruise = { vx: dx * v, vy: dy * v };
+        } else cruise = null;
+        x += dx * fEnd;
+        y += dy * fEnd;
+        z += dz * k;
+        yaw += dyaw * k;
+        t += ms * k;
+        push();
+        scanNeedleContacts(firstFrame, line);
+        if (k < 1) {
+            timedOut = true;
+            ev({ kind: "warn", text: "หมดเวลา 2 นาที 30 วินาที โดรนหยุดทำงาน" });
+        }
+        return !timedOut;
+    };
+
+    for (let ci = 0; ci < calls.length; ci++) {
+        const c = calls[ci];
+        if (crashed || timedOut) break;
+        const a = c.args[0];
+        const name = canon(c.name);
+        const info = (text: string) => ev({ kind: "info", line: c.line, text });
+        const needFly = (what: string) => {
+            if (flying) return true;
+            ev({ kind: "error", line: c.line, text: `บรรทัด ${c.line}: โดรนยังไม่ได้ขึ้นบิน สั่ง ${what} ไม่ได้` });
+            crashed = true;
+            return false;
+        };
+
+        switch (name) {
+            case "calibration":
+            case "calibrateanddelay":
+            case "calibrate":
+                if (flying) {
+                    ev({ kind: "warn", line: c.line, text: "ปรับเทียบไจโรขณะบิน ไม่ควรทำ ต้องทำก่อนขึ้นบิน" });
+                    break;
+                }
+                t += 3000;
+                calibrated = true;
+                push();
+                info("ตั้งศูนย์เสร็จ (รอ 3 วินาที)");
+                break;
+            case "takeoff":
+                if (flying) {
+                    ev({ kind: "warn", line: c.line, text: "โดรนบินอยู่แล้ว" });
+                    break;
+                }
+                if (!calibrated)
+                    ev({
+                        kind: "warn",
+                        line: c.line,
+                        text: "ยังไม่ได้ calibration ก่อนขึ้นบิน โดรนจริงอาจเอียงหรือลอยไม่นิ่ง",
+                    });
+                flying = true;
+                leftHoop = !inHoopBox();
+                ev({
+                    kind: "takeoff",
+                    line: c.line,
+                    text: `ขึ้นบิน (ลอยสูงจากแท่น ${TAKEOFF_CM} ซม.)`,
+                    at: { x, y, z },
+                });
+                travel(0, 0, TAKEOFF_CM, 0, TAKEOFF_CM * MS_PER_CM_CLIMB * 2, c.line);
+                break;
+            case "sh":
+            case "setheight": {
+                if (!needFly(`${c.name}()`)) break;
+                const target = Math.max(15, Math.min(250, a ?? z));
+                if (inHoopBox() && !leftHoop && target > cfg.hoop.zMax)
+                    ev({
+                        kind: "warn",
+                        line: c.line,
+                        text: `บรรทัด ${c.line}: ยกสูงเกินกรอบห่วงขณะยังอยู่ในห่วง (ห่วงสูงสุด ${cfg.hoop.zMax} ซม.) อาจชนคานบน`,
+                    });
+                travel(0, 0, target - z, 0, Math.abs(target - z) * MS_PER_CM_CLIMB, c.line);
+                break;
+            }
+            case "fw":
+            case "bw":
+            case "ml":
+            case "mr": {
+                if (!needFly(`${c.name}()`)) break;
+                const cm = Math.abs(a ?? 0);
+                if (cm > SPEED_LIMIT_CM)
+                    ev({ kind: "warn", line: c.line, text: `ระยะ ${cm} ซม. ไกลมากในคำสั่งเดียว ลองแบ่งเป็นหลายช่วง` });
+                const d = dirOf(yaw),
+                    right = { x: Math.cos(rad(yaw)), y: Math.sin(rad(yaw)) };
+                const v =
+                    name === "fw"
+                        ? d
+                        : name === "bw"
+                          ? { x: -d.x, y: -d.y }
+                          : name === "mr"
+                            ? right
+                            : { x: -right.x, y: -right.y };
+                if (!travel(v.x * cm, v.y * cm, 0, 0, cm * MS_PER_CM[name as "fw" | "bw" | "ml" | "mr"], c.line, true)) break;
+                brake(c.line);
+                if (x < 0 || x > FIELD_CM || y < 0 || y > FIELD_CM) {
+                    ev({
+                        kind: "error",
+                        line: c.line,
+                        text: `บรรทัด ${c.line}: โดรนบินออกนอกสนามที่ (${Math.round(x)}, ${Math.round(y)}) ซม.`,
+                    });
+                    crashed = true;
+                }
+                break;
+            }
+            case "yaw":
+            case "turn": {
+                if (cfg.balloons.length) {
+                    ev({ kind: 'warn', line: c.line, text: `บรรทัด ${c.line}: ภารกิจลูกโป่งต้องลงจอดบนแท่นให้คนแข่งหมุนโดรนด้วยมือก่อนขึ้นบินอีกครั้ง` });
+                    break;
+                }
+                if (!needFly("yaw()")) break;
+                const deg = a ?? 0;
+                travel(0, 0, 0, deg, Math.abs(deg) * MS_PER_DEG_YAW + YAW_SETTLE_MS, c.line);
+                break;
+            }
+            case "settle":
+            case "wait":
+            case "delay": {
+                const ms = Math.max(0, a ?? 0);
+                const k = Math.min(1, (TIME_LIMIT_MS - t) / Math.max(1, ms));
+                t += ms * k;
+                push();
+                if (k < 1) {
+                    timedOut = true;
+                    ev({ kind: "warn", text: "หมดเวลา 2 นาที 30 วินาที โดรนหยุดทำงาน" });
+                }
+                break;
+            }
+            case "poshold":
+            case "hold": {
+                if (!needFly(`${c.name}()`)) break;
+                const ms = a !== undefined && a > 0 ? a : HOLD_MS;
+                ev({ kind: "hold", line: c.line, text: "poshold: หยุดนิ่ง ล็อกตำแหน่ง", at: { x, y, z }, dur: ms });
+                t += ms;
+                push();
+                cruise = null;
+                break;
+            }
+            case "autoland": {
+                if (!flying) {
+                    ev({ kind: "warn", line: c.line, text: "โดรนอยู่บนพื้นแล้ว" });
+                    break;
+                }
+                const onRealPad = onPadAt(x, y);
+                const plat = cfg.platforms.find(p => Math.hypot(p.x - x, p.y - y) <= p.r);
+                const onPad = padC === null ? !plat : onRealPad; // ไม่มีฐาน: ลงบนพื้นตรงไหนก็นับเป็นจุดลงจอดของภารกิจ
+                const surface = (onRealPad || plat ? PAD_TOP_CM : 0) + LEG_CM; // ลงบนแท่นสูง 20 ซม. หรือพื้นสนาม (ขาอยู่ต่ำกว่ากึ่งกลาง 7 ซม.)
+                if (!travel(0, 0, surface - z, 0, Math.max(0, z - surface) * 15 + 500, c.line)) break;
+                flying = false;
+                const finalLanding = !calls.slice(ci + 1).some(q => q.name === "takeOff");
+                if (onPad && !finalLanding) {
+                    // แวะลงที่แท่นเขียวระหว่างภารกิจ (เช่น บรรจุสัมภาระรอบใหม่) ยังไม่ใช่การจบภารกิจ
+                    ev({
+                        kind: "land",
+                        line: c.line,
+                        text: "แวะลงจอดบนแท่น Takeoff เพื่อบรรจุสัมภาระ (ยังไม่หยุดเวลา)",
+                        at: { x, y, z: REST_CM },
+                        ok: true,
+                        id: "rest",
+                    });
+                } else if (onPad) {
+                    landedOnPad = true;
+                    stopTime = t;
+                    const pts = throughHoop ? cfg.points.padThroughHoop : cfg.points.padNoHoop;
+                    ev({
+                        kind: "land",
+                        line: c.line,
+                        text: `${padC === null ? "ลงจอดสำเร็จ" : "ลงจอดบนแท่น Takeoff"}${cfg.free ? "" : throughHoop ? " หลังลอดห่วง" : " แต่ไม่ได้ลอดห่วง"} +${pts} คะแนน · หยุดเวลา`,
+                        at: { x, y, z: surface },
+                        points: pts,
+                        ok: true,
+                        id: "pad",
+                    });
+                } else if (plat && cfg.balloons.length && !platformLanded.has(plat.id)) {
+                    platformLanded.add(plat.id);
+                    ev({
+                        kind: "land",
+                        line: c.line,
+                        text: `ลงจอดบนแท่นวงกลม "${plat.id}" +${cfg.points.platformLanding} คะแนน`,
+                        at: { x, y, z: REST_CM },
+                        points: cfg.points.platformLanding,
+                        ok: true,
+                        id: plat.id,
+                    });
+                } else {
+                    ev({
+                        kind: "land",
+                        line: c.line,
+                        text: `ลงจอดที่ (${Math.round(x)}, ${Math.round(y)}) ซึ่งไม่ใช่แท่น Check Point`,
+                        at: { x, y, z: surface },
+                        ok: false,
+                    });
+                }
+                break;
+            }
+            case "reload":
+            case "load": {
+                if (flying) {
+                    ev({
+                        kind: "warn",
+                        line: c.line,
+                        text: `บรรทัด ${c.line}: บรรจุสัมภาระขณะบินไม่ได้ ต้องลงจอดบนแท่น Takeoff ก่อน`,
+                    });
+                    break;
+                }
+                const onPad = onPadAt(x, y);
+                if (!onPad) {
+                    ev({ kind: "warn", line: c.line, text: `บรรทัด ${c.line}: บรรจุได้เฉพาะตอนจอดบนแท่น Takeoff` });
+                    break;
+                }
+                const add = MAGAZINE_CAPACITY * 2 - mag.L - mag.R;
+                if (add <= 0) {
+                    ev({ kind: "info", line: c.line, text: "สัมภาระเต็มแล้ว" });
+                    if (a) handTurn(a, c.line);
+                    break;
+                }
+                ev({
+                    kind: "info",
+                    line: c.line,
+                    id: "load",
+                    n: add,
+                    dur: RELOAD_MS,
+                    text: `บรรจุสัมภาระ ชุดซ้าย ${MAGAZINE_CAPACITY} + ชุดขวา ${MAGAZINE_CAPACITY} ลูก`,
+                });
+                mag.L = MAGAZINE_CAPACITY;
+                mag.R = MAGAZINE_CAPACITY;
+                t += RELOAD_MS;
+                push();
+                if (a) handTurn(a, c.line); // reload(180) = บรรจุแล้วหมุนโดรนด้วยมือ 180°
+                break;
+            }
+            case "turnbyhand":
+            case "rotatebyhand":
+            case "handturn": {
+                handTurn(a ?? 180, c.line);
+                break;
+            }
+            case "pop":
+            case "needle": {
+                if (!needFly(`${c.name}()`)) break;
+                const d = dirOf(yaw);
+                const tip = { x: x + d.x * NEEDLE_REACH_CM, y: y + d.y * NEEDLE_REACH_CM, z };
+                const alreadyBurst = cfg.balloons.find(b => popped.has(b.id) && Math.hypot(b.x - tip.x, b.y - tip.y, b.z - tip.z) <= NEEDLE_TOLERANCE_CM);
+                if (alreadyBurst) { info(`เข็มแตะลูกโป่ง "${alreadyBurst.id}" ซึ่งแตกแล้ว`); break; }
+                t += 300;
+                push();
+                let best: { b: Balloon; dist: number } | null = null;
+                for (const b of cfg.balloons) {
+                    if (popped.has(b.id)) continue;
+                    const dist = Math.hypot(b.x - tip.x, b.y - tip.y, b.z - tip.z);
+                    if (!best || dist < best.dist) best = { b, dist };
+                }
+                if (best && best.dist <= NEEDLE_TOLERANCE_CM) {
+                    popped.add(best.b.id);
+                    ev({
+                        kind: "pop",
+                        line: c.line,
+                        text: `เข็มแตะลูกโป่ง "${best.b.id}" แตก +${cfg.points.balloon} คะแนน`,
+                        at: { x: best.b.x, y: best.b.y, z: best.b.z },
+                        id: best.b.id,
+                        points: cfg.points.balloon,
+                        ok: true,
+                    });
+                } else {
+                    ev({
+                        kind: "pop",
+                        line: c.line,
+                        text: best
+                            ? `เข็มยังไม่ถึงลูกโป่ง (ใกล้สุดห่าง ${Math.round(best.dist)} ซม. ต้องไม่เกิน ${NEEDLE_TOLERANCE_CM} ซม.)`
+                            : "ไม่เหลือลูกโป่งให้แตะแล้ว",
+                        at: tip,
+                        ok: false,
+                    });
+                }
+                break;
+            }
+            case "shoot":
+            case "shootb":
+            case "shotb":
+            case "shoots1":
+            case "shoots2": {
+                if (!needFly(`${c.name}()`)) break;
+                t += 350;
+                push();
+                shotsMade++;
+                const reverse = name === "shootb" || name === "shotb";
+                const kind = reverse ? "shot_b" : "shot";
+                const d = dirOf(yaw + (reverse ? 180 : 0));
+                let hit: { b: Board; dist: number; ring: number | null; hx: number; hy: number } | null = null;
+                for (const b of cfg.boards) {
+                    if (Math.abs(d.y) < 1e-6) continue;
+                    const s = (b.y - y) / d.y;
+                    if (s <= 0) continue;
+                    const hx = x + d.x * s;
+                    const r = Math.hypot(hx - b.x, z - b.cz);
+                    if (r > b.r) continue;
+                    const ring =
+                        cfg.boardRings[
+                            Math.min(cfg.boardRings.length - 1, Math.floor(r / (b.r / cfg.boardRings.length)))
+                        ];
+                    if (!hit || s < hit.dist) hit = { b, dist: s, ring, hx, hy: b.y };
+                }
+                if (!hit) {
+                    ev({
+                        kind,
+                        line: c.line,
+                        text: "ลูกดอกไม่ถูกเป้า",
+                        at: { x, y, z },
+                        to: { x: x + d.x * 400, y: y + d.y * 400, z },
+                        ok: false,
+                    });
+                } else if (hit.dist < SHOT_MIN_DIST_CM) {
+                    ev({
+                        kind,
+                        line: c.line,
+                        text: `ใกล้เป้าเกินไป (${Math.round(hit.dist)} ซม.) กติกากำหนดห่างอย่างน้อย ${SHOT_MIN_DIST_CM} ซม. ก่อนยิง คะแนนไม่นับ`,
+                        at: { x, y, z },
+                        to: { x: hit.hx, y: hit.hy, z },
+                        ok: false,
+                    });
+                } else {
+                    const prev = bestRing.get(hit.b.id);
+                    bestRing.set(
+                        hit.b.id,
+                        prev === undefined ? (hit.ring as number) : Math.min(prev, hit.ring as number),
+                    );
+                    ev({
+                        kind,
+                        line: c.line,
+                        text: `ลูกดอกถูก "${hit.b.id}" วง ${hit.ring} (ยิงจากระยะ ${Math.round(hit.dist)} ซม.)${prev !== undefined ? " · ยิงซ้ำเป้านี้ จะนับลูกที่ได้คะแนนน้อยที่สุด" : ""}`,
+                        at: { x, y, z },
+                        to: { x: hit.hx, y: hit.hy, z },
+                        ok: true,
+                        id: hit.b.id,
+                        points: hit.ring as number,
+                    });
+                }
+                break;
+            }
+            default: {
+                const dropSides: Record<string, Array<"L" | "R">> = {
+                    openpairch1ch4: ["L"],
+                    dropleft: ["L"],
+                    openpairch2ch3: ["R"],
+                    dropright: ["R"],
+                    openallballgate: ["L", "R"],
+                    dropall: ["L", "R"],
+                    droppayload: ["L", "R"],
+                };
+                if (name === "drop" || name in dropSides) {
+                    if (!needFly(`${c.name}()`)) break;
+                    // drop() = ปล่อยชุดถัดไป (ซ้ายก่อน แล้วขวา)
+                    const sides = name === "drop" ? [mag.L > 0 ? "L" : ("R" as "L" | "R")] : dropSides[name];
+                    const per = sides.map(sd => mag[sd]);
+                    const n = per.reduce((s2, v) => s2 + v, 0);
+                    if (n <= 0) {
+                        ev({
+                            kind: "warn",
+                            line: c.line,
+                            text: `บรรทัด ${c.line}: ไม่มีสัมภาระในชุดนี้ให้ปล่อย (ต้อง reload() บนแท่น Takeoff ก่อน)`,
+                        });
+                        break;
+                    }
+                    sides.forEach(sd => {
+                        mag[sd] = 0;
+                    });
+                    const dur = Math.max(600, Math.max(...per) * MS_PER_BALL);
+                    const near = cfg.platforms.find(p => Math.hypot(p.x - x, p.y - y) <= p.r);
+                    const startT = t;
+                    t += dur;
+                    push();
+                    const here = { x, y, z };
+                    const mk = (e: Omit<SimEvent, "t">) => events.push({ t: startT, ...e });
+                    if (!near)
+                        mk({
+                            kind: "drop",
+                            line: c.line,
+                            n,
+                            dur,
+                            from: {
+                                L: sides.includes("L") ? per[sides.indexOf("L")] : 0,
+                                R: sides.includes("R") ? per[sides.indexOf("R")] : 0,
+                            },
+                            text: `ปล่อยบอล ${n} ลูกที่ (${Math.round(x)}, ${Math.round(y)}) แต่ไม่ตกในแท่น`,
+                            at: here,
+                            ok: false,
+                        });
+                    else {
+                        const total = (balls.get(near.id) ?? 0) + n;
+                        balls.set(near.id, total);
+                        mk({
+                            kind: "drop",
+                            line: c.line,
+                            n,
+                            dur,
+                            from: {
+                                L: sides.includes("L") ? per[sides.indexOf("L")] : 0,
+                                R: sides.includes("R") ? per[sides.indexOf("R")] : 0,
+                            },
+                            text: `บอล ${n} ลูกลงแท่น "${near.id}" (รวม ${total} ลูก)${total > cfg.ballCap ? ` · เกิน ${cfg.ballCap} ลูก จะถูกหักคะแนน` : ""}`,
+                            at: here,
+                            id: near.id,
+                            ok: true,
+                            points:
+                                Math.min(total, cfg.ballCap) * cfg.points.ball -
+                                Math.min(total - n, cfg.ballCap) * cfg.points.ball,
+                        });
+                    }
+                } else {
+                    ev({ kind: "error", line: c.line, text: `บรรทัด ${c.line}: ไม่รู้จักคำสั่ง ${c.name}()` });
+                }
+            }
+        }
+    }
+
+    if (!crashed && !timedOut && flying) ev({ kind: "warn", text: "จบโปรแกรมแล้วโดรนยังบินอยู่ อย่าลืม autoLand()" });
+    if (!crashed && !timedOut && !landedOnPad && !flying && calls.length)
+        ev({ kind: "warn", text: "ยังไม่ได้ลงจอดบนแท่น Takeoff จึงยังไม่หยุดเวลา" });
+
+    // ---- สรุปคะแนนตามกติกา ----
+    const breakdown: Breakdown[] = [];
+    let ballPts = 0,
+        over = 0,
+        total = 0;
+    balls.forEach(n => {
+        total += n;
+        ballPts += Math.min(n, cfg.ballCap) * cfg.points.ball;
+        over += Math.max(0, n - cfg.ballCap);
+    });
+    if (total) breakdown.push({ label: `สัมภาระลงแท่น ${total - over} ลูก`, points: ballPts });
+    if (over)
+        breakdown.push({ label: `สัมภาระเกิน ${cfg.ballCap} ลูกต่อแท่น ${over} ลูก`, points: -over * cfg.points.ball });
+    if (popped.size)
+        breakdown.push({ label: `ทำลายลูกโป่ง ${popped.size} ลูก`, points: popped.size * cfg.points.balloon });
+    if (platformLanded.size)
+        breakdown.push({
+            label: `ลงจอดแท่นวงกลม ${platformLanded.size} แท่น`,
+            points: platformLanded.size * cfg.points.platformLanding,
+        });
+    if (bestRing.size)
+        breakdown.push({
+            label: `ลูกดอกถูกเป้า ${bestRing.size} เป้า (วง ${[...bestRing.values()].join(", ")})`,
+            points: [...bestRing.values()].reduce((s, v) => s + v, 0),
+        });
+    if (landedOnPad)
+        breakdown.push({
+            label: cfg.free ? (padC === null ? "ลงจอดสำเร็จ" : "ลงจอดบนแท่นฐาน") : throughHoop ? "ลอดห่วงและลงจอดบนแท่น Takeoff" : "ลงจอดบนแท่น Takeoff (ไม่ได้ลอดห่วง)",
+            points: throughHoop ? cfg.points.padThroughHoop : cfg.points.padNoHoop,
+        });
+    void shotsMade;
+    const extra = evalExtras(frames, cfg);
+    breakdown.push(...extra.breakdown);
+    const score = breakdown.reduce((s, b) => s + b.points, 0);
+
+    return {
+        frames,
+        events,
+        duration: t,
+        score,
+        breakdown,
+        stopTime,
+        landedOnPad,
+        throughHoop,
+        timedOut,
+        ok: !crashed && !errors.length,
+        visits: extra.visits,
+    };
+}
+
+/** ตำแหน่งโดรน ณ เวลา t (เฟรมต่อกัน ใช้ interpolation เชิงเส้น) */
+export function frameAt(frames: Frame[], t: number): Frame {
+    if (t <= 0) return frames[0];
+    for (let i = 1; i < frames.length; i++) {
+        const b = frames[i];
+        if (t <= b.t) {
+            const a = frames[i - 1];
+            const k = b.t === a.t ? 1 : (t - a.t) / (b.t - a.t);
+            return {
+                t,
+                x: a.x + (b.x - a.x) * k,
+                y: a.y + (b.y - a.y) * k,
+                z: a.z + (b.z - a.z) * k,
+                yaw: a.yaw + (b.yaw - a.yaw) * k,
+            };
+        }
+    }
+    return frames[frames.length - 1];
+}
