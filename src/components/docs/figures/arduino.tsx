@@ -400,7 +400,147 @@ export function VariableBox() {
   );
 }
 
+/** ไล่ servo_degree_to_pulse(200) ทีละขั้น */
+export function CallTrace() {
+  const cols = [
+    { n: '1', t: 'เรียกใช้', code: 'servo_degree_to_pulse(200)', v: 'angle = 200', tone: 'paper2' as const },
+    { n: '2', t: 'constrain', code: 'constrain(200, 0, 180)', v: 'angle = 180', tone: 'red' as const },
+    { n: '3', t: 'map', code: 'map(180, 0,180, 490,2550)', v: 'ได้ 2550', tone: 'blue' as const },
+    { n: '4', t: 'return', code: 'return 2550;', v: 'ผู้เรียกได้ 2550', tone: 'paper2' as const },
+  ];
+  return (
+    <Svg w={760} h={250} title="ไล่การทำงานของฟังก์ชันทีละขั้น" desc="เรียกด้วย 200 ถูก constrain เหลือ 180 แล้ว map เป็น 2550 แล้ว return กลับ">
+      {cols.map((c, i) => {
+        const x = 20 + i * 190;
+        return (
+          <g key={c.n}>
+            <Box x={x} y={50} w={160} h={130} tone={c.tone} />
+            <circle cx={x + 24} cy={26} r={15} fill={C.blue} />
+            <text x={x + 24} y={32} fill="#fff" fontSize={16} fontWeight={700} textAnchor="middle" fontFamily="var(--font-sans)">{c.n}</text>
+            <T x={x + 48} y={32} anchor="start" size={16}>{c.t}</T>
+            <T x={x + 80} y={92} mono size={13} weight={500}>{c.code}</T>
+            <T x={x + 80} y={150} mono size={16} c={c.n === '2' ? C.red : C.ink}>{c.v}</T>
+            {i < 3 && <Arrow d={`M${x + 162} 115 H${x + 188}`} tone="ink" />}
+          </g>
+        );
+      })}
+      <T x={380} y={222} size={15} c={C.soft} weight={500}>ถ้าส่ง 90 มา ขั้น 2 ไม่เปลี่ยนค่า (90 อยู่ในช่วงอยู่แล้ว) ขั้น 3 ได้ 1520</T>
+    </Svg>
+  );
+}
+
+/** map(): ช่วง 0–180 ไปช่วง 490–2550 */
+export function MapScale() {
+  const x0 = 80, wd = 600;
+  const px = (v: number) => x0 + (v / 180) * wd;
+  return (
+    <Svg w={760} h={270} title="map แปลงองศาเป็นความกว้างพัลส์" desc="องศา 0 ถึง 180 เทียบเป็น 490 ถึง 2550 ไมโครวินาที 45 องศาได้ 1005 และ 90 องศาได้ 1520">
+      <T x={x0 - 8} y={50} anchor="end" size={14} c={C.soft}>องศา</T>
+      <line x1={x0} y1={60} x2={x0 + wd} y2={60} stroke={C.ink} strokeWidth={3} />
+      <T x={x0} y={36} mono size={14}>0</T>
+      <T x={x0 + wd} y={36} mono size={14}>180</T>
+      <line x1={x0} y1={190} x2={x0 + wd} y2={190} stroke={C.ink} strokeWidth={3} />
+      <T x={x0 - 8} y={196} anchor="end" size={14} c={C.soft}>พัลส์ (µs)</T>
+      <T x={x0} y={226} mono size={14}>490</T>
+      <T x={x0 + wd} y={226} mono size={14}>2550</T>
+      {[45, 90].map((a) => {
+        const us = 490 + (a * 2060) / 180;
+        const tone = a === 90 ? C.blue : C.red;
+        return (
+          <g key={a}>
+            <line x1={px(a)} y1={60} x2={px(a)} y2={190} stroke={tone} strokeWidth={2.5} strokeDasharray="2 7" />
+            <circle cx={px(a)} cy={60} r={7} fill={tone} />
+            <circle cx={px(a)} cy={190} r={7} fill={tone} />
+            <T x={px(a)} y={90} mono size={15} c={tone}>{a}°</T>
+            <T x={px(a)} y={170} mono size={15} c={tone}>{Math.round(us)}</T>
+          </g>
+        );
+      })}
+      <T x={380} y={256} size={14} c={C.soft} weight={500}>สัดส่วนเท่ากัน: ครึ่งทางของบน = ครึ่งทางของล่าง</T>
+    </Svg>
+  );
+}
+
+/** ไล่ลูป for บวกอาร์เรย์ทีละรอบ */
+export function ForTrace() {
+  const rows = [
+    ['0', '0', '352', '352'],
+    ['1', '352', '352', '704'],
+    ['2', '704', '352', '1056'],
+    ['3', '1056', '352', '1408'],
+  ];
+  const cx = [90, 250, 420, 600];
+  return (
+    <Svg w={760} h={330} title="ไล่ลูป for ทีละรอบ" desc="i เพิ่มจาก 0 ถึง 3 ทุกรอบบวก 352 เข้า sum ได้ 352, 704, 1056, 1408 และรอบ i เท่ากับ 4 ลูปหยุด">
+      {['i', 'sum ก่อนบวก', 'forwardDistanceCM[i]', 'sum หลังบวก'].map((h, k) => (
+        <T key={h} x={cx[k]} y={30} size={14} c={C.soft}>{h}</T>
+      ))}
+      {rows.map((r, i) => (
+        <g key={i}>
+          <Box x={20} y={44 + i * 48} w={720} h={40} tone={i % 2 ? 'paper2' : 'paper'} r={8} />
+          {r.map((v, k) => (
+            <T key={k} x={cx[k]} y={70 + i * 48} mono size={16} c={k === 3 ? C.blue : C.ink}>{v}</T>
+          ))}
+        </g>
+      ))}
+      <Box x={20} y={240} w={720} h={40} tone="red" r={8} />
+      <T x={90} y={266} mono size={16} c={C.red}>4</T>
+      <T x={420} y={266} size={15} c={C.red}>4 &lt; 4 เป็นเท็จ ลูปหยุด คืน sum = 1408</T>
+      <T x={380} y={312} size={14} c={C.soft} weight={500}>ค่าในอาร์เรย์ไม่ได้เปลี่ยน มีแต่ตัวแปร sum ที่โตขึ้นทุกรอบ</T>
+    </Svg>
+  );
+}
+
+/** ส่งค่าเข้าฟังก์ชัน = คัดลอก */
+export function ParamCopy() {
+  return (
+    <Svg w={760} h={270} title="ส่งค่าเข้าฟังก์ชันคือการคัดลอก" desc="ตัวแปร a เท่ากับ 300 ถูกคัดลอกเป็น x ในฟังก์ชัน x เปลี่ยนเป็น 150 แต่ a ยังเป็น 300">
+      <T x={130} y={30} size={15} c={C.soft}>ฝั่งที่เรียก</T>
+      <Box x={20} y={44} w={220} h={90} tone="paper2" />
+      <T x={130} y={82} mono size={16}>int a = 300;</T>
+      <T x={130} y={112} mono size={16}>half(a);</T>
+      <Arrow d="M242 90 H318" tone="ink" />
+      <T x={280} y={78} size={14} c={C.soft}>คัดลอก</T>
+      <T x={470} y={30} size={15} c={C.soft}>ในฟังก์ชัน</T>
+      <Box x={320} y={44} w={300} h={90} tone="blue" />
+      <T x={470} y={82} mono size={16}>int half(int x)</T>
+      <T x={470} y={112} mono size={16}>x = 300 → 150</T>
+      <Arrow d="M470 138 V176" tone="blue" />
+      <Box x={320} y={178} w={300} h={50} tone="paper" />
+      <T x={470} y={210} mono size={15}>ฝั่งที่เรียก a ยังเป็น 300</T>
+      <T x={380} y={256} size={14} c={C.soft} weight={500}>แก้ x ข้างใน ไม่กระทบ a ข้างนอก (ถ้าอยากให้กระทบ ต้องใช้ &amp; ดูหัวข้อด้านล่าง)</T>
+    </Svg>
+  );
+}
+
+/** ผูกฟังก์ชันกับปุ่มรีโมท: จำไว้ก่อน เรียกทีหลัง */
+export function FuncPtr() {
+  return (
+    <Svg w={760} h={260} title="ผูกฟังก์ชันกับปุ่มรีโมท" desc="ตอนบูตจำชื่อฟังก์ชันไว้ ตอนกด KEY1 ค่อยเรียกฟังก์ชันที่จำไว้">
+      <circle cx={34} cy={34} r={15} fill={C.blue} />
+      <text x={34} y={40} fill="#fff" fontSize={16} fontWeight={700} textAnchor="middle" fontFamily="var(--font-sans)">1</text>
+      <T x={60} y={40} anchor="start" size={16}>ตอนบูต: จำไว้ ยังไม่เรียก</T>
+      <Box x={20} y={58} w={330} h={66} tone="paper2" />
+      <T x={185} y={88} mono size={14}>drone.onKey1(</T>
+      <T x={185} y={110} mono size={14} c={C.blue}>DroneMission_KEY_1_handle);</T>
+      <Arrow d="M350 91 H410" tone="ink" />
+      <Box x={412} y={58} w={328} h={66} tone="paper" />
+      <T x={576} y={88} size={14} c={C.soft} weight={500}>ที่อยู่ในหน่วยความจำของ</T>
+      <T x={576} y={110} size={14} c={C.soft} weight={500}>ฟังก์ชัน ถูกเก็บไว้ใน handler</T>
+      <circle cx={34} cy={164} r={15} fill={C.red} />
+      <text x={34} y={170} fill="#fff" fontSize={16} fontWeight={700} textAnchor="middle" fontFamily="var(--font-sans)">2</text>
+      <T x={60} y={170} anchor="start" size={16}>ตอนกด KEY1 บนรีโมท: ค่อยเรียกจริง</T>
+      <Box x={20} y={188} w={330} h={56} tone="paper2" />
+      <T x={185} y={222} size={15}>รีโมทส่งสัญญาณ KEY1 มา</T>
+      <Arrow d="M350 216 H410" tone="red" />
+      <Box x={412} y={188} w={328} h={56} tone="red" />
+      <T x={576} y={222} mono size={14}>handler();  → โดรนเริ่มภารกิจ</T>
+    </Svg>
+  );
+}
+
 export const arduinoFigures: Record<string, ComponentType<Record<string, unknown>>> = {
+  CallTrace, MapScale, ForTrace, ParamCopy, FuncPtr,
   BuildFlow, ProjectMap, SetupLoop, BlinkWave, TypeSizes, LoopFlow, ArrayCells, FunctionBox,
   PointerDiagram, ClassObject, LineAnatomy, VariableBox, BitRegister, InterruptFlow, TimingCompare,
 };
