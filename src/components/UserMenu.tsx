@@ -59,3 +59,47 @@ export function UserMenu() {
     </DropdownMenu>
   );
 }
+
+/** บัญชีผู้ใช้ในลิ้นชักเมนูมือถือ: ยังไม่ล็อกอิน = ปุ่มเข้าสู่ระบบ · ล็อกอินแล้ว = ชื่อ อีเมล บทบาท + ทางเข้าหลังบ้านกับปุ่มออกจากระบบ */
+export function UserMenuMobile({ onNavigate }: { onNavigate?: () => void }) {
+  const router = useRouter();
+  const { data, isPending } = authClient.useSession();
+  const row = 'flex min-h-12 w-full items-center gap-3 squircle-xl px-4 text-base font-medium transition-colors focus-visible:outline-2 focus-visible:outline-brand-blue';
+
+  if (isPending) return <span aria-hidden className="block h-12 animate-pulse squircle-xl bg-surface-2" />;
+
+  if (!data) {
+    return (
+      <Link href="/login" onClick={onNavigate} className={`${row} justify-center border border-line hover:bg-surface-2`}>
+        <LogIn className="size-5" aria-hidden /> เข้าสู่ระบบ
+      </Link>
+    );
+  }
+
+  const u = data.user as { name?: string; email: string; image?: string | null; role?: string };
+  const name = u.name?.trim() || u.email.split('@')[0];
+  const role = u.role ?? 'MEMBER';
+
+  return (
+    <div className="grid gap-2 squircle-2xl border border-line bg-surface-2 p-3">
+      <div className="flex items-center gap-3 px-1 py-1">
+        <Avatar className="size-11 squircle-xl after:hidden">
+          {u.image && <AvatarImage src={u.image} alt="" className="squircle-xl" />}
+          <AvatarFallback className="squircle-xl bg-foreground text-base font-bold text-background">{name.slice(0, 1).toUpperCase()}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0">
+          <p className="truncate text-lg font-bold leading-tight">{name}</p>
+          <p className="truncate text-sm text-muted-foreground">{u.email}</p>
+          <p className="mt-1 w-fit squircle-xl bg-muted px-2 py-0.5 text-xs font-medium">{ROLE[role] ?? role}</p>
+        </div>
+      </div>
+      <Link href="/admin" onClick={onNavigate} className={`${row} bg-surface hover:bg-muted`}>
+        <LayoutDashboard className="size-5" aria-hidden /> {role === 'MEMBER' ? 'บัญชีของฉัน' : 'จัดการเว็บไซต์'}
+      </Link>
+      <button type="button" className={`${row} bg-surface text-brand-red hover:bg-muted`}
+        onClick={async () => { await authClient.signOut(); onNavigate?.(); router.refresh(); }}>
+        <LogOut className="size-5" aria-hidden /> ออกจากระบบ
+      </button>
+    </div>
+  );
+}
