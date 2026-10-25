@@ -13,6 +13,7 @@ export function ThemeToggle({ className }: { className?: string }) {
   return (
     <AnimatedThemeToggler
       className={className}
+      duration={600}
       theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
       onThemeChange={setTheme}
       aria-label="สลับโหมดสว่าง/มืด"

@@ -12,11 +12,11 @@ import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerTitle } fr
 import { ScrollProgress } from '@/components/ui/scroll-progress';
 
 const links = [
-  { href: '/#how', label: 'โดรนบินยังไง', spy: 'how' },
-  { href: '/#showcase', label: 'ผลงาน', spy: 'showcase' },
-  { href: '/simulator', label: 'ลองบินจำลอง' },
-  { href: '/field', label: 'สนาม' },
+  { href: '/#how', label: 'การทำงาน', spy: 'how' },
   { href: '/docs', label: 'บทเรียน' },
+  { href: '/#showcase', label: 'ผลงานที่ผ่านมา', spy: 'showcase' },
+  { href: '/simulator', label: 'ฝึกเขียนโค้ด' },
+  { href: '/field', label: 'จำลองสนามแข่งขัน' },
 ] as const;
 
 /**
@@ -71,9 +71,8 @@ export function Header() {
             const active = isActive(l);
             return (
               <li key={l.href} className="relative" onMouseEnter={(e) => point(e.currentTarget)} onFocus={(e) => point(e.currentTarget)}>
-                <Link href={l.href} aria-current={active ? 'page' : undefined} className={`relative flex min-h-11 items-center whitespace-nowrap px-3 text-base xl:px-4 transition-colors hover:text-foreground ${active ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>
+                <Link href={l.href} aria-current={active ? 'page' : undefined} className={`relative flex min-h-11 items-center whitespace-nowrap squircle-xl px-3 text-base transition-colors hover:text-foreground xl:px-4 ${active ? 'bg-brand-blue/10 font-semibold text-brand-blue' : 'text-muted-foreground'}`}>
                   {l.label}
-                  <span aria-hidden className={`absolute bottom-1.5 left-1/2 size-1.5 -translate-x-1/2 rounded-full bg-brand-blue transition-all duration-300 ${active ? 'scale-100 opacity-100' : 'scale-0 opacity-0'}`} />
                 </Link>
               </li>
             );
@@ -83,7 +82,7 @@ export function Header() {
         <div className="flex items-center gap-2">
           <ThemeToggle />
           <div className="hidden lg:block"><UserMenu /></div>
-          <Button size="sm" className="group/cta hidden h-10 px-4 text-base sm:inline-flex squircle-2xl" render={<Link href="/docs" />} nativeButton={false}>
+          <Button size="sm" className="group/cta hidden h-10.5 px-4 text-base sm:inline-flex squircle-3xl" render={<Link href="/docs" />} nativeButton={false}>
             เริ่มเรียน <ArrowRight className="size-4 transition-transform group-hover/cta:translate-x-0.5" aria-hidden />
           </Button>
           <button
