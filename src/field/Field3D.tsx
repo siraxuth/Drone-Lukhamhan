@@ -898,6 +898,9 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { 
 
   // ขณะบินจำลอง: กล้องตามหลังโดรน — หน่วงที่ "จุดที่ตาม" ไม่ใช่ตัวกล้อง จึงไม่แกว่ง และเริ่มต้นที่หลังโดรนทันที
   const follow = useRef({ x: 0, y: 0, alt: 0, yaw: 0, init: false });
+  // ตำแหน่งกล้องเทียบกับหัวโดรน (หน้า/ข้าง/สูง) ผู้ใช้หมุนหรือซูมแล้วค่านี้เปลี่ยน กล้องจึงยังตามโดรนต่อโดยคงมุมที่เลือก
+  const rel = useRef({ a: -2.1, b: 0, h: 0.9 });
+  const lastChase = useRef<{ target: THREE.Vector3; hd: { x: number; y: number } } | null>(null);
   useFrame((_, rawDt) => {
     const c = controls.current;
     if (!c) return;
@@ -905,6 +908,13 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { 
     const cam = camera as THREE.PerspectiveCamera;
     let chasePosition: THREE.Vector3 | null = null;
     let chaseTarget: THREE.Vector3 | null = null;
+    let chaseHd: { x: number; y: number } | null = null;
+    // OrbitControls (drei) อัปเดตกล้องตามการลาก/ซูมก่อน useFrame นี้ จึงอ่านกลับก่อนจะวางกล้องใหม่ แล้วเก็บเป็นตำแหน่งสัมพัทธ์กับหัวโดรน
+    const lc = lastChase.current;
+    if (lc && live && view === 'chase' && !highlight) {
+      const ox = cam.position.x - lc.target.x, oz = cam.position.z - lc.target.z;
+      rel.current = { a: ox * lc.hd.x - oz * lc.hd.y, b: -ox * lc.hd.y - oz * lc.hd.x, h: cam.position.y - lc.target.y };
+    }
     if (live && view === 'chase' && poseRef?.current) {
       const p = poseRef.current, f = follow.current;
       const k = f.init ? 1 - Math.exp(-dt * 5) : 1;
@@ -913,11 +923,14 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { 
       f.x += (p.x - f.x) * k; f.y += (p.y - f.y) * k; f.alt += (p.alt - f.alt) * k; f.yaw += dyaw * k;
       f.init = true;
       const hd = heading(f.yaw);
-      chasePosition = new THREE.Vector3(f.x - hd.x * 1.6, f.alt + 0.85, -(f.y - hd.y * 1.6));
       chaseTarget = new THREE.Vector3(f.x + hd.x * 0.5, f.alt - 0.05, -(f.y + hd.y * 0.5));
-    } else follow.current.init = false;
+      const r = rel.current;
+      chasePosition = new THREE.Vector3(chaseTarget.x + hd.x * r.a - hd.y * r.b, chaseTarget.y + r.h, chaseTarget.z - hd.y * r.a - hd.x * r.b);
+      chaseHd = hd;
+    } else { lastChase.current = null; follow.current.init = false; rel.current = { a: -2.1, b: 0, h: 0.9 }; }
 
     if (highlight) {
+      lastChase.current = null;
       if (!cinematic.current) cinematic.current = { view, position: cam.position.clone(), target: c.target.clone() };
       const from = new THREE.Vector3(...p3(...highlight.from));
       const to = new THREE.Vector3(...p3(...highlight.to));
@@ -935,6 +948,7 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { 
     }
 
     if (cinematic.current) {
+      lastChase.current = null;
       const saved = cinematic.current;
       const presetPosition = view === 'top' ? new THREE.Vector3(0, topH, 0.01) : new THREE.Vector3(0, 1.7, 6.6);
       const presetTarget = view === 'top' ? new THREE.Vector3(0, 0, 0) : new THREE.Vector3(0, 0.9, -1.5);
@@ -951,7 +965,10 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { 
       return;
     }
 
-    if (chasePosition && chaseTarget) { cam.position.copy(chasePosition); c.target.copy(chaseTarget); c.update(); }
+    if (chasePosition && chaseTarget && chaseHd) {
+      cam.position.copy(chasePosition); c.target.copy(chaseTarget); c.update();
+      lastChase.current = { target: chaseTarget.clone(), hd: chaseHd };
+    }
   });
 
   return (
