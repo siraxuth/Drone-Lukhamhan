@@ -71,8 +71,14 @@ function makeArrow(color: string, clockwise: boolean) {
   return { g, mat };
 }
 
-function Drone({ url }: { url: string }) {
+function Drone({ url, onReady }: { url: string; onReady?: () => void }) {
   const { scene } = useGLTF(url);
+  // โมเดลถูกดึงและสร้างเสร็จแล้ว (ส่วนนี้ mount หลังพ้น Suspense) → รออีกสองเฟรมให้ภาพขึ้นจอก่อนค่อยบอกว่าพร้อม
+  useEffect(() => {
+    let a = 0, b = 0;
+    a = requestAnimationFrame(() => { b = requestAnimationFrame(() => onReady?.()); });
+    return () => { cancelAnimationFrame(a); cancelAnimationFrame(b); };
+  }, [onReady]);
   const root = useRef<THREE.Group>(null);
   const view = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
@@ -86,6 +92,21 @@ function Drone({ url }: { url: string }) {
     paintForTheme(model, false);
     const byName: Record<string, THREE.Object3D> = {};
     model.traverse((o) => { if (o.name) byName[o.name] = o; });
+    // ไฟล์ที่บีบอัดแล้ว (quantize) ย้ายจุดหมุนของใบพัดไปกึ่งกลางกรอบรูป ทำให้ใบพัดหมุนเหวี่ยงนอกแกนมอเตอร์
+    // → ห่อใบพัดด้วยกลุ่มที่จุดหมุนอยู่บนแกนมอเตอร์พอดี (ตำแหน่งที่เห็นไม่เปลี่ยน)
+    for (const n of [1, 2, 3, 4]) {
+      const prop = byName[`Prop_${n}`], motor = byName[`Motor_${n}`];
+      if (!prop || !motor || !prop.parent) continue;
+      const wrap = new THREE.Group();
+      wrap.position.set(motor.position.x, prop.position.y, motor.position.z);
+      prop.parent.add(wrap);
+      prop.position.sub(wrap.position);
+      wrap.add(prop);
+      prop.name = `Prop_${n}_mesh`;
+      wrap.name = `Prop_${n}`;
+      byName[wrap.name] = wrap;
+      byName[prop.name] = prop;
+    }
     const home: Record<string, THREE.Vector3> = {};
     Object.entries(byName).forEach(([k, o]) => { home[k] = o.position.clone(); });
 
@@ -305,7 +326,7 @@ function SyncedLoop() {
   return null;
 }
 
-export default function Drone3D({ quality, onFail }: { quality: Exclude<Quality, 'off'>; onFail: () => void }) {
+export default function Drone3D({ quality, onFail, onReady }: { quality: Exclude<Quality, 'off'>; onFail: () => void; onReady?: () => void }) {
   const high = quality === 'high';
   const steps = high ? [1.5, 1.25, 1] : [1, 0.8];
   const [step, setStep] = useState(0);
@@ -334,7 +355,7 @@ export default function Drone3D({ quality, onFail }: { quality: Exclude<Quality,
           <Lightformer form="rect" intensity={3} color="#ef4466" position={[6, 1, -2]} scale={[2, 8, 1]} />
         </Environment>
       )}
-      <Drone url={MODEL[quality]} />
+      <Drone url={MODEL[quality]} onReady={onReady} />
       {fx && <Sparkles count={40} scale={[14, 8, 6]} size={2} speed={0.3} opacity={0.45} color="#7cc4ff" />}
       <Rig />
     </Canvas>
