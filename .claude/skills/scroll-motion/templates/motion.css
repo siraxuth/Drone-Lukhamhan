@@ -1,0 +1,21 @@
+/* scroll-motion: drop into your global CSS. */
+
+/* Pinned scene replaces the stacked layout on capable desktops (class set by an inline <head> script). */
+[data-stage] { display: none; }
+.stage-on [data-stage] { display: block; }
+.stage-on [data-classic] { display: none; }
+
+/* Staggered reveal. Trigger attribute lives on a non-React wrapper. `reveal-ready` is added by the motion module. */
+@keyframes reveal-up { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: no-preference) {
+  .reveal-ready [data-reveal-group] [data-reveal-item] { opacity: 0; }
+  .reveal-ready [data-reveal-group][data-inview] [data-reveal-item] {
+    animation: reveal-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: calc(var(--i, 0) * 80ms);
+  }
+}
+
+/* Lenis owns smoothing; native smooth scrolling must be off while it is active. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

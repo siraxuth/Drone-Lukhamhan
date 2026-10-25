@@ -1,0 +1,33 @@
+name: CI
+
+# ตรวจทุกครั้งที่มี PR หรือ push เข้า main / release · ต้องผ่านก่อนรวมเข้า release
+on:
+  pull_request:
+    branches: [main, release]
+  push:
+    branches: [main, release]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Build
+        run: bun run build
+        env:
+          # ค่าหลอกสำหรับ build ใน CI (ไม่ต่อฐานข้อมูลจริง หน้าที่ต้องใช้ฐานข้อมูลจะใช้ข้อมูลตั้งต้นแทน)
+          DATABASE_URL: postgresql://ci:ci@localhost/ci
+          BETTER_AUTH_SECRET: ci-secret-ci-secret-ci-secret-1234
+          BETTER_AUTH_URL: http://localhost:3000
+          NEXT_PUBLIC_SITE_URL: https://drone.dekgp.com
