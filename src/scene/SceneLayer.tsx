@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useState } from 'react';
+import Image from 'next/image';
 import { detectQuality, type Quality } from './quality';
 
 const Drone3D = dynamic(() => import('./Drone3D'), { ssr: false });
@@ -37,10 +38,28 @@ export function SceneLayer() {
   // เครื่องลากไม่ไหวระหว่างใช้งาน (FPS ต่ำต่อเนื่อง) → สลับเป็นภาพนิ่ง
   const fail = useCallback(() => setMode('off'), []);
 
-  if (effective !== 'low' && effective !== 'high') return null;
+  // หน้าโหลด: อยู่แค่ตราบที่โมเดลยังไม่พร้อม ไม่มีเวลาขั้นต่ำ · ถ้าไม่ใช้ 3D หรือพังก็ปล่อยทันที
+  const [ready, setReady] = useState(false);
+  const onReady = useCallback(() => setReady(true), []);
+  const use3d = effective === 'low' || effective === 'high';
+  const hide = ready || (effective === 'off' && mode !== 'pending') || (reduced && mode !== 'pending');
+  useEffect(() => {
+    const t = setTimeout(() => setReady(true), 12000); // กันค้าง: เน็ตช้าจัดก็เปิดหน้าให้ใช้ก่อน
+    return () => clearTimeout(t);
+  }, []);
+
   return (
-    <div className="scene-layer pointer-events-none fixed inset-0 z-0" aria-hidden>
-      <Drone3D quality={effective} onFail={fail} />
-    </div>
+    <>
+      <div className="model-loader" data-hide={hide || undefined} role="status" aria-live="polite" aria-label="กำลังโหลดโมเดลโดรน">
+        <Image src="/brand/logo-sm.webp" alt="" width={56} height={56} priority className="size-14" />
+        <span className="model-loader-bar" aria-hidden><i /></span>
+        <span className="font-display text-sm text-muted-foreground">กำลังโหลดโดรน</span>
+      </div>
+      {use3d && (
+        <div className="scene-layer pointer-events-none fixed inset-0 z-0" aria-hidden>
+          <Drone3D quality={effective} onFail={fail} onReady={onReady} />
+        </div>
+      )}
+    </>
   );
 }
