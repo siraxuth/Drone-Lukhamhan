@@ -1,15 +1,7 @@
 import { SC_HOVER, SC_L, SC_LINE } from '../scenarios';
 import type { ArrangeStep, FillStep, QuizStep, SkillId, Step, WriteStep } from '../types';
 
-type L = 1 | 2 | 3 | 4 | 5;
-/** ตัวช่วยสร้างข้อเลือกตอบ: ใส่คำตอบที่ถูกไว้ที่ตำแหน่ง pos (เริ่ม 0) ระหว่างตัวเลือกผิด เฉลยไม่เคยถูกส่งไปไคลเอนต์ */
-const quiz = (title: string, question: string, correct: string, wrong: string[], pos: number, skills: SkillId[], level: L, explain: string, code?: string): QuizStep => {
-  const options = [...wrong]; options.splice(pos, 0, correct);
-  return { kind: 'quiz', title, question, code, options, answer: pos, skills, level, explain };
-};
-const fill = (title: string, question: string, code: string, blanks: FillStep['blanks'], skills: SkillId[], level: L, explain: string): FillStep => ({ kind: 'fill', title, question, code, blanks, skills, level, explain });
-const arrange = (a: Omit<ArrangeStep, 'kind'>): ArrangeStep => ({ kind: 'arrange', ...a });
-const write = (w: Omit<WriteStep, 'kind'>): WriteStep => ({ kind: 'write', ...w });
+import { arrange, fill, quiz, write } from './builders';
 
 const SETUP = (body: string) => `void setup() {\n${body}\n}\n\nvoid loop() {\n}\n`;
 const START = '  calibration();\n  delay(3000);\n  take_off();\n  delay(3000);\n  set_height(100);';

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { BookOpen, CalendarCheck, Flag, FolderKanban, Gauge, Images, LayoutList, LogOut, Puzzle, Users } from 'lucide-react';
+import { BookOpen, CalendarCheck, Flag, GraduationCap, FolderKanban, Gauge, Images, LayoutList, LogOut, Puzzle, Users } from 'lucide-react';
 import { Logo } from '@/components/brand/Logo';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, useSidebar } from '@/components/ui/sidebar';
 import { authClient } from '@/lib/auth-client';
@@ -16,6 +16,7 @@ const groups = [
       { href: '/admin/seasons', label: 'ฤดูกาล / กติกา', icon: Flag },
       { href: '/admin/challenges', label: 'โจทย์ฝึกตัวจำลอง', icon: Puzzle },
       { href: '/admin/daily', label: 'ภารกิจรายวัน', icon: CalendarCheck },
+      { href: '/admin/learners', label: 'ผู้เรียน', icon: GraduationCap },
       { href: '/admin/sections', label: 'หมวดเนื้อหา', icon: LayoutList },
       { href: '/admin/media', label: 'คลังรูป', icon: Images },
     ],

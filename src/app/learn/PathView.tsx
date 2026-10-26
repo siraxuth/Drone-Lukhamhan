@@ -3,6 +3,8 @@ import { BarChart3, CalendarCheck, Check, Trophy, ClipboardCheck, Flame, Lock, P
 import { TRACKS } from '@/learn/content';
 import { levelOf, nextUnit, pathStates, XP_PER_LEVEL } from '@/learn/path';
 import { leagueOf } from '@/learn/board-utils';
+import { Tour } from '@/components/Tour';
+import { learnTour } from '@/lib/tours';
 import type { Track } from '@/learn/types';
 
 type Profile = { displayName: string; xp: number; streak: number; todayXp: number; dailyGoal: number; activeToday: boolean; showOnBoard: boolean; placement: 'none' | 'skipped' | 'done' };
@@ -37,13 +39,14 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
 
   return (
     <main className="mx-auto grid max-w-5xl gap-8 px-4 pb-32 pt-28 sm:px-6">
+      <Tour id="learn" steps={learnTour} />
       <header className="grid gap-2">
         <p className="text-base font-semibold text-brand-blue">การเรียนของฉัน</p>
         <h1 className="font-display text-4xl font-extrabold leading-[1.1] tracking-tight sm:text-5xl">สวัสดี {profile.displayName}</h1>
         <p className="max-w-2xl text-lg leading-8 text-muted-foreground">เรียนทีละหน่วยจากง่ายไปยาก จบหน่วยเพื่อรับ XP และปลดล็อกหน่วยถัดไป ทำได้ตามจังหวะของตัวเอง</p>
       </header>
 
-      <section aria-label="สถิติของฉัน" className="grid gap-3 sm:grid-cols-3">
+      <section aria-label="สถิติของฉัน" data-tour="learn-stats" className="grid gap-3 sm:grid-cols-3">
         <Stat icon={<Sparkles className="size-5 text-brand-blue" aria-hidden />} label={`ระดับ ${level} · ${leagueOf(profile.xp).name}`} value={`${profile.xp} XP`} hint={`อีก ${XP_PER_LEVEL - inLevel} XP ถึงระดับ ${level + 1}`} />
         <Stat icon={<Flame className={`size-5 ${profile.streak ? 'text-orange-500' : 'text-muted-foreground'}`} aria-hidden />} label="เรียนต่อเนื่อง" value={`${profile.streak} วัน`} hint={profile.activeToday ? 'วันนี้เรียนแล้ว' : profile.streak ? 'เรียนวันนี้เพื่อต่อสถิติ' : 'เริ่มนับวันแรกได้เลย'} />
         <div className="flex items-center gap-3 squircle-xl border border-line bg-surface px-4 py-3">
@@ -68,7 +71,7 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
       )}
 
       {next && (
-        <section aria-label="เรียนต่อ" className={`flex flex-wrap items-center gap-4 squircle-2xl border border-line p-5 ${ACCENT[next.track.accent].soft}`}>
+        <section aria-label="เรียนต่อ" data-tour="learn-next" className={`flex flex-wrap items-center gap-4 squircle-2xl border border-line p-5 ${ACCENT[next.track.accent].soft}`}>
           <div className="min-w-0 flex-1 basis-full sm:basis-0">
             <p className="text-sm font-semibold text-muted-foreground">{done.size === 0 ? 'เริ่มจากตรงนี้' : 'เรียนต่อจากเดิม'} · {next.track.title}</p>
             <p className="text-2xl font-extrabold leading-tight">{next.unit.title}</p>
@@ -80,7 +83,7 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
         </section>
       )}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div data-tour="learn-tools" className="flex flex-wrap items-center gap-3">
         <p className="mr-auto text-sm text-muted-foreground">จบแล้ว {done.size} จาก {total} หน่วย</p>
         <Link href="/learn/leaderboard" className="inline-flex h-11 items-center gap-2 squircle-xl border border-line bg-surface px-4 text-base font-semibold hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"><Trophy className="size-4" aria-hidden /> อันดับ</Link>
         <Link href="/learn/daily" className="inline-flex h-11 items-center gap-2 squircle-xl border border-line bg-surface px-4 text-base font-semibold hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"><CalendarCheck className="size-4" aria-hidden /> ภารกิจรายวัน</Link>
@@ -88,6 +91,7 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
         <Link href="/learn/review" className="inline-flex h-11 items-center gap-2 squircle-xl border border-line bg-surface px-4 text-base font-semibold hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"><RefreshCw className="size-4" aria-hidden /> ทบทวน 5 ข้อ</Link>
       </div>
 
+      <div data-tour="learn-tracks" className="grid gap-8">
       {TRACKS.map((track) => {
         const a = ACCENT[track.accent];
         const finished = track.units.filter((u) => done.has(u.id)).length;
@@ -101,7 +105,7 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
                 </h2>
                 <p className="mt-1 max-w-2xl text-base text-muted-foreground">{track.tagline}</p>
               </div>
-              <p className={`text-sm font-semibold ${a.text}`}>{finished}/{track.units.length} หน่วย</p>
+              <p className={`text-sm font-semibold ${a.text}`}>{finished}/{track.units.length} หน่วย{track.id === 'physics' && <> · <Link href="/learn/curriculum" className="underline underline-offset-4">แผนที่ ม.1–6</Link></>}</p>
             </div>
 
             <ol className="relative grid gap-3">
@@ -114,7 +118,7 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
                       {st === 'done' ? <Check className="size-6" /> : st === 'locked' ? <Lock className="size-5" /> : i + 1}
                     </span>
                     <span className="min-w-0 flex-1 text-left">
-                      <span className="block text-lg font-bold leading-snug">{u.title}</span>
+                      <span className="flex flex-wrap items-center gap-x-2 text-lg font-bold leading-snug">{u.title}{u.level && <span className="squircle-xl bg-surface-2 px-2 py-0.5 text-xs font-semibold text-muted-foreground">{u.level}</span>}</span>
                       <span className="mt-0.5 block text-base text-muted-foreground">{u.summary}</span>
                       <span className="mt-1 block text-sm text-muted-foreground">{u.minutes} นาที · +{u.xp} XP{st === 'done' ? ' · จบแล้ว' : st === 'locked' ? ' · จบหน่วยก่อนหน้าก่อนจึงเปิด' : ''}</span>
                     </span>
@@ -133,6 +137,7 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
           </section>
         );
       })}
+      </div>
     </main>
   );
 }

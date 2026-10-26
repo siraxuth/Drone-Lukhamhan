@@ -55,6 +55,8 @@ export type Unit = {
   summary: string;
   minutes: number;
   xp: number;
+  /** ระดับชั้นที่เนื้อหาเกี่ยวข้อง (ใช้กับสายฟิสิกส์) เช่น 'ม.4' */
+  level?: string;
   steps: Step[];
   /** ลิงก์ "อ่านเพิ่ม" ไปหน้า docs / ตัวจำลอง */
   docs?: Array<{ label: string; href: string }>;
