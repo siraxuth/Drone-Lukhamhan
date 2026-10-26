@@ -4,6 +4,8 @@ import { requireUser } from '@/lib/auth';
 import { findUnit, trackById } from '@/learn/content';
 import { canStart, nextUnit } from '@/learn/path';
 import { loadLearner } from '@/learn/server';
+import { toPublic } from '@/learn/types';
+import { passedSteps } from '../../actions';
 import { UnitPlayer } from './UnitPlayer';
 
 export async function generateMetadata({ params }: { params: Promise<{ track: string; unit: string }> }): Promise<Metadata> {
@@ -22,13 +24,15 @@ export default async function UnitPage({ params }: { params: Promise<{ track: st
   if (!canStart(unitId, done)) redirect('/learn');
   const after = new Set(done); after.add(unitId);
   const nx = nextUnit(after);
+  const { steps, ...unit } = found.unit;
   return (
     <UnitPlayer
       track={{ id: track.id, title: track.title, accent: track.accent }}
-      unit={found.unit}
+      unit={{ ...unit, steps: steps.map(toPublic) }}
       index={found.index}
       total={track.units.length}
       alreadyDone={done.has(unitId)}
+      initialPassed={await passedSteps(session.user.id, unitId)}
       next={nx ? { href: `/learn/${nx.track.id}/${nx.unit.id}`, title: nx.unit.title } : null}
     />
   );

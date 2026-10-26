@@ -845,7 +845,7 @@ export function simulate(code: string, cfg: FlightConfig): Result {
     const say = (text: string) => (full ? text.replace(/\b(takeOff|autoLand|sh|fw|bw|ml|mr|yaw)\b(?=\(|\s|$|\))/g, (m) => FULL_OF[m] ?? m) : text);
     return {
         frames,
-        events: full ? events.map((e) => ({ ...e, text: say(e.text) })) : events,
+        events: full ? events.map((e) => (errors.includes(e) ? e : { ...e, text: say(e.text) })) : events,
         duration: t,
         score,
         breakdown,
