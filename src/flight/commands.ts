@@ -1,3 +1,4 @@
+import { BARE_OK, convertStyle, DRONE_NAMES, FULL_NAMES, PARDUINO_NAMES, type Style } from './style';
 /** รายการคำสั่งของตัวจำลอง: ใช้ทำ suggestion, ไฮไลต์สี และตารางคำสั่ง (ชื่อให้ตรงกับ switch ใน engine.ts) */
 export type Cmd = {
   name: string;
@@ -5,7 +6,7 @@ export type Cmd = {
   insert: string;
   sig: string;
   desc: string;
-  group: 'เริ่มและจบการบิน' | 'เคลื่อนที่' | 'ภารกิจ' | 'แบบ pArduino (โค้ดจริงของชมรม)';
+  group: 'เริ่มและจบการบิน' | 'เคลื่อนที่' | 'ภารกิจ';
   /** ปุ่มแทรกเร็วใต้ตัวแก้โค้ด */
   quick?: boolean;
 };
@@ -29,24 +30,38 @@ export const COMMANDS: Cmd[] = [
   { name: 'pop', insert: 'pop();', sig: 'pop()', desc: 'แตะลูกโป่งด้วยเข็มที่หัวโดรน (บินผ่านลูกโป่งก็แตกเอง)', group: 'ภารกิจ' },
   { name: 'shoot', insert: 'shoot();', sig: 'shoot()', desc: 'ยิงลูกดอกไปข้างหน้า (ต้องห่างเป้า ≥ 100 ซม.)', group: 'ภารกิจ' },
   { name: 'shot_b', insert: 'shot_b();', sig: 'shot_b()', desc: 'ยิงลูกดอกไปด้านหลัง', group: 'ภารกิจ' },
-  // ชื่อแบบโค้ดจริงของชมรม (protocol.hpp) · ตัวจำลองอ่านได้ทั้ง drone.xxx() และ pArduino->xxx()
-  { name: 'take_off', insert: 'pArduino->take_off();', sig: 'pArduino->take_off()', desc: 'เหมือน takeOff()', group: 'แบบ pArduino (โค้ดจริงของชมรม)' },
-  { name: 'auto_land', insert: 'pArduino->auto_land();', sig: 'pArduino->auto_land()', desc: 'เหมือน autoLand()', group: 'แบบ pArduino (โค้ดจริงของชมรม)' },
-  { name: 'set_height', insert: 'pArduino->set_height([[100]]);', sig: 'pArduino->set_height(ซม.)', desc: 'เหมือน sh(ซม.) ตั้งความสูง', group: 'แบบ pArduino (โค้ดจริงของชมรม)' },
-  { name: 'move_forward_cm', insert: 'pArduino->move_forward_cm([[100]]);', sig: 'pArduino->move_forward_cm(ซม.)', desc: 'เหมือน fw(ซม.) บินหน้า แล้วล็อกตำแหน่ง', group: 'แบบ pArduino (โค้ดจริงของชมรม)' },
-  { name: 'move_backward_cm', insert: 'pArduino->move_backward_cm([[100]]);', sig: 'pArduino->move_backward_cm(ซม.)', desc: 'เหมือน bw(ซม.)', group: 'แบบ pArduino (โค้ดจริงของชมรม)' },
-  { name: 'move_left_cm', insert: 'pArduino->move_left_cm([[100]]);', sig: 'pArduino->move_left_cm(ซม.)', desc: 'เหมือน ml(ซม.)', group: 'แบบ pArduino (โค้ดจริงของชมรม)' },
-  { name: 'move_right_cm', insert: 'pArduino->move_right_cm([[100]]);', sig: 'pArduino->move_right_cm(ซม.)', desc: 'เหมือน mr(ซม.)', group: 'แบบ pArduino (โค้ดจริงของชมรม)' },
-  { name: 'set_yaw', insert: 'pArduino->set_yaw(1, [[90]]);', sig: 'pArduino->set_yaw(ทิศ, องศา)', desc: 'ทิศ 1 = หมุนขวา, 2 = หมุนซ้าย (เหมือน yaw(+/-องศา))', group: 'แบบ pArduino (โค้ดจริงของชมรม)' },
 ];
 
 /** ชื่อแบบไม่สนตัวพิมพ์ใหญ่เล็กและขีดล่าง (เหมือน engine) */
 export const canon = (n: string) => n.toLowerCase().replace(/_/g, '');
 
-/** ชื่อที่เอนจินรู้จักทั้งหมด รวมชื่อเรียกอื่น */
+/** ชื่อที่รู้จักทุกรูปแบบ ใช้ขีดเส้นแดงใต้ชื่อที่พิมพ์ผิด */
 export const KNOWN = new Set([
   ...COMMANDS.map((c) => canon(c.name)),
-  'calibrateanddelay', 'calibrate', 'setheight', 'turn', 'wait', 'delay', 'hold', 'load', 'rotatebyhand', 'handturn', 'needle', 'shootb', 'shoots1', 'shoots2',
-  'setup', 'loop', 'begin', 'beginDefault', 'poll', 'print', 'println', 'pinMode', 'digitalWrite', 'keyDo', 'main', 'smooth_set_height', 'set_heights', 'poshold_heights', 'stop_motor', 'move_forward_fast', 'move_backward_fast', 'move_left_fast', 'move_right_fast', 'moveForward', 'moveBackward', 'moveLeft', 'moveRight', 'setYaw', 'setHeight',
+  ...DRONE_NAMES, ...PARDUINO_NAMES, ...FULL_NAMES, ...BARE_OK,
+  'calibrateandelay', 'calibrateanddelay', 'calibrate', 'setheight', 'turn', 'wait', 'delay', 'hold', 'load', 'rotatebyhand', 'handturn', 'needle', 'shootb', 'shoots1', 'shoots2',
   'open_pair_ch1_ch4', 'open_pair_ch2_ch3', 'open_all_ball_gate',
+  'for', 'if', 'while', 'switch', 'return', 'setup', 'loop', 'begin', 'beginDefault', 'poll', 'print', 'println', 'pinMode', 'digitalWrite', 'keyDo', 'main',
 ].map(canon));
+
+/** ชื่อคำสั่งกับพารามิเตอร์ที่แสดง (ส่วนวงเล็บ) ของแต่ละคำสั่งในโหมดที่เลือก */
+const SIG_ARGS: Record<string, Partial<Record<Style, string>>> = {
+  yaw: { full: '(ทิศ, องศา)', parduino: '(ทิศ, องศา)', drone: '(ทิศ, องศา)' },
+};
+
+/**
+ * รายการคำสั่งในโหมดที่เลือก (ชื่อ ตัวอย่างที่แทรก และคำอธิบาย) ใช้กับ autocomplete ปุ่มแทรกเร็ว และตารางคำสั่ง
+ * โหมด any = ชื่อย่อตามตารางเดิม · โหมดอื่นแปลงชื่อด้วย convertStyle (เช่น sh → set_height)
+ */
+export function commandsFor(style: Style): Cmd[] {
+  if (style === 'any') return COMMANDS;
+  const seen = new Set<string>();
+  return COMMANDS.map((c) => {
+    const insert = convertStyle(c.insert, style);
+    const m = /^(?:drone\.|pArduino->)?([A-Za-z_]\w*)/.exec(insert);
+    const bare = m?.[1] ?? c.name;
+    const prefix = insert.slice(0, insert.indexOf(bare));
+    const argsPart = SIG_ARGS[c.name]?.[style] ?? c.sig.slice(c.sig.indexOf('(')) ;
+    return { ...c, name: bare, insert, sig: `${prefix}${bare}${argsPart}` };
+  }).filter((c) => (seen.has(c.name) ? false : (seen.add(c.name), true)));
+}

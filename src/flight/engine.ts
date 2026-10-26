@@ -1,4 +1,6 @@
-import { styleError, type Style } from "./style";
+import { parse, type Call } from "./parser";
+import type { Style } from "./style";
+export { parse };
 /**
  * เอนจินจำลองการบินบนสนามจริง 10×10 ม. (ไม่ผูกกับ UI)
  * - คำสั่งสะท้อน DroneEasy ของโค้ดชมรม (drone_sanam5) และค่า ms/ซม. จาก config.hpp
@@ -98,101 +100,6 @@ export type Result = {
     /** จุดผ่าน/ห่วงที่ทำสำเร็จ พร้อมเวลา (ใช้เปลี่ยนสีวัตถุในสนามตอนเล่น) */
     visits: Array<{ id: string; kind: "waypoint" | "hoop"; t: number; points: number }>;
 };
-
-type Call = { name: string; args: number[]; line: number };
-
-/**
- * ชื่อเมธอดของโค้ดจริง (pArduino-> และ drone.) → คำสั่งของเอนจิน
- * to = ชื่อคำสั่งในเอนจิน · pick = เลือกอาร์กิวเมนต์ที่ใช้ (เช่น set_yaw(ทิศ, องศา) → ±องศา) · ไม่มีใน map = ใช้ชื่อเดิม
- */
-const ALIAS: Record<string, { to: string; pick?: (a: number[]) => number[] }> = {
-    take_off: { to: "takeOff" },
-    auto_land: { to: "autoLand" },
-    stopmotor: { to: "settle", pick: () => [0] },
-    stop_motor: { to: "settle", pick: () => [0] },
-    set_height: { to: "sh" }, set_heights: { to: "sh" }, smooth_set_height: { to: "sh" }, sethight: { to: "sh" },
-    smoothsetheight: { to: "sh" }, holdheight: { to: "sh" }, poshold_heights: { to: "sh" },
-    move_forward_cm: { to: "fw" }, move_backward_cm: { to: "bw" }, move_left_cm: { to: "ml" }, move_right_cm: { to: "mr" },
-    move_forward_fast: { to: "fw" }, move_backward_fast: { to: "bw" }, move_left_fast: { to: "ml" }, move_right_fast: { to: "mr" },
-    moveforward: { to: "fw" }, movebackward: { to: "bw" }, moveleft: { to: "ml" }, moveright: { to: "mr" },
-    movefastforward: { to: "fw" }, movefastbackward: { to: "bw" }, movefastleft: { to: "ml" }, movefastright: { to: "mr" },
-    // set_yaw(1, 90) = ขวา 90° · set_yaw(2, 90) = ซ้าย 90°
-    set_yaw: { to: "yaw", pick: (a) => [(a[0] === 2 ? -1 : 1) * (a[1] ?? 0)] },
-    setyaw: { to: "yaw", pick: (a) => [(a[0] === 2 ? -1 : 1) * (a[1] ?? 0)] },
-    calibrate_and_delay: { to: "calibration" },
-};
-
-/** ข้ามเงียบๆ: โครงสเก็ตช์ Arduino ที่ตัวจำลองไม่ต้องใช้ (ไม่กระทบการบิน) */
-const IGNORE = [
-    /^#/, /^void\s+\w+\s*\(\s*(void)?\s*\)$/, /^(int|void)\s+main\s*\(.*\)$/,
-    /^(?:Serial|Wire|SPI)\s*\.\s*\w+\s*\(.*\)$/, /^(?:pinMode|digitalWrite)\s*\(.*\)$/,
-    /^(?:drone\s*\.\s*|pArduino\s*->\s*)(?:beginDefault|begin|poll|keyDo|raw)\s*\(.*\)$/,
-    /^(?:return)\b.*$/, /^else$/, /^while\s*\(\s*(?:true|1)\s*\)$/,
-];
-const DECL = /^(?:static\s+)?(?:const\s+)?(?:u?int(?:8|16|32)?_t|int|long|unsigned\s+long|unsigned\s+int|short|float|byte|uint16_t)\s+(\w+)\s*=\s*(-?\d+(?:\.\d+)?)$/;
-
-/** แยกโค้ดเป็นรายการคำสั่ง ไม่ใช้ eval จึงปลอดภัยแม้ผู้ใช้พิมพ์อะไรก็ได้
- *  รับทั้ง `takeOff();` `drone.takeOff();` และ `pArduino->take_off();` รวมโครง setup()/loop() และค่าคงที่ตัวเลขแบบสเก็ตช์จริง */
-export function parse(code: string, style: Style = "any"): { calls: Call[]; errors: SimEvent[] } {
-    const calls: Call[] = [];
-    const errors: SimEvent[] = [];
-    const consts = new Map<string, number>();
-    let inBlock = false;
-    code.split("\n").forEach((raw, i) => {
-        // ตัดคอมเมนต์ // และ /* */ (คงเลขบรรทัดไว้)
-        let text = "";
-        for (let k = 0; k < raw.length; k++) {
-            if (inBlock) { if (raw[k] === "*" && raw[k + 1] === "/") { inBlock = false; k++; } continue; }
-            if (raw[k] === "/" && raw[k + 1] === "*") { inBlock = true; k++; continue; }
-            if (raw[k] === "/" && raw[k + 1] === "/") break;
-            text += raw[k];
-        }
-        // C++ ต้องจบคำสั่งด้วย ; (บรรทัดที่จบด้วย { } หรือเป็นหัวฟังก์ชัน/#include ไม่ต้อง)
-        const tl = text.trim();
-        if (tl && !/[;{}]$/.test(tl) && !IGNORE.some(r => r.test(tl)) && !/^(?:if|for|while|else|switch)\b/.test(tl)) {
-            errors.push({ t: 0, kind: "error", line: i + 1, text: `บรรทัด ${i + 1}: ลืมเครื่องหมาย ; ท้ายคำสั่ง "${tl}"` });
-            return;
-        }
-        // ปีกกาแยกคำสั่งเหมือน ; (void setup() { a(); b(); } ทั้งบรรทัดก็ได้)
-        for (let stmt of text.replace(/[{}]/g, ";").split(";").map(s => s.trim()).filter(Boolean)) {
-            if (IGNORE.some(r => r.test(stmt))) continue;
-            const decl = DECL.exec(stmt);
-            if (decl) { consts.set(decl[1], Number(decl[2])); continue; }
-            const m = /^(?:drone\s*\.\s*|pArduino\s*->\s*|pArduino\s*\.\s*)?([A-Za-z_]\w*)\s*\(\s*([^)]*)\)$/.exec(stmt);
-            if (!m && /^(?:drone\s*\.\s*|pArduino\s*->\s*)?[A-Za-z_]\w*$/.test(stmt)) {
-                errors.push({ t: 0, kind: "error", line: i + 1, text: `บรรทัด ${i + 1}: "${stmt}" ลืมวงเล็บ () (ถ้าเป็นคำสั่งต้องเขียน ${stmt}();)` });
-                continue;
-            }
-            if (!m) {
-                errors.push({
-                    t: 0,
-                    kind: "error",
-                    line: i + 1,
-                    text: `บรรทัด ${i + 1}: อ่านคำสั่งไม่ออก "${stmt}" (ลืมวงเล็บหรือเปล่า?) · ตัวจำลองยังไม่รองรับ if / for / while`,
-                });
-                continue;
-            }
-            let args = m[2]
-                ? m[2].split(",").map(a => {
-                      const tok = a.trim();
-                      return consts.has(tok) ? (consts.get(tok) as number) : Number(tok);
-                  })
-                : [];
-            if (args.some(a => Number.isNaN(a))) {
-                errors.push({ t: 0, kind: "error", line: i + 1, text: `บรรทัด ${i + 1}: ค่าในวงเล็บต้องเป็นตัวเลข (หรือชื่อค่าคงที่ที่ประกาศไว้ข้างบน)` });
-                continue;
-            }
-            const prefix = /^drone\s*\./.test(stmt) ? "drone" : /^pArduino/.test(stmt) ? "parduino" : null;
-            const se = styleError(style, prefix, m[1]);
-            if (se) { errors.push({ t: 0, kind: "error", line: i + 1, text: `บรรทัด ${i + 1}: ${se}` }); continue; }
-            let name = m[1];
-            const al = ALIAS[name] ?? ALIAS[name.toLowerCase()];
-            if (al) { name = al.to; if (al.pick) args = al.pick(args); }
-            calls.push({ name, args, line: i + 1 });
-        }
-    });
-    return { calls, errors };
-}
 
 /** ชื่อคำสั่งแบบไม่สนตัวพิมพ์ใหญ่เล็กและขีดล่าง: auto_land = autoLand = AUTOLAND */
 const canon = (n: string) => n.toLowerCase().replace(/_/g, "");
@@ -932,9 +839,13 @@ export function simulate(code: string, cfg: FlightConfig): Result {
     breakdown.push(...extra.breakdown);
     const score = breakdown.reduce((s, b) => s + b.points, 0);
 
+    // ข้อความแจ้งเตือนใช้ชื่อคำสั่งตามโหมดที่ผู้ใช้เขียน (ชื่อเต็ม/pArduino-> ไม่ให้เห็นตัวย่อ sh, fw)
+    const full = cfg.style === "full" || cfg.style === "parduino";
+    const FULL_OF: Record<string, string> = { takeOff: "take_off", autoLand: "auto_land", sh: "set_height", fw: "move_forward", bw: "move_backward", ml: "move_left", mr: "move_right", yaw: "set_yaw" };
+    const say = (text: string) => (full ? text.replace(/\b(takeOff|autoLand|sh|fw|bw|ml|mr|yaw)\b(?=\(|\s|$|\))/g, (m) => FULL_OF[m] ?? m) : text);
     return {
         frames,
-        events,
+        events: full ? events.map((e) => ({ ...e, text: say(e.text) })) : events,
         duration: t,
         score,
         breakdown,

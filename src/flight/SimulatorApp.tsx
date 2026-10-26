@@ -8,7 +8,7 @@ import { CodeEditor } from '@/components/CodeEditor';
 import { ScenePreview } from '@/field/ScenePlan';
 import { currentSeason as season } from '@/rules';
 import { cellName, maxScore, PATTERNS, type ScenarioView } from '@/lib/scenarios';
-import { COMMANDS } from './commands';
+import { commandsFor } from './commands';
 import { buildScenarioConfig } from './config';
 import { FlightRunner } from './FlightRunner';
 import { appendLine, LESSON_BASE, LESSONS } from './lessons';
@@ -19,7 +19,7 @@ const LEVEL_TONE: Record<string, string> = { เริ่มต้น: 'bg-emera
 const LEGACY: Record<string, string> = { mission: 'mission-start', aviation: 'aviation-start', innovation: 'innovation-start' };
 const LESSON_KEY = 'sim-lesson-v1';
 const STYLE_KEY = 'sim-style-v1';
-const GROUPS = ['เริ่มและจบการบิน', 'เคลื่อนที่', 'ภารกิจ', 'แบบ pArduino (โค้ดจริงของชมรม)'] as const;
+const GROUPS = ['เริ่มและจบการบิน', 'เคลื่อนที่', 'ภารกิจ'] as const;
 const KEYS: Array<[string, string]> = [
   ['Tab / Shift+Tab', 'เยื้องเข้า / ออก (เลือกหลายบรรทัดได้)'], ['Ctrl+] / Ctrl+[', 'เยื้องเข้า / ออกทั้งบรรทัด'],
   ['Enter', 'ขึ้นบรรทัดใหม่ คงการเยื้อง · หลัง { เยื้องเพิ่มและปิด } ให้'], ['Ctrl+Enter / Ctrl+Shift+Enter', 'เพิ่มบรรทัดใหม่ด้านล่าง / ด้านบน'],
@@ -28,11 +28,19 @@ const KEYS: Array<[string, string]> = [
   ['Ctrl+Z / Ctrl+Y', 'ย้อนกลับ / ทำซ้ำ'], ['( [ { " \'', 'พิมพ์เปิดแล้วปิดให้เอง พิมพ์ปิดซ้ำเพื่อข้าม · Backspace ลบทั้งคู่'],
   ['Esc แล้ว Tab', 'ออกจากช่องโค้ดไปปุ่มถัดไป (สำหรับผู้ใช้คีย์บอร์ด)'],
 ];
-const PAIRS: Array<[string, string]> = [
-  ['takeOff()', 'pArduino->take_off()'], ['autoLand()', 'pArduino->auto_land()'], ['calibration()', 'pArduino->calibration()'],
-  ['sh(100)', 'pArduino->set_height(100)'], ['fw(100)', 'pArduino->move_forward_cm(100)'], ['bw(100)', 'pArduino->move_backward_cm(100)'],
-  ['ml(100)', 'pArduino->move_left_cm(100)'], ['mr(100)', 'pArduino->move_right_cm(100)'], ['yaw(90) / yaw(-90)', 'pArduino->set_yaw(1, 90) / set_yaw(2, 90)'],
-  ['poshold()', 'pArduino->poshold()'], ['settle(500)', 'delay(500)'],
+/** ตารางเทียบชื่อ: ย่อ | เต็ม (ค่าเริ่มต้น) | drone. | pArduino-> */
+const PAIRS: Array<[string, string, string, string]> = [
+  ['calibration()', 'calibration()', 'drone.calibration()', 'pArduino->calibration()'],
+  ['takeOff()', 'take_off()', 'drone.takeOff()', 'pArduino->take_off()'],
+  ['autoLand()', 'auto_land()', 'drone.autoLand()', 'pArduino->auto_land()'],
+  ['sh(100)', 'set_height(100)', 'drone.sh(100)', 'pArduino->set_height(100)'],
+  ['fw(100)', 'move_forward(100)', 'drone.fw(100)', 'pArduino->move_forward_cm(100)'],
+  ['bw(100)', 'move_backward(100)', 'drone.bw(100)', 'pArduino->move_backward_cm(100)'],
+  ['ml(100)', 'move_left(100)', 'drone.ml(100)', 'pArduino->move_left_cm(100)'],
+  ['mr(100)', 'move_right(100)', 'drone.mr(100)', 'pArduino->move_right_cm(100)'],
+  ['yaw(90) / yaw(-90)', 'set_yaw(1, 90) / set_yaw(2, 90)', 'drone.setYaw(1, 90)', 'pArduino->set_yaw(1, 90)'],
+  ['poshold()', 'poshold()', 'drone.posHold()', 'pArduino->poshold()'],
+  ['settle(500)', 'delay(500)', 'drone.settle(500)', 'delay(500)'],
 ];
 
 /** ข้อความที่มี `โค้ด` ในเครื่องหมายคำพูดกลับ */
@@ -56,21 +64,21 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
   const [lesson, setLesson] = useState<number | null>(null);
   const [lessonCode, setLessonCode] = useState(LESSON_BASE);
   const [ran, setRan] = useState(false);
-  const [styleSel, setStyleSel] = useState<Style>('any');
+  const [styleSel, setStyleSel] = useState<Style>('full');
   const sc = scenarios.find((s) => s.slug === slug) ?? scenarios[0];
   const inLesson = lesson !== null;
   const code = inLesson ? lessonCode : (drafts[sc.slug] ?? sc.starter);
   const edited = inLesson ? lessonCode !== LESSON_BASE : code !== sc.starter;
   const ev = season.events.find((e) => e.id === sc.config.event)!;
-  const style: Style = inLesson ? 'any' : styleSel;
+  const style: Style = inLesson ? 'full' : styleSel;
+  const commands = useMemo(() => commandsFor(style), [style]);
   const config = useMemo(() => ({ ...buildScenarioConfig(sc.config), style }), [sc, style]);
   const converted = useMemo(() => convertStyle(code, style), [code, style]);
-  const transform = useCallback((t: string) => convertStyle(t, style), [style]);
   const scene = useMemo(() => (sc.config.pattern !== 'standard' || sc.config.objects.length ? { pattern: sc.config.pattern, objects: sc.config.objects, start: sc.config.start, base: sc.config.base } : undefined), [sc]);
   const max = maxScore(sc.config);
   const pat = PATTERNS.find((p) => p.id === sc.config.pattern);
 
-  useEffect(() => { try { const v = localStorage.getItem(STYLE_KEY); if (v === 'drone' || v === 'parduino') setStyleSel(v); } catch { /* ไม่เป็นไร */ } }, []);
+  useEffect(() => { try { const v = localStorage.getItem(STYLE_KEY); if (v === 'full' || v === 'any' || v === 'drone' || v === 'parduino') setStyleSel(v); } catch { /* ไม่เป็นไร */ } }, []);
   const chooseStyle = (v: Style) => { setStyleSel(v); try { localStorage.setItem(STYLE_KEY, v); } catch { /* ไม่เป็นไร */ } };
 
   useEffect(() => { document.title = 'ตัวจำลองการบิน · ชมรมโดรน ลือคำหาญฯ'; }, []);
@@ -127,7 +135,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
         <button type="button" aria-expanded={panel === 'brief'} onClick={() => setPanel(panel === 'brief' ? null : 'brief')} className={panel === 'brief' ? tabOn : tabOff}><BookOpen className="size-4" aria-hidden /> อ่านโจทย์</button>
         <button type="button" aria-expanded={panel === 'cmds'} onClick={() => setPanel(panel === 'cmds' ? null : 'cmds')} className={panel === 'cmds' ? tabOn : tabOff}><ListChecks className="size-4" aria-hidden /> คำสั่ง</button>
         <button type="button" onClick={openLesson} className={inLesson ? tabOn : tabOff}><GraduationCap className="size-4" aria-hidden /> บทสอน</button>
-        <div role="group" aria-label="แบบการเขียนโค้ด" data-tour="sim-style" className="flex items-center gap-1 squircle-xl border border-line bg-surface p-0.5" title={inLesson ? 'ระหว่างบทสอนใช้แบบง่าย' : STYLES.find((x) => x.id === style)?.hint}>
+        <div role="group" aria-label="แบบการเขียนโค้ด" data-tour="sim-style" className="flex items-center gap-1 squircle-xl border border-line bg-surface p-0.5" title={inLesson ? 'ระหว่างบทสอนใช้ชื่อเต็ม' : STYLES.find((x) => x.id === style)?.hint}>
           <span className="px-2 text-sm text-muted-foreground max-xl:hidden">แบบเขียน</span>
           {STYLES.map((x) => (
             <button key={x.id} type="button" disabled={inLesson} aria-pressed={style === x.id} onClick={() => chooseStyle(x.id)} title={x.hint}
@@ -188,27 +196,28 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
                   <div>
                     <p className="font-bold">โหมด “แบบเขียน” (ปุ่มด้านบน)</p>
                     <ul className="mt-1 grid gap-1 text-sm text-muted-foreground">
-                      <li><b className="text-foreground">ง่าย</b> เขียนสั้นๆ ได้ เช่น <code className="font-mono">fw(100);</code> ตัวพิมพ์เล็กใหญ่ไม่สำคัญ</li>
+                      <li><b className="text-foreground">ชื่อเต็ม</b> (ค่าเริ่มต้น) ไม่ใช้ตัวย่อ เช่น <code className="font-mono">set_height(100);</code> <code className="font-mono">move_left(100);</code> ตัวพิมพ์เล็ก+ขีดล่าง จะเขียน <code className="font-mono">pArduino-&gt;</code> นำหน้าด้วยก็ได้</li>
+                      <li><b className="text-foreground">ย่อ</b> เขียนสั้นๆ ได้ เช่น <code className="font-mono">fw(100);</code> <code className="font-mono">sh(100);</code> ตัวพิมพ์เล็กใหญ่ไม่สำคัญ รับทุกแบบ</li>
                       <li><b className="text-foreground">drone.</b> บังคับเขียน <code className="font-mono">drone.fw(100);</code> ชื่อต้องตรงกับ DroneEasy.hpp ทุกตัวอักษร (เช่น <code className="font-mono">drone.takeOff()</code> ไม่ใช่ takeoff)</li>
                       <li><b className="text-foreground">pArduino-&gt;</b> บังคับเขียนคำสั่งเต็ม <code className="font-mono">pArduino-&gt;move_forward_cm(100);</code> ตามโค้ดจริง (protocol.hpp) · ใช้ <code className="font-mono">delay(ms)</code> แทน settle</li>
-                      <li>ทุกโหมด: ต้องมี <code className="font-mono">;</code> ท้ายคำสั่ง และต้องมีวงเล็บ () · ปุ่ม “แปลงโค้ดให้” แปลงทั้งไฟล์ให้ครั้งเดียว</li>
+                      <li>ทุกโหมด (ยกเว้น “ย่อ” ที่ผ่อนปรน): เขียนคำสั่งไว้ใน <code className="font-mono">void setup() {'{ }'}</code> (รันครั้งเดียว) หรือ <code className="font-mono">void loop() {'{ }'}</code> (วนซ้ำ ตัวจำลองวนสูงสุด 8 รอบ หยุดเมื่อเจอ <code className="font-mono">while (true) {'{}'}</code>) · เขียนฟังก์ชันเอง <code className="font-mono">void mission() {'{ }'}</code> แล้วเรียก <code className="font-mono">mission();</code> ได้ · <code className="font-mono">for (int i = 0; i &lt; 4; i++)</code> ได้ · ต้องมี <code className="font-mono">;</code> ท้ายคำสั่งและวงเล็บ () · ปุ่ม “แปลงโค้ดให้” แปลงชื่อคำสั่งทั้งไฟล์ให้ครั้งเดียว</li>
                     </ul>
                   </div>
                   <div>
-                    <p className="font-bold">เขียนได้ 2 สไตล์ (ผลเหมือนกัน)</p>
-                    <p className="mt-1 text-sm text-muted-foreground">แบบสั้น <code className="font-mono">drone.fw(100);</code> หรือไม่ใส่ <code className="font-mono">drone.</code> ก็ได้ · แบบเต็มตามโค้ดชมรม <code className="font-mono">pArduino-&gt;move_forward_cm(100);</code></p>
+                    <p className="font-bold">ตารางเทียบชื่อ (ผลเหมือนกันทุกแบบ)</p>
+                    <p className="mt-1 text-sm text-muted-foreground">ชื่อเต็มคือชื่อเดียวกับ <code className="font-mono">pArduino-&gt;</code> ในโค้ดจริงของชมรม (protocol.hpp) ส่วน <code className="font-mono">drone.</code> คือคลาส DroneEasy.hpp ที่ห่อคำสั่งให้สั้นลง</p>
                     <div className="mt-2 overflow-x-auto squircle-xl border border-line">
                       <table className="w-full text-left text-sm">
-                        <thead className="bg-surface-2"><tr><th className="px-3 py-1.5">แบบสั้น</th><th className="px-3 py-1.5">แบบ pArduino</th></tr></thead>
-                        <tbody>{PAIRS.map(([a, b]) => <tr key={a} className="border-t border-line"><td className="px-3 py-1.5 font-mono font-semibold">{a}</td><td className="px-3 py-1.5 font-mono">{b}</td></tr>)}</tbody>
+                        <thead className="bg-surface-2"><tr><th className="px-3 py-1.5">ย่อ</th><th className="px-3 py-1.5">ชื่อเต็ม</th><th className="px-3 py-1.5">drone.</th><th className="px-3 py-1.5">pArduino-&gt;</th></tr></thead>
+                        <tbody>{PAIRS.map(([a, b, c, d]) => <tr key={a} className="border-t border-line"><td className="px-3 py-1.5 font-mono">{a}</td><td className="px-3 py-1.5 font-mono font-semibold">{b}</td><td className="px-3 py-1.5 font-mono">{c}</td><td className="px-3 py-1.5 font-mono">{d}</td></tr>)}</tbody>
                       </table>
                     </div>
                   </div>
-                  {GROUPS.filter((g) => g !== 'แบบ pArduino (โค้ดจริงของชมรม)').map((g) => (
+                  {GROUPS.map((g) => (
                     <div key={g}>
                       <p className="font-bold">{g}</p>
                       <ul className="mt-1.5 grid gap-2">
-                        {COMMANDS.filter((c) => c.group === g).map((c) => <li key={c.name} className="leading-7"><code className="squircle-xl bg-surface-2 px-2 py-0.5 text-sm font-semibold">{c.sig}</code><span className="mt-0.5 block text-muted-foreground">{c.desc}</span></li>)}
+                        {commands.filter((c) => c.group === g).map((c) => <li key={c.name} className="leading-7"><code className="squircle-xl bg-surface-2 px-2 py-0.5 text-sm font-semibold">{c.sig}</code><span className="mt-0.5 block text-muted-foreground">{c.desc}</span></li>)}
                       </ul>
                     </div>
                   ))}
@@ -242,7 +251,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
                 <div className={`flex flex-wrap items-center gap-2 squircle-xl border px-3 py-2 ${passed ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-amber-500/50 bg-amber-500/10'}`}>
                   <span aria-hidden className="text-lg">{passed ? '✅' : '👉'}</span>
                   <p className="min-w-0 flex-1 text-base font-semibold">{passed ? 'ถูกต้อง! กดถัดไปได้เลย' : step.task}</p>
-                  {step.snippet && !passed && <Button variant="outline" className="h-9 px-3 text-sm" onClick={() => setLessonCode((c) => appendLine(c, step.snippet!))}>ใส่ให้</Button>}
+                  {step.snippet && !passed && <Button variant="outline" className="h-9 px-3 text-sm" onClick={() => setLessonCode((c) => appendLine(c, step.snippet!, step.where))}>ใส่ให้</Button>}
                 </div>
               )}
               {step.task && !passed && step.hint && <p className="text-sm text-muted-foreground">ใบ้: {step.hint}</p>}
@@ -253,7 +262,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
             </div>
           )}
           <div className="min-h-0 flex-1">
-            <CodeEditor value={code} onChange={setCode} label="โค้ดภารกิจ" fill transform={style === 'any' ? undefined : transform} />
+            <CodeEditor value={code} onChange={setCode} label="โค้ดภารกิจ" fill commands={commands} />
           </div>
         </section>
 

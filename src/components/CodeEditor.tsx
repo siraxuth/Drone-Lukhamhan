@@ -7,6 +7,8 @@ const LINE = 24; // px ต่อบรรทัด (leading-6)
 
 /** ไฮไลต์: คอมเมนต์ · ชื่อคำสั่งที่รู้จัก (น้ำเงิน) · ชื่อที่ไม่รู้จัก (ขีดเส้นแดง) · ตัวเลข · เครื่องหมาย */
 function highlight(code: string) {
+  // ชื่อฟังก์ชันที่ผู้ใช้เขียนเอง (void ชื่อ()) ไม่ต้องขีดเส้นแดง
+  const defined = new Set([...code.matchAll(/\bvoid\s+(\w+)/g)].map((m) => m[1]));
   return code.split('\n').map((line, i) => {
     const ci = line.indexOf('//');
     const body = ci >= 0 ? line.slice(0, ci) : line;
@@ -16,7 +18,7 @@ function highlight(code: string) {
     let m: RegExpExecArray | null, k = 0;
     while ((m = re.exec(body))) {
       if (m[1]) {
-        const known = KNOWN.has(canon(m[1])) || m[1] === 'drone';
+        const known = KNOWN.has(canon(m[1])) || defined.has(m[1]) || m[1] === 'drone';
         out.push(<span key={k++} className={known ? 'font-semibold text-blue-700 dark:text-sky-300' : 'underline decoration-red-500 decoration-wavy decoration-1 underline-offset-4 text-red-600 dark:text-red-300'}>{m[1]}</span>);
       } else if (m[2]) out.push(<span key={k++} className="font-semibold text-orange-600 dark:text-amber-300">{m[2]}</span>);
       else if (m[3]) out.push(<span key={k++} className="text-zinc-500 dark:text-zinc-400">{m[3]}</span>);
@@ -33,7 +35,7 @@ type Sugg = { cmd: Cmd; word: string; start: number };
  * ตัวแก้โค้ดของตัวจำลอง: ไฮไลต์สีตามชนิด · ชื่อคำสั่งผิดขีดเส้นแดง · พิมพ์แล้วมี suggestion (↑↓ เลือก, Tab/Enter ใส่, Esc ปิด)
  * ใต้ช่องมีปุ่มแทรกคำสั่งที่ใช้บ่อย ไม่ต้องพิมพ์เอง
  */
-export function CodeEditor({ value, onChange, rows = 14, name, label = 'โค้ด', fill = false, transform }: { value: string; onChange: (v: string) => void; rows?: number; name?: string; label?: string; fill?: boolean; /** แปลงข้อความที่แทรก (ใช้บังคับโหมด drone./pArduino->) */ transform?: (s: string) => string }) {
+export function CodeEditor({ value, onChange, rows = 14, name, label = 'โค้ด', fill = false, commands = COMMANDS }: { value: string; onChange: (v: string) => void; rows?: number; name?: string; label?: string; fill?: boolean; /** รายการคำสั่งตามโหมดการเขียน (ดู commandsFor) */ commands?: Cmd[] }) {
   const ta = useRef<HTMLTextAreaElement>(null);
   const pre = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ top: 0, left: 0 });
@@ -45,7 +47,7 @@ export function CodeEditor({ value, onChange, rows = 14, name, label = 'โค�
   const html = useMemo(() => highlight(value), [value]);
 
   const place = (raw: string, from: number, to: number) => {
-    const text = transform ? transform(raw) : raw;
+    const text = raw;
     const m = /\[\[(.*?)\]\]/.exec(text);
     const plain = text.replace(/\[\[(.*?)\]\]/, '$1');
     const next = value.slice(0, from) + plain + value.slice(to);
@@ -64,8 +66,8 @@ export function CodeEditor({ value, onChange, rows = 14, name, label = 'โค�
     const inComment = before.slice(before.lastIndexOf('\n') + 1).includes('//');
     if (!mm || inComment) { setSugg([]); return; }
     const w = mm[1], cw = canon(w);
-    const list = COMMANDS.filter((c) => canon(c.name).startsWith(cw) && canon(c.name) !== cw)
-      .concat(COMMANDS.filter((c) => !canon(c.name).startsWith(cw) && canon(c.name).includes(cw) && cw.length >= 2))
+    const list = commands.filter((c) => canon(c.name).startsWith(cw) && canon(c.name) !== cw)
+      .concat(commands.filter((c) => !canon(c.name).startsWith(cw) && canon(c.name).includes(cw) && cw.length >= 2))
       .slice(0, 7);
     setSugg(list.map((cmd) => ({ cmd, word: w, start: pos - w.length })));
     setSel(0);
@@ -263,8 +265,8 @@ export function CodeEditor({ value, onChange, rows = 14, name, label = 'โค�
     <div className={fill ? 'flex h-full min-h-0 flex-col' : 'grid gap-2'}>
       <div className={`flex flex-wrap gap-1.5 ${fill ? 'border-b border-line bg-surface-2/40 px-3 py-2' : ''}`} role="group" aria-label="แทรกคำสั่งที่ใช้บ่อย">
         <span className="mr-1 self-center text-sm text-muted-foreground">แทรกเร็ว:</span>
-        {COMMANDS.filter((c) => c.quick).map((c) => (
-          <button key={c.name} type="button" onClick={() => insertQuick(c)} title={c.desc} className="min-h-8 squircle-xl border border-line bg-surface-2 px-2.5 font-mono text-sm font-semibold text-blue-700 transition-colors hover:bg-muted dark:text-sky-300">{transform ? transform(c.insert).replace(/\[\[|\]\]/g, '').replace(/\(.*\);$/, '()') : c.sig.replace('(ซม.)', '()')}</button>
+        {commands.filter((c) => c.quick).map((c) => (
+          <button key={c.name} type="button" onClick={() => insertQuick(c)} title={c.desc} className="min-h-8 squircle-xl border border-line bg-surface-2 px-2.5 font-mono text-sm font-semibold text-blue-700 transition-colors hover:bg-muted dark:text-sky-300">{c.insert.replace(/\[\[|\]\]/g, '').replace(/\(.*\);$/, '()')}</button>
         ))}
       </div>
 

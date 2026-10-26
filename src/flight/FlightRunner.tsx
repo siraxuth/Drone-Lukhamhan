@@ -425,14 +425,15 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onFinish, 
       {done && result && (() => {
         const crash = result.events.find((e) => e.kind === 'error' && e.t > 0);
         const crashed = !!crash && /ตก|ชน|นอกสนาม|ยังไม่ได้ขึ้นบิน/.test(crash.text);
+        const grounded = !!crash && /บินไม่ขึ้น/.test(crash.text);
         const first = result.events.find((e) => e.kind === 'error');
         const warns = result.events.filter((e) => e.kind === 'warn').length;
         const tone = first ? 'border-brand-red/50 bg-brand-red/10 text-brand-red' : warns ? 'border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
         return (
           <div role="status" className={`flex items-start gap-3 squircle-xl border px-4 py-3 ${tone}`}>
-            <span aria-hidden className="text-2xl leading-none">{first ? (crashed ? '💥' : '⚠️') : warns ? '⚠️' : '✅'}</span>
+            <span aria-hidden className="text-2xl leading-none">{first ? (crashed ? '💥' : grounded ? '🛑' : '⚠️') : warns ? '⚠️' : '✅'}</span>
             <div className="min-w-0 text-base">
-              <p className="font-bold">{first ? (crashed ? 'โดรนตก / ชน / พัง' : 'โค้ดมีข้อผิดพลาด') : warns ? 'บินจบ แต่มีคำเตือน' : 'บินสำเร็จ ไม่ตก ไม่ชน'}</p>
+              <p className="font-bold">{first ? (crashed ? 'โดรนตก / ชน / พัง' : grounded ? 'โดรนบินไม่ขึ้น' : 'โค้ดมีข้อผิดพลาด') : warns ? 'บินจบ แต่มีคำเตือน' : 'บินสำเร็จ ไม่ตก ไม่ชน'}</p>
               {first && <p className="mt-0.5 text-sm">{first.text}</p>}
               {!first && warns > 0 && <p className="mt-0.5 text-sm">ดูรายละเอียดในบันทึกการบินด้านล่าง</p>}
             </div>
