@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { BarChart3, CalendarCheck, Check, Trophy, ClipboardCheck, Flame, Lock, Play, RefreshCw, Sparkles, Target } from 'lucide-react';
+import { BarChart3, CalendarCheck, Check, Trophy, ClipboardCheck, Flame, Play, RefreshCw, Sparkles, Target } from 'lucide-react';
 import { TRACKS } from '@/learn/content';
 import { levelOf, nextUnit, pathStates, XP_PER_LEVEL } from '@/learn/path';
 import { leagueOf } from '@/learn/board-utils';
@@ -43,7 +43,7 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
       <header className="grid gap-2">
         <p className="text-base font-semibold text-brand-blue">การเรียนของฉัน</p>
         <h1 className="font-display text-4xl font-extrabold leading-[1.1] tracking-tight sm:text-5xl">สวัสดี {profile.displayName}</h1>
-        <p className="max-w-2xl text-lg leading-8 text-muted-foreground">เรียนทีละหน่วยจากง่ายไปยาก จบหน่วยเพื่อรับ XP และปลดล็อกหน่วยถัดไป ทำได้ตามจังหวะของตัวเอง</p>
+        <p className="max-w-2xl text-lg leading-8 text-muted-foreground">เริ่มจากติดตั้งและรู้จักโดรน แล้วค่อยฝึกเขียนโค้ด ต่อวงจร และวางแผนภารกิจ ทำทีละหน่วยตามจังหวะของตัวเอง</p>
       </header>
 
       <section aria-label="สถิติของฉัน" data-tour="learn-stats" className="grid gap-3 sm:grid-cols-3">
@@ -115,21 +115,19 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
                 const body = (
                   <>
                     <span aria-hidden className={`grid size-14 shrink-0 place-items-center rounded-full text-xl font-extrabold ${st === 'done' ? a.fill : st === 'ready' ? `bg-surface ring-4 ${a.ring} ${a.text}` : 'bg-surface-2 text-muted-foreground'}`}>
-                      {st === 'done' ? <Check className="size-6" /> : st === 'locked' ? <Lock className="size-5" /> : i + 1}
+                      {st === 'done' ? <Check className="size-6" /> : i + 1}
                     </span>
                     <span className="min-w-0 flex-1 text-left">
                       <span className="flex flex-wrap items-center gap-x-2 text-lg font-bold leading-snug">{u.title}{u.level && <span className="squircle-xl bg-surface-2 px-2 py-0.5 text-xs font-semibold text-muted-foreground">{u.level}</span>}</span>
                       <span className="mt-0.5 block text-base text-muted-foreground">{u.summary}</span>
-                      <span className="mt-1 block text-sm text-muted-foreground">{u.minutes} นาที · +{u.xp} XP{st === 'done' ? ' · จบแล้ว' : st === 'locked' ? ' · จบหน่วยก่อนหน้าก่อนจึงเปิด' : ''}</span>
+                      <span className="mt-1 block text-sm text-muted-foreground">{u.minutes} นาที · +{u.xp} XP{st === 'done' ? ' · จบแล้ว' : ''}</span>
                     </span>
                   </>
                 );
-                const cls = `flex items-center gap-4 squircle-2xl border p-3 transition-colors sm:p-4 ${offset} ${st === 'locked' ? 'border-line bg-surface-2/50 opacity-70' : 'border-line bg-surface hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue'}`;
+                const cls = `flex items-center gap-4 squircle-2xl border border-line bg-surface p-3 transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue sm:p-4 ${offset}`;
                 return (
                   <li key={u.id}>
-                    {st === 'locked'
-                      ? <div className={cls} aria-disabled="true">{body}</div>
-                      : <Link href={`/learn/${track.id}/${u.id}`} className={cls}>{body}</Link>}
+                    <Link href={`/learn/${track.id}/${u.id}`} className={cls}>{body}</Link>
                   </li>
                 );
               })}

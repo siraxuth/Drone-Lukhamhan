@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState, useTransition } from 'react';
 import confetti from 'canvas-confetti';
-import { ArrowLeft, ArrowRight, BookOpen, Check, Flame, Lightbulb, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpen, Check, ExternalLink, Flame, Lightbulb, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Inline } from '@/learn/Inline';
 import { Arrange } from '@/learn/exercises/Arrange';
@@ -12,6 +14,8 @@ import { Quiz } from '@/learn/exercises/Quiz';
 import { Write } from '@/learn/exercises/Write';
 import type { PublicStep, Unit } from '@/learn/types';
 import { completeUnit, submitStep, type CompleteResult, type StepResult } from '../../actions';
+
+const LearnSim = dynamic(() => import('@/learn/exercises/LearnSim'), { ssr: false, loading: () => <div className="grid h-56 place-items-center squircle-xl border border-line bg-surface-2 text-muted-foreground">กำลังเตรียมสนามจำลอง…</div> });
 
 type PublicUnit = Omit<Unit, 'steps'> & { steps: PublicStep[] };
 type Props = {
@@ -87,8 +91,39 @@ export function UnitPlayer({ track, unit, index, total, alreadyDone, initialPass
             {step.kind === 'read' && (
               <>
                 {step.body.map((p, k) => <p key={k} className="text-lg leading-8"><Inline text={p} /></p>)}
+                {step.images && step.images.length > 0 && (
+                  <div className="grid gap-4">
+                    {step.images.map((image) => (
+                      <figure key={image.src} className="overflow-hidden squircle-xl border border-line bg-surface-2">
+                        <a href={image.href} target="_blank" rel="noreferrer" className="group relative block aspect-video focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-brand-blue" aria-label={`${image.caption} เปิดแหล่งอ้างอิงในแท็บใหม่`}>
+                          <Image src={image.src} alt={image.alt} fill unoptimized sizes="(max-width: 768px) 100vw, 720px" className="object-contain transition-transform duration-200 group-hover:scale-[1.015]" />
+                          <span className="absolute bottom-2 right-2 inline-flex items-center gap-1.5 squircle-xl bg-background/95 px-2.5 py-1 text-xs font-semibold text-foreground"><ExternalLink className="size-3.5" aria-hidden />เปิดแหล่งอ้างอิง</span>
+                        </a>
+                        <figcaption className="px-3 py-2 text-sm leading-6 text-muted-foreground">{image.caption}</figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                )}
                 {step.code && <pre className="overflow-x-auto squircle-xl border border-line bg-[#fbfbfd] p-4 font-mono text-sm leading-6 dark:bg-[#10131a]"><code>{step.code}</code></pre>}
                 {step.tip && <p className="flex items-start gap-2 squircle-xl bg-amber-500/10 px-3 py-2 text-base leading-7"><Lightbulb className="mt-1 size-4 shrink-0 text-amber-600" aria-hidden /> <span><Inline text={step.tip} /></span></p>}
+                {step.video && (
+                  <section className="grid gap-2" aria-label="วิดีโอประกอบ">
+                    <h2 className="text-base font-bold">ดูคลิปสาธิต</h2>
+                    <div className="aspect-video overflow-hidden squircle-xl bg-black">
+                      <iframe className="size-full" src={`https://www.youtube-nocookie.com/embed/${step.video.id}`} title={step.video.title} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
+                    </div>
+                    <a href={`https://www.youtube.com/watch?v=${step.video.id}`} target="_blank" rel="noreferrer" className="inline-flex w-fit items-center gap-1.5 text-sm font-semibold text-brand-blue underline underline-offset-4">เปิดคลิปบน YouTube <ExternalLink className="size-3.5" aria-hidden /></a>
+                  </section>
+                )}
+                {step.sim && (
+                  <section className="grid gap-3 border-t border-line pt-4" aria-label="ทดลองในสนามจำลอง">
+                    <div>
+                      <h2 className="font-bold">ลองดูในสนาม 3D</h2>
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">กดเล่นแล้วสังเกตการบิน หมุนหรือซูมสนามได้บนคอมพิวเตอร์ ถ้าเครื่องไม่รองรับ 3D ระบบจะแสดงสนามแบบ 2D ให้แทน</p>
+                    </div>
+                    <LearnSim code={step.sim.code} scenario={step.sim.scenario} />
+                  </section>
+                )}
               </>
             )}
             {step.kind === 'quiz' && <Quiz key={i} step={step} {...exProps} />}

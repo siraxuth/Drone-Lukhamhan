@@ -13,7 +13,7 @@ export function prerequisites(track: Track, index: number): string[] {
 export function unitState(track: Track, index: number, done: ReadonlySet<string>): UnitState {
   const u = track.units[index];
   if (done.has(u.id)) return 'done';
-  return prerequisites(track, index).every((id) => done.has(id)) ? 'ready' : 'locked';
+  return 'ready';
 }
 
 /** สถานะทุกหน่วยของทุกสาย */
@@ -34,8 +34,7 @@ export function nextUnit(done: ReadonlySet<string>): { track: Track; unit: Unit 
 }
 
 export function canStart(unitId: string, done: ReadonlySet<string>): boolean {
-  const f = findUnit(unitId);
-  return !!f && unitState(f.track, f.index, done) !== 'locked';
+  return !!findUnit(unitId);
 }
 
 export const XP_PER_LEVEL = 100;

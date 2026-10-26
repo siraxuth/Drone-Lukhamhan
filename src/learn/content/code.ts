@@ -28,13 +28,26 @@ export const codeTrack: Track = {
   accent: 'blue',
   units: [
     {
-      id: 'code-install', title: 'ติดตั้ง Arduino IDE', summary: 'ลงโปรแกรมเขียนโค้ด เลือกบอร์ด Nano และอัปโหลดครั้งแรก', minutes: 8, xp: 40,
-      docs: [{ label: 'บทเรียนเต็ม: ติดตั้ง Arduino IDE', href: '/docs/arduino/install-ide' }],
+      id: 'code-install', title: 'ติดตั้ง Arduino IDE', summary: 'ดาวน์โหลดโปรแกรม เลือกบอร์ด Nano และอัปโหลดโค้ดให้สำเร็จ', minutes: 18, xp: 60,
+      docs: [
+        { label: 'คู่มือของ Arduino: ดาวน์โหลดและติดตั้ง IDE 2', href: 'https://docs.arduino.cc/software/ide-v2/tutorials/getting-started/ide-v2-downloading-and-installing' },
+        { label: 'คู่มือของ Arduino: เลือกบอร์ดและอัปโหลดโค้ด', href: 'https://docs.arduino.cc/software/ide-v2/tutorials/getting-started/ide-v2-uploading-a-sketch/' },
+        { label: 'คู่มือชมรม: ติดตั้ง Arduino IDE', href: '/docs/arduino/install-ide' },
+      ],
       steps: [
-        { kind: 'read', title: 'Arduino IDE คืออะไร', body: ['Arduino IDE คือโปรแกรมที่เราใช้ “เขียนโค้ด” แล้วส่งเข้าบอร์ด Arduino Nano ที่อยู่บนโดรน', 'เปรียบเหมือนสมุดจดกับตู้ไปรษณีย์ในที่เดียว: เขียนคำสั่งลงสมุด แล้วกดปุ่มส่งเข้าสมองของโดรน'] },
-        { kind: 'read', title: 'ดาวน์โหลดและติดตั้ง', body: ['ดาวน์โหลดจากเว็บทางการ arduino.cc (หัวข้อ Software) เลือกให้ตรงระบบ: Windows, macOS หรือ Linux แล้วติดตั้งตามปกติ', 'ถ้าใช้บอร์ดโคลน อาจต้องลงไดรเวอร์ CH340 เพิ่ม เพื่อให้คอมเห็นบอร์ดผ่านสาย USB'] },
-        { kind: 'read', title: 'เลือกบอร์ดและพอร์ต', body: ['เสียบสาย Type-C เข้าช่อง Nano ที่ข้างโดรน (ไม่ใช่ช่อง FC ด้านหน้า) แล้วตั้งค่าในเมนู Tools: Board = Arduino Nano · Processor = ATmega328P (Old Bootloader) · Port = พอร์ตที่โผล่ขึ้นมา', 'ถ้าไม่แน่ใจว่าพอร์ตไหน ถอดสายแล้วเสียบใหม่ พอร์ตที่หายไปแล้วโผล่กลับมาคือของ Nano'], tip: 'ขึ้นข้อความ “not in sync” แปลว่าเลือก Processor ผิด ลองสลับระหว่าง Old Bootloader กับแบบธรรมดา' },
-        { kind: 'read', title: 'อัปโหลดโค้ดแรก', body: ['กดปุ่มลูกศรขวา (Upload) ถ้าไม่มี error ข้อความด้านล่างจะขึ้น Done uploading', 'ถ้าขึ้น error ให้อ่านบรรทัดสีแดงทีละบรรทัด ส่วนใหญ่เกิดจากพอร์ตผิด สายชาร์จอย่างเดียว หรือยังไม่ได้ลงไดรเวอร์'] },
+        { kind: 'read', title: 'เตรียมของก่อนเริ่ม', body: ['ใช้คอมพิวเตอร์ Windows, macOS หรือ Linux, สาย USB ที่ส่งข้อมูลได้ และ Arduino IDE 2', 'ถ้าสายมีไว้ชาร์จอย่างเดียว คอมจะไม่เห็นบอร์ด แม้ไฟที่โดรนจะติดก็ตาม'], tip: 'บทนี้ใช้ภาพ Windows เป็นตัวอย่าง ถ้าหน้าต่างของคุณไม่เหมือนทุกจุด ให้ยึดชื่อเมนูและปุ่มเป็นหลัก' },
+        { kind: 'read', title: 'ขั้นที่ 1: เปิดหน้าโหลดจาก Arduino', body: ['กดภาพด้านล่างเพื่อไปหน้า Software ของ Arduino เลือก Arduino IDE 2 และเลือกไฟล์ให้ตรงกับระบบของคอม เช่น Windows 10 ขึ้นไป 64-bit', 'ถ้าหน้าถัดไปชวนบริจาค แต่ยังไม่อยากบริจาค ให้เลือก Just Download เพื่อโหลดต่อได้เลย'], images: [{ src: '/arduino/download-ide.png', alt: 'ภาพแนะนำ Arduino IDE 2 จากคู่มือดาวน์โหลดของ Arduino', caption: 'ภาพประกอบจากคู่มือ Arduino กดเพื่อเปิดหน้าดาวน์โหลดเวอร์ชันปัจจุบัน', href: 'https://www.arduino.cc/en/software' }] },
+        { kind: 'read', title: 'ขั้นที่ 2: ติดตั้งโปรแกรม', body: ['เปิดไฟล์ที่ดาวน์โหลดมา แล้วทำตามหน้าต่างติดตั้ง กดยอมรับเงื่อนไขและใช้ตำแหน่งติดตั้งเดิมได้', 'หน้าตาและข้อความอาจต่างจากภาพเล็กน้อยตามเวอร์ชัน เมื่อติดตั้งเสร็จให้เปิด Arduino IDE 2'], images: [
+          { src: '/arduino/install-windows-1.png', alt: 'ตัวอย่างไฟล์ Arduino IDE ที่ดาวน์โหลดอยู่ในโฟลเดอร์ Downloads', caption: 'ตัวอย่างไฟล์ติดตั้งที่ดาวน์โหลดแล้วจากคู่มือ Arduino', href: 'https://docs.arduino.cc/software/ide-v2/tutorials/getting-started/ide-v2-downloading-and-installing' },
+          { src: '/arduino/install-windows-2.png', alt: 'ตัวอย่างหน้าต่างติดตั้ง Arduino IDE บน Windows', caption: 'ตัวอย่างหน้าต่างติดตั้ง Windows จากคู่มือ Arduino เวอร์ชันภาพอาจต่างจากเครื่องปัจจุบัน', href: 'https://docs.arduino.cc/software/ide-v2/tutorials/getting-started/ide-v2-downloading-and-installing' },
+        ], video: { id: 'ZDbgxU7ZY0Y', title: 'สอนติดตั้ง Arduino IDE 2.0 ภาษาไทย โดย White Space' } },
+        { kind: 'read', title: 'ขั้นที่ 3: ต่อบอร์ด Nano และเลือกพอร์ต', body: ['ปิดสวิตช์โดรนก่อน แล้วต่อสาย USB เข้าช่อง Nano ที่ด้านข้างโดรน อย่าเสียบช่อง Flight Controller ด้านหน้า', 'ใน Arduino IDE เลือกบอร์ด Arduino Nano แล้วเลือกพอร์ตที่เพิ่งปรากฏขึ้น ถ้าไม่แน่ใจ ให้ถอดสายดูว่าพอร์ตไหนหาย แล้วเสียบกลับดูว่าพอร์ตไหนโผล่'], images: [{ src: '/arduino/select-board.png', alt: 'เมนู Arduino IDE 2 สำหรับเลือกบอร์ดที่เชื่อมต่อ', caption: 'ตัวอย่างหน้าต่างเลือกบอร์ดและพอร์ตจากคู่มือ Arduino กดเพื่ออ่านวิธีเลือกแบบละเอียด', href: 'https://docs.arduino.cc/software/ide-v2/tutorials/getting-started/ide-v2-uploading-a-sketch/' }], tip: 'บอร์ด Nano ของชมรมใช้ Processor: ATmega328P (Old Bootloader) ถ้าอัปโหลดแล้วขึ้น not in sync ให้ตรวจตัวเลือกนี้ก่อน' },
+        { kind: 'read', title: 'ขั้นที่ 4: ตรวจโค้ด แล้วอัปโหลด', body: ['ปุ่มเครื่องหมายถูกใช้ตรวจว่าโค้ดเขียนถูกและคอมไพล์ผ่าน ส่วนปุ่มลูกศรใช้ส่งโค้ดลงบอร์ด', 'กดเครื่องหมายถูกก่อน ถ้าไม่มี error จึงกดลูกศร รอจนเห็นข้อความ Done uploading แล้วค่อยถอดสาย'], images: [
+          { src: '/arduino/upload-buttons.png', alt: 'ปุ่ม Verify และ Upload บนแถบเครื่องมือ Arduino IDE 2', caption: 'เครื่องหมายถูกตรวจโค้ด, ลูกศรส่งโค้ดลงบอร์ด', href: 'https://docs.arduino.cc/software/ide-v2/tutorials/getting-started/ide-v2-uploading-a-sketch/' },
+          { src: '/arduino/verify-result.png', alt: 'ตัวอย่างผลคอมไพล์โค้ดสำเร็จใน Arduino IDE 2', caption: 'ตรวจโค้ดผ่านแล้วจึงอัปโหลด', href: 'https://docs.arduino.cc/software/ide-v2/tutorials/getting-started/ide-v2-uploading-a-sketch/' },
+          { src: '/arduino/upload-result.png', alt: 'ตัวอย่างผลอัปโหลดสเก็ตช์สำเร็จใน Arduino IDE 2', caption: 'เมื่อเสร็จจะมีข้อความยืนยันการอัปโหลด', href: 'https://docs.arduino.cc/software/ide-v2/tutorials/getting-started/ide-v2-uploading-a-sketch/' },
+        ] },
+        { kind: 'read', title: 'ถ้าอัปโหลดไม่ผ่าน ให้เช็กทีละข้อ', body: ['ไม่เห็นพอร์ต: ใช้สาย USB ที่ส่งข้อมูลได้ ลองเสียบช่อง Nano และเปลี่ยนสาย', 'ขึ้น not in sync: ตรวจบอร์ดกับ Processor โดยเฉพาะ Old Bootloader', 'คอมไม่รู้จักบอร์ดโคลน: อาจต้องติดตั้งไดรเวอร์ CH340 จากผู้ผลิตบอร์ด แล้วเปิด IDE ใหม่'], tip: 'อย่าเปลี่ยนหลายอย่างพร้อมกัน แก้ทีละข้อแล้วลองอัปโหลดใหม่ จะรู้ว่าสาเหตุอยู่ตรงไหน' },
       ],
     },
     {

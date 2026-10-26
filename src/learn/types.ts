@@ -1,7 +1,7 @@
 import type { ScenarioConfig } from '@/lib/scenarios';
 
 /** โครงเนื้อหาของแพลตฟอร์มเรียน (/learn) เขียนเป็นโค้ดเพื่อให้ตรวจชนิดได้และรีวิวผ่าน git */
-export type TrackId = 'code' | 'basics' | 'physics';
+export type TrackId = 'code' | 'basics' | 'systems' | 'physics';
 
 /** ทักษะที่ระบบวิเคราะห์ (ใช้ติดป้ายให้แบบฝึกทุกข้อ) */
 export const SKILLS = {
@@ -20,7 +20,9 @@ export type SkillId = keyof typeof SKILLS;
 type Exercise = { /** ทักษะที่แบบฝึกนี้วัด */ skills: SkillId[]; /** ความยาก 1–5 */ level: 1 | 2 | 3 | 4 | 5; /** อธิบายเฉลยหลังตอบ */ explain: string };
 
 /** การ์ดอ่าน 1 ใบ: ข้อความ (ย่อหน้าละรายการ ใช้ `โค้ด` ในเครื่องหมายคำพูดกลับได้) + โค้ดตัวอย่าง/เคล็ดลับไม่บังคับ */
-export type ReadStep = { kind: 'read'; title: string; body: string[]; code?: string; tip?: string };
+export type ReadImage = { src: string; alt: string; caption: string; href: string };
+export type ReadVideo = { id: string; title: string };
+export type ReadStep = { kind: 'read'; title: string; body: string[]; code?: string; tip?: string; images?: ReadImage[]; video?: ReadVideo; sim?: { scenario: ScenarioConfig; code: string } };
 /** เลือกคำตอบข้อเดียว (answer = ลำดับตัวเลือกที่ถูก เริ่ม 0 อยู่ฝั่งเซิร์ฟเวอร์เท่านั้น) */
 export type QuizStep = Exercise & { kind: 'quiz'; title: string; question: string; code?: string; options: string[]; answer: number };
 /** เติมช่องว่างในโค้ด: ใน code ใช้ ___ เป็นช่อง เรียงตามลำดับ · blanks[i] = ตัวเลือกและคำตอบของช่องที่ i */
