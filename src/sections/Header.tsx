@@ -14,6 +14,7 @@ import { ScrollProgress } from '@/components/ui/scroll-progress';
 const links = [
   { href: '/#how', label: 'การทำงาน', spy: 'how' },
   { href: '/docs', label: 'บทเรียน' },
+  { href: '/learn', label: 'คอร์สเรียน' },
   { href: '/#showcase', label: 'ผลงานที่ผ่านมา', spy: 'showcase' },
   { href: '/simulator', label: 'ฝึกเขียนโค้ด' },
   { href: '/field', label: 'จำลองสนามแข่งขัน' },
@@ -82,7 +83,7 @@ export function Header() {
         <div className="flex items-center gap-2">
           <ThemeToggle />
           <div className="hidden lg:block"><UserMenu /></div>
-          <Button size="sm" className="group/cta hidden h-10.5 px-4 text-base sm:inline-flex squircle-3xl" render={<Link href="/docs" />} nativeButton={false}>
+          <Button size="sm" className="group/cta hidden h-10.5 px-4 text-base sm:inline-flex lg:hidden xl:inline-flex squircle-3xl" render={<Link href="/docs" />} nativeButton={false}>
             เริ่มเรียน <ArrowRight className="size-4 transition-transform group-hover/cta:translate-x-0.5" aria-hidden />
           </Button>
           <button

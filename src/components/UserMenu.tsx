@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { LayoutDashboard, LogIn, LogOut } from 'lucide-react';
+import { GraduationCap, LayoutDashboard, LogIn, LogOut } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { authClient } from '@/lib/auth-client';
@@ -46,9 +46,14 @@ export function UserMenu() {
           </DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem render={<Link href="/admin" />} className="min-h-11 squircle-xl px-3 text-base">
-          <LayoutDashboard className="size-5" aria-hidden /> {role === 'MEMBER' ? 'บัญชีของฉัน' : 'จัดการเว็บไซต์'}
+        <DropdownMenuItem render={<Link href="/learn" />} className="min-h-11 squircle-xl px-3 text-base">
+          <GraduationCap className="size-5" aria-hidden /> การเรียนของฉัน
         </DropdownMenuItem>
+        {role !== 'MEMBER' && (
+          <DropdownMenuItem render={<Link href="/admin" />} className="min-h-11 squircle-xl px-3 text-base">
+            <LayoutDashboard className="size-5" aria-hidden /> จัดการเว็บไซต์
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           className="min-h-11 squircle-xl px-3 text-base text-brand-red"
           onClick={async () => { await authClient.signOut(); router.refresh(); }}
@@ -93,9 +98,14 @@ export function UserMenuMobile({ onNavigate }: { onNavigate?: () => void }) {
           <p className="mt-1 w-fit squircle-xl bg-muted px-2 py-0.5 text-xs font-medium">{ROLE[role] ?? role}</p>
         </div>
       </div>
-      <Link href="/admin" onClick={onNavigate} className={`${row} bg-surface hover:bg-muted`}>
-        <LayoutDashboard className="size-5" aria-hidden /> {role === 'MEMBER' ? 'บัญชีของฉัน' : 'จัดการเว็บไซต์'}
+      <Link href="/learn" onClick={onNavigate} className={`${row} bg-surface hover:bg-muted`}>
+        <GraduationCap className="size-5" aria-hidden /> การเรียนของฉัน
       </Link>
+      {role !== 'MEMBER' && (
+        <Link href="/admin" onClick={onNavigate} className={`${row} bg-surface hover:bg-muted`}>
+          <LayoutDashboard className="size-5" aria-hidden /> จัดการเว็บไซต์
+        </Link>
+      )}
       <button type="button" className={`${row} bg-surface text-brand-red hover:bg-muted`}
         onClick={async () => { await authClient.signOut(); onNavigate?.(); router.refresh(); }}>
         <LogOut className="size-5" aria-hidden /> ออกจากระบบ

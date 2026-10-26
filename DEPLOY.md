@@ -41,19 +41,34 @@ git checkout main
 | `BETTER_AUTH_SECRET` | จำเป็น | จำเป็น | สุ่ม 32+ ตัวอักษร (`openssl rand -base64 32`) แยกจาก dev |
 | `BETTER_AUTH_URL` | `https://drone.dekgp.com` | **ไม่ต้องตั้ง** | Preview ใช้ลิงก์ของตัวเอง ระบบรับ `VERCEL_URL` เป็นต้นทางที่เชื่อถือได้ให้แล้ว |
 | `NEXT_PUBLIC_SITE_URL` | `https://drone.dekgp.com` | ไม่ต้องตั้ง | ใช้ทำ canonical/sitemap/ภาพแชร์ |
-| `ADMIN_EMAILS` | จำเป็น | ตามต้องการ | อีเมลที่สมัครแล้วเป็นแอดมินทันที |
+| `ADMIN_EMAILS` | จำเป็น | ตามต้องการ | อีเมลที่เข้าสู่ระบบแล้วเป็นแอดมินทันที และข้ามข้อบังคับโดเมนโรงเรียนได้ |
+| `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` | จำเป็น | จำเป็น (ถ้าจะทดสอบล็อกอิน) | OAuth client ของ Google สำหรับเข้าสู่ระบบด้วยบัญชีโรงเรียน (ดูหัวข้อด้านล่าง) |
+| `ALLOWED_EMAIL_DOMAIN` | ไม่บังคับ | ไม่บังคับ | โดเมนอีเมลที่อนุญาต ค่าเริ่มต้น `lukhamhan.ac.th` |
 | `R2_ENDPOINT` `R2_ACCESS_KEY_ID` `R2_SECRET_ACCESS_KEY` `R2_BUCKET_NAME` | จำเป็น | ตามต้องการ | อัปโหลดรูป |
 | `R2_PUBLIC_URL` | จำเป็น | จำเป็น | ต้องมีตอน build ไม่งั้นรูปจาก R2 ไม่แสดง |
 | `GOOGLE_SITE_VERIFICATION` `BING_SITE_VERIFICATION` | ไม่บังคับ | — | ยืนยันเจ้าของเว็บใน Search Console |
 
 ข้อควรระวัง: Vercel build ไม่รัน `prisma db push` ถ้าแก้ `prisma/schema.prisma` ต้องรัน `bun run db:push` กับฐานข้อมูลนั้นเองก่อนออกเวอร์ชัน (เพิ่มคอลัมน์ได้ปลอดภัย การลบหรือเปลี่ยนชนิดควรสำรองก่อน) และใส่ข้อมูลตั้งต้นโจทย์ฝึกด้วย `bun run prisma/seed-challenges.ts` ได้เมื่อต้องการ
 
+### ตั้งค่าเข้าสู่ระบบด้วย Google (ทำครั้งเดียว)
+
+ระบบเปิดให้เฉพาะอีเมล `@lukhamhan.ac.th` (และอีเมลใน `ADMIN_EMAILS`) เข้าสู่ระบบด้วย Google เท่านั้น ไม่มีสมัครด้วยรหัสผ่านบนเว็บจริง
+
+1. เข้า <https://console.cloud.google.com> ด้วยบัญชีผู้ดูแล Google Workspace ของโรงเรียน → สร้าง Project (เช่น `drone-lukhamhan`)
+2. APIs & Services → **OAuth consent screen** → User Type เลือก **Internal** (ถ้าโปรเจกต์อยู่ในองค์กรโรงเรียน Google จะอนุญาตเฉพาะบัญชีในโดเมนเองอีกชั้น) ถ้าไม่มีตัวเลือก Internal ใช้ External แล้วระบบฝั่งเว็บจะกันโดเมนอื่นให้
+3. Credentials → Create Credentials → **OAuth client ID** → Web application
+   - Authorized JavaScript origins: `https://drone.dekgp.com` และ `http://localhost:3000`
+   - Authorized redirect URIs: `https://drone.dekgp.com/api/auth/callback/google` และ `http://localhost:3000/api/auth/callback/google`
+4. คัดลอก Client ID / Client secret ไปใส่ `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` ที่ Vercel และ `.env.local`
+5. แอดมินเดิมที่เคยสมัครด้วยรหัสผ่าน: ล็อกอินด้วย Google อีเมลเดียวกัน (ต้องอยู่ใน `ADMIN_EMAILS`) ระบบจะผูกเข้ากับบัญชีเดิมให้เอง
+6. ทดสอบ: ล็อกอินด้วย gmail ธรรมดาต้องถูกปฏิเสธ, อีเมลโรงเรียนต้องผ่านและเห็นหน้า `/learn`
+
 ### 3) หลังขึ้นเว็บครั้งแรก
 
 - เปิด Google Search Console เพิ่มทรัพย์สิน `https://drone.dekgp.com` แล้วส่ง `https://drone.dekgp.com/sitemap.xml`
 - ตรวจ `https://drone.dekgp.com/robots.txt` ต้องเห็น `Allow: /` และ `Disallow: /admin`
 - เช็กภาพแชร์: ส่งลิงก์เข้า LINE/Facebook Sharing Debugger ดูว่าแสดงภาพและชื่อถูกต้อง
-- สมัครสมาชิกด้วยอีเมลใน `ADMIN_EMAILS` แล้วเข้า `/admin`
+- เข้าสู่ระบบด้วย Google ด้วยอีเมลใน `ADMIN_EMAILS` แล้วเข้า `/admin`
 
 ## ออกเวอร์ชันใหม่ (ทุกครั้งก่อนอัปเดตเว็บจริง)
 

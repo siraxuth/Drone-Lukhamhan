@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
-  if (!session) redirect('/login');
+  if (!session) redirect('/login?next=/admin');
   const role = ((session.user as { role?: string }).role ?? 'MEMBER') as 'ADMIN' | 'TEACHER' | 'MEMBER';
 
   if (role === 'MEMBER') {

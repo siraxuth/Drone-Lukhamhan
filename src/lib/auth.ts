@@ -1,12 +1,28 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
+import { APIError } from 'better-auth/api';
 import { nextCookies } from 'better-auth/next-js';
 import { headers } from 'next/headers';
 import { db } from './db';
+import { ALLOWED_DOMAIN, devPasswordLogin, googleConfigured, isAdminEmail, isAllowedEmail } from './school';
 
 export const auth = betterAuth({
   database: prismaAdapter(db, { provider: 'postgresql' }),
-  emailAndPassword: { enabled: true },
+  // เข้าสู่ระบบด้วย Google ของโรงเรียนเท่านั้น (รหัสผ่านใช้ได้เฉพาะตอนพัฒนาในเครื่องที่ยังไม่ตั้ง Google)
+  emailAndPassword: { enabled: devPasswordLogin() },
+  socialProviders: googleConfigured()
+    ? {
+        google: {
+          clientId: process.env.GOOGLE_CLIENT_ID as string,
+          clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+          // hd = ให้ Google แสดงเฉพาะบัญชีของโดเมนโรงเรียน (เป็นแค่ตัวช่วย การบังคับจริงอยู่ที่ hook ด้านล่าง)
+          hd: ALLOWED_DOMAIN,
+          prompt: 'select_account',
+        },
+      }
+    : {},
+  // แอดมินเดิมที่เคยสมัครด้วยรหัสผ่าน เข้าด้วย Google อีเมลเดียวกันแล้วได้บัญชีเดิม
+  account: { accountLinking: { enabled: true, trustedProviders: ['google'] } },
   session: {
     // อยู่ในระบบยาว 30 วัน และต่ออายุอัตโนมัติทุกครั้งที่ใช้งาน (ถ้าเข้าอย่างน้อยเดือนละครั้งก็ไม่ต้องล็อกอินใหม่)
     expiresIn: 60 * 60 * 24 * 30,
@@ -32,10 +48,20 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
-        // อีเมลใน ADMIN_EMAILS (คั่นด้วย ,) สมัครแล้วเป็น ADMIN ทันที คนอื่นเป็น MEMBER
+        // บังคับโดเมนโรงเรียน (ยกเว้น ADMIN_EMAILS) · อีเมลใน ADMIN_EMAILS สมัครแล้วเป็น ADMIN ทันที คนอื่นเป็น MEMBER
         before: async (user) => {
-          const admins = (process.env.ADMIN_EMAILS ?? '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
-          return { data: { ...user, role: admins.includes(user.email.toLowerCase()) ? 'ADMIN' : 'MEMBER' } };
+          if (!isAllowedEmail(user.email)) throw new APIError('FORBIDDEN', { message: `ใช้ได้เฉพาะอีเมล @${ALLOWED_DOMAIN}` });
+          if (googleConfigured() && !user.emailVerified) throw new APIError('FORBIDDEN', { message: 'อีเมลนี้ Google ยังไม่ยืนยัน' });
+          return { data: { ...user, role: isAdminEmail(user.email) ? 'ADMIN' : 'MEMBER' } };
+        },
+      },
+    },
+    session: {
+      create: {
+        // กันบัญชีเก่านอกโดเมน (เช่น gmail ที่เคยสมัครไว้) ไม่ให้ล็อกอินเข้ามาได้อีก
+        before: async (session) => {
+          const u = await db.user.findUnique({ where: { id: session.userId }, select: { email: true } });
+          if (!u || !isAllowedEmail(u.email)) throw new APIError('FORBIDDEN', { message: `ใช้ได้เฉพาะอีเมล @${ALLOWED_DOMAIN}` });
         },
       },
     },
@@ -53,4 +79,9 @@ export async function requireRole(...roles: Array<'ADMIN' | 'TEACHER' | 'MEMBER'
   if (!session) return null;
   const role = (session.user as { role?: string }).role;
   return roles.includes(role as 'ADMIN') ? session : null;
+}
+
+/** ใช้ในหน้า /learn และ API ของผู้เรียน: ต้องล็อกอิน (ทุกบทบาท) */
+export async function requireUser() {
+  return getSession();
 }
