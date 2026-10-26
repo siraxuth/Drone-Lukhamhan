@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { Breadcrumbs, type Crumb } from '@/components/Breadcrumbs';
 
-const names: Record<string, string> = { projects: 'ผลงาน', seasons: 'ฤดูกาล / กติกา', sections: 'หมวดเนื้อหา', challenges: 'โจทย์ตัวจำลอง', users: 'สมาชิกและสิทธิ์', media: 'คลังรูป' };
+const names: Record<string, string> = { projects: 'ผลงาน', seasons: 'ฤดูกาล / กติกา', sections: 'หมวดเนื้อหา', challenges: 'โจทย์ตัวจำลอง', daily: 'ภารกิจรายวัน', users: 'สมาชิกและสิทธิ์', media: 'คลังรูป' };
 
 /** เส้นทางหน้าของ /admin: หน้าแรก › จัดการเว็บไซต์ › หมวด › เพิ่ม/แก้ไข */
 export function AdminCrumbs() {

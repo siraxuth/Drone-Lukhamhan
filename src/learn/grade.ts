@@ -13,6 +13,8 @@ export type GradeResult = {
   max: number | null;
   /** ข้อความผิดพลาดของโค้ด/การบิน (เรียงตามเวลา) */
   problems: string[];
+  /** เวลาบินจนลงจอดบนฐาน (มิลลิวินาทีในตัวจำลอง) null = ยังไม่ได้ลงจอดบนฐาน */
+  timeMs: number | null;
   /** คำสั่งที่ต้องมี (ตามลำดับ) แต่ยังไม่มี */
   missing: string[];
 };
@@ -24,7 +26,7 @@ export type GradeResult = {
  */
 export function gradeCode(code: string, scenario: ScenarioConfig, minScore: number, mustInclude: string[]): GradeResult {
   if (code.length > MAX_CODE_CHARS || code.split('\n').length > MAX_CODE_LINES) {
-    return { passed: false, score: 0, max: maxScore(scenario), problems: ['โค้ดยาวเกินกว่าที่แบบฝึกนี้รับ'], missing: [] };
+    return { passed: false, score: 0, max: maxScore(scenario), problems: ['โค้ดยาวเกินกว่าที่แบบฝึกนี้รับ'], missing: [], timeMs: null };
   }
   const cfg = { ...buildScenarioConfig(scenario), style: 'full' as const };
   const r = simulate(code, cfg);
@@ -37,6 +39,6 @@ export function gradeCode(code: string, scenario: ScenarioConfig, minScore: numb
     if (i < 0) missing.push(n); else from = i + 1;
   }
   const problems = r.events.filter((e: SimEvent) => e.kind === 'error').map((e) => e.text);
-  return { passed: r.ok && r.score >= minScore && missing.length === 0, score: r.score, max: maxScore(scenario), problems, missing };
+  return { passed: r.ok && r.score >= minScore && missing.length === 0, score: r.score, max: maxScore(scenario), problems, missing, timeMs: r.stopTime === null ? null : Math.round(r.stopTime) };
 }
 

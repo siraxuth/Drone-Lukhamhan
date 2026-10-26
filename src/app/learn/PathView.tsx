@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { BarChart3, Check, ClipboardCheck, Flame, Lock, Play, RefreshCw, Sparkles, Target } from 'lucide-react';
+import { BarChart3, CalendarCheck, Check, ClipboardCheck, Flame, Lock, Play, RefreshCw, Sparkles, Target } from 'lucide-react';
 import { TRACKS } from '@/learn/content';
 import { levelOf, nextUnit, pathStates, XP_PER_LEVEL } from '@/learn/path';
 import type { Track } from '@/learn/types';
@@ -81,6 +81,7 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
 
       <div className="flex flex-wrap items-center gap-3">
         <p className="mr-auto text-sm text-muted-foreground">จบแล้ว {done.size} จาก {total} หน่วย</p>
+        <Link href="/learn/daily" className="inline-flex h-11 items-center gap-2 squircle-xl border border-line bg-surface px-4 text-base font-semibold hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"><CalendarCheck className="size-4" aria-hidden /> ภารกิจรายวัน</Link>
         <Link href="/learn/skills" className="inline-flex h-11 items-center gap-2 squircle-xl border border-line bg-surface px-4 text-base font-semibold hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"><BarChart3 className="size-4" aria-hidden /> วิเคราะห์ของฉัน</Link>
         <Link href="/learn/review" className="inline-flex h-11 items-center gap-2 squircle-xl border border-line bg-surface px-4 text-base font-semibold hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"><RefreshCw className="size-4" aria-hidden /> ทบทวน 5 ข้อ</Link>
       </div>

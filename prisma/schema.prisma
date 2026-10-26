@@ -29,6 +29,7 @@ model User {
   unitProgress  UnitProgress[]
   attempts      Attempt[]
   skillStats    SkillStat[]
+  dailyRuns     DailyRun[]
 
   @@map("user")
 }
@@ -203,4 +204,24 @@ model SkillStat {
   lastAt   DateTime @default(now())
 
   @@id([userId, skill])
+}
+
+/// ผลภารกิจรายวันของผู้เรียนต่อวัน/ระดับ (day = YYYY-MM-DD เวลาไทย) เก็บคะแนนดีที่สุด เวลาบินที่ดีที่สุด และโค้ดที่ดีที่สุด
+model DailyRun {
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  day        String
+  tier       String
+  bestScore  Int      @default(0)
+  maxScore   Int      @default(0)
+  /// เวลาที่ใช้ในการบินจนลงจอดบนฐาน (มิลลิวินาที ในตัวจำลอง) ใช้ตัดสินเมื่อคะแนนเท่ากัน ยิ่งน้อยยิ่งดี
+  bestTimeMs Int?
+  attempts   Int      @default(0)
+  solved     Boolean  @default(false)
+  bestCode   String   @default("")
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+
+  @@id([userId, day, tier])
+  @@index([day, tier, bestScore])
 }
