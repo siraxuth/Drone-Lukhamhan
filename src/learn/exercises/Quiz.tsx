@@ -26,7 +26,7 @@ export function Quiz({ step, passed, submit, onResult, busy }: ExerciseProps & {
         {step.options.map((o, i) => (
           <button key={i} type="button" role="radio" aria-checked={pick === i} disabled={locked} onClick={() => { setPick(i); setRes(null); }}
             className={`flex min-h-12 items-center gap-3 squircle-xl border px-4 py-2.5 text-left text-base transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:opacity-80 ${pick === i ? 'border-brand-blue bg-brand-blue/10' : 'border-line hover:bg-surface-2'}`}>
-            <span aria-hidden className={`grid size-7 shrink-0 place-items-center rounded-full border text-sm font-bold ${pick === i ? 'border-brand-blue bg-brand-blue text-white' : 'border-line'}`}>{String.fromCharCode(65 + i)}</span>
+            <span aria-hidden className={`grid size-7 shrink-0 place-items-center rounded-full border text-sm font-bold ${pick === i ? 'border-brand-blue bg-brand-blue text-background' : 'border-line'}`}>{String.fromCharCode(65 + i)}</span>
             <span className="min-w-0"><Inline text={o} /></span>
           </button>
         ))}

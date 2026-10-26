@@ -43,7 +43,7 @@ export default async function SkillsPage() {
         <section className="grid gap-4 squircle-2xl border border-line bg-surface p-6 text-center">
           <p className="text-lg">ยังไม่มีข้อมูลพอวิเคราะห์ ลองทำแบบทดสอบก่อนเรียน (ประมาณ 5 นาที) หรือเรียนไปสักหน่วยแล้วกลับมาดู</p>
           <div className="flex flex-wrap justify-center gap-3">
-            <Link href="/learn/placement" className={`${btn} bg-brand-blue text-white`}><ClipboardCheck className="size-4" aria-hidden /> ทำแบบทดสอบก่อนเรียน</Link>
+            <Link href="/learn/placement" className={`${btn} bg-brand-blue text-background`}><ClipboardCheck className="size-4" aria-hidden /> ทำแบบทดสอบก่อนเรียน</Link>
             <Link href="/learn" className={`${btn} border border-line hover:bg-surface-2`}>ไปเรียน</Link>
           </div>
         </section>
@@ -103,7 +103,7 @@ export default async function SkillsPage() {
       </section>
 
       <div className="flex flex-wrap gap-3">
-        <Link href="/learn/review" className={`${btn} bg-brand-blue text-white`}><RefreshCw className="size-4" aria-hidden /> ทบทวน 5 ข้อตามจุดอ่อน</Link>
+        <Link href="/learn/review" className={`${btn} bg-brand-blue text-background`}><RefreshCw className="size-4" aria-hidden /> ทบทวน 5 ข้อตามจุดอ่อน</Link>
         {profile.placement !== 'done' && <Link href="/learn/placement" className={`${btn} border border-line hover:bg-surface-2`}><ClipboardCheck className="size-4" aria-hidden /> ทำแบบทดสอบก่อนเรียน</Link>}
         <Link href="/learn" className={`${btn} border border-line hover:bg-surface-2`}>กลับเส้นทางเรียน <ArrowRight className="size-4" aria-hidden /></Link>
       </div>

@@ -10,8 +10,8 @@ import type { Track } from '@/learn/types';
 type Profile = { displayName: string; xp: number; streak: number; todayXp: number; dailyGoal: number; activeToday: boolean; showOnBoard: boolean; placement: 'none' | 'skipped' | 'done' };
 
 const ACCENT: Record<Track['accent'], { ring: string; fill: string; soft: string; text: string }> = {
-  blue: { ring: 'ring-brand-blue', fill: 'bg-brand-blue text-white', soft: 'bg-brand-blue/10', text: 'text-brand-blue' },
-  red: { ring: 'ring-brand-red', fill: 'bg-brand-red text-white', soft: 'bg-brand-red/10', text: 'text-brand-red' },
+  blue: { ring: 'ring-brand-blue', fill: 'bg-brand-blue text-background', soft: 'bg-brand-blue/10', text: 'text-brand-blue' },
+  red: { ring: 'ring-brand-red', fill: 'bg-brand-red text-background', soft: 'bg-brand-red/10', text: 'text-brand-red' },
   emerald: { ring: 'ring-emerald-500', fill: 'bg-emerald-600 text-white', soft: 'bg-emerald-500/10', text: 'text-emerald-700 dark:text-emerald-300' },
 };
 
@@ -61,7 +61,7 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
 
       {profile.placement === 'none' && (
         <section aria-label="แบบทดสอบก่อนเรียน" className="flex flex-wrap items-center gap-4 squircle-2xl border border-brand-blue/40 bg-brand-blue/5 p-5">
-          <span aria-hidden className="grid size-12 shrink-0 place-items-center squircle-xl bg-brand-blue text-white"><ClipboardCheck className="size-6" /></span>
+          <span aria-hidden className="grid size-12 shrink-0 place-items-center squircle-xl bg-brand-blue text-background"><ClipboardCheck className="size-6" /></span>
           <div className="min-w-0 flex-1 basis-full sm:basis-0">
             <p className="text-xl font-extrabold leading-tight">ลองวัดพื้นฐานก่อนเรียนไหม</p>
             <p className="mt-1 text-base text-muted-foreground">12 ข้อ ใช้เวลาราว 5 นาที ข้อยากง่ายปรับตามที่ตอบ ใช้บอกว่าคุณถนัดและควรเน้นตรงไหน ถ้าแม่นมากระบบข้ามหน่วยต้นๆ ให้ได้</p>
@@ -77,7 +77,7 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
             <p className="text-2xl font-extrabold leading-tight">{next.unit.title}</p>
             <p className="mt-1 text-base text-muted-foreground">{next.unit.summary} · ประมาณ {next.unit.minutes} นาที · +{next.unit.xp} XP</p>
           </div>
-          <Link href={`/learn/${next.track.id}/${next.unit.id}`} className="inline-flex h-12 items-center gap-2 squircle-xl bg-brand-blue px-6 text-base font-bold text-white transition-transform hover:scale-[1.02] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">
+          <Link href={`/learn/${next.track.id}/${next.unit.id}`} className="inline-flex h-12 items-center gap-2 squircle-xl bg-brand-blue px-6 text-base font-bold text-background transition-transform hover:scale-[1.02] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">
             <Play className="size-4 fill-current" aria-hidden /> {done.size === 0 ? 'เริ่มเรียน' : 'เรียนต่อ'}
           </Link>
         </section>

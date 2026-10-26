@@ -43,6 +43,7 @@ export function PlacementPlayer({ already }: { already: boolean }) {
 
   return (
     <main className="mx-auto grid max-w-2xl gap-5 px-4 pb-32 pt-28 sm:px-6">
+      {!q && !result && <h1 className="sr-only">แบบทดสอบก่อนเรียน</h1>}
       <div className="flex items-center gap-3">
         <Link href="/learn" aria-label="ออกจากแบบทดสอบ" className="grid size-11 shrink-0 place-items-center squircle-xl border border-line bg-surface hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-brand-blue"><X className="size-5" aria-hidden /></Link>
         <div className="min-w-0 flex-1">
@@ -56,7 +57,7 @@ export function PlacementPlayer({ already }: { already: boolean }) {
           <h1 className="font-display text-3xl font-extrabold">ทำแบบทดสอบก่อนเรียนไปแล้ว</h1>
           <p className="text-lg text-muted-foreground">ผลและจุดแข็ง-จุดควรเสริมอยู่ในหน้าวิเคราะห์ของฉัน ซึ่งอัปเดตทุกครั้งที่คุณทำแบบฝึก</p>
           <div className="flex flex-wrap justify-center gap-3">
-            <Link href="/learn/skills" className="inline-flex h-12 items-center gap-2 squircle-xl bg-brand-blue px-6 text-base font-bold text-white">ดูวิเคราะห์ของฉัน</Link>
+            <Link href="/learn/skills" className="inline-flex h-12 items-center gap-2 squircle-xl bg-brand-blue px-6 text-base font-bold text-background">ดูวิเคราะห์ของฉัน</Link>
             <Link href="/learn" className="inline-flex h-12 items-center gap-2 squircle-xl border border-line px-6 text-base font-semibold hover:bg-surface-2">กลับเส้นทางเรียน</Link>
           </div>
         </section>
@@ -84,7 +85,7 @@ export function PlacementPlayer({ already }: { already: boolean }) {
           </ul>
           {result.unlocked.length > 0 && <p className="squircle-xl bg-emerald-500/10 px-3 py-2 text-base leading-7">คุณแม่นพอที่จะข้ามหน่วยต้นๆ ได้ ระบบปลดล็อกให้ <b>{result.unlocked.length} หน่วย</b> ({result.unlocked.map((u) => u.title).join(', ')}) ไม่ได้ XP แต่กลับไปเรียนซ้ำเมื่อไรก็ได้</p>}
           <div className="flex flex-wrap gap-3">
-            <Link href="/learn" className="inline-flex h-12 items-center gap-2 squircle-xl bg-brand-blue px-6 text-base font-bold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">เริ่มเรียน <ArrowRight className="size-4" aria-hidden /></Link>
+            <Link href="/learn" className="inline-flex h-12 items-center gap-2 squircle-xl bg-brand-blue px-6 text-base font-bold text-background focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">เริ่มเรียน <ArrowRight className="size-4" aria-hidden /></Link>
             <Link href="/learn/skills" className="inline-flex h-12 items-center gap-2 squircle-xl border border-line px-6 text-base font-semibold hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">ดูวิเคราะห์ละเอียด</Link>
           </div>
         </section>
@@ -95,7 +96,7 @@ export function PlacementPlayer({ already }: { already: boolean }) {
           <div role="radiogroup" aria-labelledby="pq" className="grid gap-2">
             {q.question.options.map((o, i) => (
               <button key={i} type="button" role="radio" aria-checked={pick === i} onClick={() => setPick(i)} className={`flex min-h-12 items-center gap-3 squircle-xl border px-4 py-2.5 text-left text-base transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue ${pick === i ? 'border-brand-blue bg-brand-blue/10' : 'border-line hover:bg-surface-2'}`}>
-                <span aria-hidden className={`grid size-7 shrink-0 place-items-center rounded-full border text-sm font-bold ${pick === i ? 'border-brand-blue bg-brand-blue text-white' : 'border-line'}`}>{String.fromCharCode(65 + i)}</span>
+                <span aria-hidden className={`grid size-7 shrink-0 place-items-center rounded-full border text-sm font-bold ${pick === i ? 'border-brand-blue bg-brand-blue text-background' : 'border-line'}`}>{String.fromCharCode(65 + i)}</span>
                 <span className="min-w-0"><Inline text={o} /></span>
               </button>
             ))}

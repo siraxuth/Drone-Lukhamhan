@@ -21,7 +21,7 @@ export function ReviewPlayer({ start }: { start: ReviewStart }) {
       <main className="mx-auto grid max-w-xl gap-4 px-4 pb-32 pt-28 text-center sm:px-6">
         <h1 className="font-display text-3xl font-extrabold">ทบทวน 5 ข้อ</h1>
         <p className="text-lg text-muted-foreground">{start.error}</p>
-        <Link href="/learn" className="mx-auto inline-flex h-12 items-center gap-2 squircle-xl bg-brand-blue px-6 text-base font-bold text-white">ไปเรียนต่อ <ArrowRight className="size-4" aria-hidden /></Link>
+        <Link href="/learn" className="mx-auto inline-flex h-12 items-center gap-2 squircle-xl bg-brand-blue px-6 text-base font-bold text-background">ไปเรียนต่อ <ArrowRight className="size-4" aria-hidden /></Link>
       </main>
     );
   }
@@ -52,11 +52,11 @@ export function ReviewPlayer({ start }: { start: ReviewStart }) {
 
       {finished ? (
         <section aria-live="polite" className="grid gap-4 squircle-2xl border border-line bg-surface p-6 text-center sm:p-8">
-          <span aria-hidden className="mx-auto grid size-16 place-items-center rounded-full bg-brand-blue text-white"><Check className="size-8" /></span>
+          <span aria-hidden className="mx-auto grid size-16 place-items-center rounded-full bg-brand-blue text-background"><Check className="size-8" /></span>
           <h1 className="font-display text-3xl font-extrabold">ทบทวนเสร็จแล้ว</h1>
           <p className="text-lg text-muted-foreground">ถูกตั้งแต่ครั้งแรก {right} จาก {items.length} ข้อ ผลถูกนำไปปรับภาพความชำนาญของคุณแล้ว</p>
           <div className="flex flex-wrap justify-center gap-3">
-            <Link href="/learn/skills" className="inline-flex h-12 items-center gap-2 squircle-xl bg-brand-blue px-6 text-base font-bold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">ดูวิเคราะห์ของฉัน</Link>
+            <Link href="/learn/skills" className="inline-flex h-12 items-center gap-2 squircle-xl bg-brand-blue px-6 text-base font-bold text-background focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">ดูวิเคราะห์ของฉัน</Link>
             <a href="/learn/review" className="inline-flex h-12 items-center gap-2 squircle-xl border border-line px-6 text-base font-semibold hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">ทบทวนอีกชุด</a>
           </div>
         </section>

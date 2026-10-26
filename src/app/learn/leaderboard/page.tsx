@@ -30,7 +30,7 @@ function Row({ r, unit, board }: { r: BoardRow; unit: string; board: BoardId }) 
       <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-base font-bold leading-snug">
           <span className="truncate">{r.name}{r.me ? ' (ฉัน)' : ''}</span>
-          {top && <span className="inline-flex items-center gap-1 squircle-xl bg-brand-red px-2 py-0.5 text-xs font-extrabold text-white"><Crown className="size-3" aria-hidden /> Top Server</span>}
+          {top && <span className="inline-flex items-center gap-1 squircle-xl bg-brand-red px-2 py-0.5 text-xs font-extrabold text-background"><Crown className="size-3" aria-hidden /> Top Server</span>}
           <span className={`squircle-xl px-2 py-0.5 text-xs font-semibold ${r.leagueTone}`}>{r.league}</span>
         </p>
         {board === 'daily' && <p className="text-sm text-muted-foreground">{r.extra}{r.time != null ? ` · บิน ${sec(r.time)}` : ''}</p>}
@@ -66,7 +66,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
       </nav>
       {board === 'daily' && (
         <div role="group" aria-label="ระดับภารกิจ" className="flex gap-1.5">
-          {TIER_IDS.map((t) => <Link key={t} href={`/learn/leaderboard?board=daily&tier=${t}`} aria-current={tier === t ? 'true' : undefined} className={`inline-flex h-9 items-center squircle-xl border px-3.5 text-sm font-semibold ${tier === t ? 'border-brand-blue bg-brand-blue text-white' : 'border-line bg-surface hover:bg-surface-2'}`}>{TIERS[t].label}</Link>)}
+          {TIER_IDS.map((t) => <Link key={t} href={`/learn/leaderboard?board=daily&tier=${t}`} aria-current={tier === t ? 'true' : undefined} className={`inline-flex h-9 items-center squircle-xl border px-3.5 text-sm font-semibold ${tier === t ? 'border-brand-blue bg-brand-blue text-background' : 'border-line bg-surface hover:bg-surface-2'}`}>{TIERS[t].label}</Link>)}
         </div>
       )}
       <p className="text-base text-muted-foreground">{tab.blurb}</p>

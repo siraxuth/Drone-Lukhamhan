@@ -139,7 +139,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
           <span className="px-2 text-sm text-muted-foreground max-xl:hidden">แบบเขียน</span>
           {STYLES.map((x) => (
             <button key={x.id} type="button" disabled={inLesson} aria-pressed={style === x.id} onClick={() => chooseStyle(x.id)} title={x.hint}
-              className={`h-8 squircle-xl px-2.5 font-mono text-sm font-semibold transition-colors disabled:opacity-60 ${style === x.id ? 'bg-brand-blue text-white' : 'hover:bg-surface-2'}`}>{x.label}</button>
+              className={`h-8 squircle-xl px-2.5 font-mono text-sm font-semibold transition-colors disabled:opacity-60 ${style === x.id ? 'bg-brand-blue text-background' : 'hover:bg-surface-2'}`}>{x.label}</button>
           ))}
         </div>
         {style !== 'any' && converted !== code && (
@@ -241,7 +241,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
           {step && (
             <div className="grid max-h-[55%] shrink-0 gap-2 overflow-y-auto border-b border-brand-blue/30 bg-brand-blue/5 px-4 py-3" aria-live="polite">
               <div className="flex items-center gap-2">
-                <span className="squircle-xl bg-brand-blue px-2.5 py-0.5 text-sm font-bold text-white">บทสอน {li + 1}/{LESSONS.length}</span>
+                <span className="squircle-xl bg-brand-blue px-2.5 py-0.5 text-sm font-bold text-background">บทสอน {li + 1}/{LESSONS.length}</span>
                 <p className="min-w-0 flex-1 truncate text-base font-extrabold">{step.title}</p>
                 <button type="button" onClick={closeLesson} className="shrink-0 squircle-xl px-2 py-1 text-sm text-muted-foreground hover:bg-surface-2 hover:text-foreground">ข้ามบทสอน</button>
               </div>

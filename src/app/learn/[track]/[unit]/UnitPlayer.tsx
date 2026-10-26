@@ -66,7 +66,7 @@ export function UnitPlayer({ track, unit, index, total, alreadyDone, initialPass
 
       {result?.ok ? (
         <section aria-live="polite" className="grid gap-4 squircle-2xl border border-line bg-surface p-6 text-center sm:p-8">
-          <span aria-hidden className="mx-auto grid size-16 place-items-center rounded-full bg-brand-blue text-white"><Check className="size-8" /></span>
+          <span aria-hidden className="mx-auto grid size-16 place-items-center rounded-full bg-brand-blue text-background"><Check className="size-8" /></span>
           <h1 className="font-display text-3xl font-extrabold leading-tight">จบหน่วย “{unit.title}”</h1>
           <p className="text-lg text-muted-foreground">{result.firstTime ? `ได้รับ +${result.xpGained} XP` : 'ทบทวนซ้ำ ไม่ได้ XP เพิ่ม (รับเฉพาะครั้งแรกที่จบ)'}</p>
           <div className="flex flex-wrap justify-center gap-3 text-base">
@@ -75,7 +75,7 @@ export function UnitPlayer({ track, unit, index, total, alreadyDone, initialPass
             <span className="inline-flex items-center gap-1.5 squircle-xl bg-surface-2 px-3 py-1.5 font-semibold"><Flame className="size-4 text-orange-500" aria-hidden /> เรียนต่อเนื่อง {result.streak} วัน</span>
           </div>
           <div className="flex flex-wrap justify-center gap-3 pt-2">
-            {next && <Link href={next.href} className="inline-flex h-12 items-center gap-2 squircle-xl bg-brand-blue px-6 text-base font-bold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">หน่วยถัดไป: {next.title} <ArrowRight className="size-4" aria-hidden /></Link>}
+            {next && <Link href={next.href} className="inline-flex h-12 items-center gap-2 squircle-xl bg-brand-blue px-6 text-base font-bold text-background focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">หน่วยถัดไป: {next.title} <ArrowRight className="size-4" aria-hidden /></Link>}
             <Link href="/learn" className="inline-flex h-12 items-center gap-2 squircle-xl border border-line px-6 text-base font-semibold hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">กลับเส้นทางเรียน</Link>
           </div>
         </section>
