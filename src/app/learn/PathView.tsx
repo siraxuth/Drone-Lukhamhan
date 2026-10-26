@@ -1,10 +1,10 @@
 import Link from 'next/link';
-import { Check, Flame, Lock, Play, Sparkles, Target } from 'lucide-react';
+import { BarChart3, Check, ClipboardCheck, Flame, Lock, Play, RefreshCw, Sparkles, Target } from 'lucide-react';
 import { TRACKS } from '@/learn/content';
 import { levelOf, nextUnit, pathStates, XP_PER_LEVEL } from '@/learn/path';
 import type { Track } from '@/learn/types';
 
-type Profile = { displayName: string; xp: number; streak: number; todayXp: number; dailyGoal: number; activeToday: boolean };
+type Profile = { displayName: string; xp: number; streak: number; todayXp: number; dailyGoal: number; activeToday: boolean; placement: 'none' | 'skipped' | 'done' };
 
 const ACCENT: Record<Track['accent'], { ring: string; fill: string; soft: string; text: string }> = {
   blue: { ring: 'ring-brand-blue', fill: 'bg-brand-blue text-white', soft: 'bg-brand-blue/10', text: 'text-brand-blue' },
@@ -55,6 +55,17 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
         </div>
       </section>
 
+      {profile.placement === 'none' && (
+        <section aria-label="แบบทดสอบก่อนเรียน" className="flex flex-wrap items-center gap-4 squircle-2xl border border-brand-blue/40 bg-brand-blue/5 p-5">
+          <span aria-hidden className="grid size-12 shrink-0 place-items-center squircle-xl bg-brand-blue text-white"><ClipboardCheck className="size-6" /></span>
+          <div className="min-w-0 flex-1 basis-full sm:basis-0">
+            <p className="text-xl font-extrabold leading-tight">ลองวัดพื้นฐานก่อนเรียนไหม</p>
+            <p className="mt-1 text-base text-muted-foreground">12 ข้อ ใช้เวลาราว 5 นาที ข้อยากง่ายปรับตามที่ตอบ ใช้บอกว่าคุณถนัดและควรเน้นตรงไหน ถ้าแม่นมากระบบข้ามหน่วยต้นๆ ให้ได้</p>
+          </div>
+          <Link href="/learn/placement" className="inline-flex h-12 items-center gap-2 squircle-xl border border-brand-blue bg-surface px-5 text-base font-bold text-brand-blue hover:bg-brand-blue/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">ทำแบบทดสอบ</Link>
+        </section>
+      )}
+
       {next && (
         <section aria-label="เรียนต่อ" className={`flex flex-wrap items-center gap-4 squircle-2xl border border-line p-5 ${ACCENT[next.track.accent].soft}`}>
           <div className="min-w-0 flex-1 basis-full sm:basis-0">
@@ -68,7 +79,11 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
         </section>
       )}
 
-      <p className="text-sm text-muted-foreground">จบแล้ว {done.size} จาก {total} หน่วย</p>
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="mr-auto text-sm text-muted-foreground">จบแล้ว {done.size} จาก {total} หน่วย</p>
+        <Link href="/learn/skills" className="inline-flex h-11 items-center gap-2 squircle-xl border border-line bg-surface px-4 text-base font-semibold hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"><BarChart3 className="size-4" aria-hidden /> วิเคราะห์ของฉัน</Link>
+        <Link href="/learn/review" className="inline-flex h-11 items-center gap-2 squircle-xl border border-line bg-surface px-4 text-base font-semibold hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"><RefreshCw className="size-4" aria-hidden /> ทบทวน 5 ข้อ</Link>
+      </div>
 
       {TRACKS.map((track) => {
         const a = ACCENT[track.accent];

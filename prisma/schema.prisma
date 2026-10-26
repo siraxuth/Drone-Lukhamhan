@@ -28,6 +28,7 @@ model User {
   learnProfile  LearnProfile?
   unitProgress  UnitProgress[]
   attempts      Attempt[]
+  skillStats    SkillStat[]
 
   @@map("user")
 }
@@ -154,6 +155,8 @@ model LearnProfile {
   dailyGoal    Int      @default(30)
   /// แสดงชื่อใน leaderboard หรือไม่
   showOnBoard  Boolean  @default(true)
+  /// ผลแบบทดสอบก่อนเรียน: null = ยังไม่ทำ · {skipped:true} = ข้าม · อย่างอื่น = ผลที่คำนวณ
+  placement    Json?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -187,4 +190,17 @@ model Attempt {
 
   @@index([userId, createdAt])
   @@index([kind, refId])
+}
+
+/// ความชำนาญต่อทักษะของผู้เรียน (0–1) อัปเดตทุกครั้งที่ตอบแบบฝึก/แบบทดสอบ
+model SkillStat {
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill    String
+  mastery  Float    @default(0.5)
+  answered Int      @default(0)
+  correct  Int      @default(0)
+  lastAt   DateTime @default(now())
+
+  @@id([userId, skill])
 }

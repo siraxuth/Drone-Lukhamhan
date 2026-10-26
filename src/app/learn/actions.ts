@@ -7,7 +7,7 @@ import { db } from '@/lib/db';
 import { findUnit } from '@/learn/content';
 import { gradeCode, MAX_CODE_CHARS } from '@/learn/grade';
 import { canStart, dayKey, levelOf, nextStreak } from '@/learn/path';
-import { getOrCreateProfile } from '@/learn/server';
+import { getOrCreateProfile, recordSkills } from '@/learn/server';
 import { wrapSetup } from '@/learn/wrap';
 import { isInteractive, stepRef } from '@/learn/types';
 
@@ -63,6 +63,7 @@ export async function submitStep(unitId: string, stepIndex: number, answer: unkn
   }
 
   await db.attempt.create({ data: { userId, kind: 'step', refId: stepRef(found.unit.id, Number(stepIndex)), score, passed, skills: step.skills } });
+  await recordSkills(userId, step.skills, passed, step.level);
   return { ok: true, passed, message, explain: passed ? step.explain : undefined, detail, wrong };
 }
 

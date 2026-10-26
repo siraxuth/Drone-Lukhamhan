@@ -1,5 +1,7 @@
 import { db } from '@/lib/db';
 import { dayKey } from './path';
+import { effective, isSkill, PRIOR, updateMastery, type Stat } from './skills';
+import type { SkillId } from './types';
 
 type SessionUser = { id: string; name?: string | null };
 
@@ -27,7 +29,29 @@ export async function loadLearner(user: SessionUser) {
       todayXp: profile.todayDay === today ? profile.todayXp : 0,
       dailyGoal: profile.dailyGoal,
       activeToday: profile.lastActiveDay === today,
+      placement: (profile.placement == null ? 'none' : (profile.placement as { skipped?: boolean }).skipped ? 'skipped' : 'done') as 'none' | 'skipped' | 'done',
     },
     done,
   };
 }
+
+/** ความชำนาญของผู้เรียนทุกทักษะที่เคยวัด (ค่าดิบ) */
+export async function loadStats(userId: string): Promise<Stat[]> {
+  const rows = await db.skillStat.findMany({ where: { userId } });
+  return rows.filter((r) => isSkill(r.skill)).map((r) => ({ skill: r.skill as SkillId, mastery: r.mastery, answered: r.answered, correct: r.correct, lastAt: r.lastAt }));
+}
+
+/** บันทึกผลตอบ 1 ครั้งเข้าโมเดลความชำนาญของทุกทักษะที่แบบฝึกนั้นวัด */
+export async function recordSkills(userId: string, skills: SkillId[], correct: boolean, level: 1 | 2 | 3 | 4 | 5) {
+  const rows = await db.skillStat.findMany({ where: { userId, skill: { in: skills } } });
+  const now = new Date();
+  await Promise.all(skills.map((skill) => {
+    const cur = rows.find((r) => r.skill === skill);
+    const mastery = updateMastery(cur?.mastery ?? PRIOR, cur?.answered ?? 0, correct, level);
+    const data = { mastery, answered: (cur?.answered ?? 0) + 1, correct: (cur?.correct ?? 0) + (correct ? 1 : 0), lastAt: now };
+    return db.skillStat.upsert({ where: { userId_skill: { userId, skill } }, update: data, create: { userId, skill, ...data } });
+  }));
+}
+
+/** ความชำนาญที่ปรับตามเวลาแล้ว ต่อทักษะ (ทักษะที่ยังไม่เคยวัด = PRIOR) */
+export const effectiveMap = (stats: Stat[]) => new Map(stats.map((s) => [s.skill, effective(s.mastery, s.lastAt)] as const));
