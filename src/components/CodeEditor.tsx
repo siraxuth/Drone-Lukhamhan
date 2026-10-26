@@ -263,10 +263,10 @@ export function CodeEditor({ value, onChange, rows = 14, name, label = 'โค�
 
   return (
     <div className={fill ? 'flex h-full min-h-0 flex-col' : 'grid gap-2'}>
-      <div className={`flex flex-wrap gap-1.5 ${fill ? 'border-b border-line bg-surface-2/40 px-3 py-2' : ''}`} role="group" aria-label="แทรกคำสั่งที่ใช้บ่อย">
-        <span className="mr-1 self-center text-sm text-muted-foreground">แทรกเร็ว:</span>
+      <div className={`flex gap-1.5 ${fill ? 'flex-nowrap overflow-x-auto overscroll-x-contain border-b border-line bg-surface-2/40 px-3 py-2' : 'flex-wrap'}`} role="group" aria-label="แทรกคำสั่งที่ใช้บ่อย">
+        <span className="mr-1 shrink-0 self-center text-sm text-muted-foreground">แทรกเร็ว:</span>
         {commands.filter((c) => c.quick).map((c) => (
-          <button key={c.name} type="button" onClick={() => insertQuick(c)} title={c.desc} className="min-h-8 squircle-xl border border-line bg-surface-2 px-2.5 font-mono text-sm font-semibold text-blue-700 transition-colors hover:bg-muted dark:text-sky-300">{c.insert.replace(/\[\[|\]\]/g, '').replace(/\(.*\);$/, '()')}</button>
+          <button key={c.name} type="button" onClick={() => insertQuick(c)} title={c.desc} className="min-h-9 shrink-0 squircle-xl border border-line bg-surface-2 px-2.5 font-mono text-sm font-semibold text-blue-700 transition-colors hover:bg-muted dark:text-sky-300">{c.insert.replace(/\[\[|\]\]/g, '').replace(/\(.*\);$/, '()')}</button>
         ))}
       </div>
 

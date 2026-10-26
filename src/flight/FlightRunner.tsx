@@ -417,7 +417,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onFinish, 
             </div>
           )}
           <Button variant="outline" className="h-10 px-3 text-base" onClick={toggleMute} aria-pressed={muted}>{muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />} <span className="max-sm:hidden">{muted ? 'เสียงปิดอยู่' : 'เสียงเปิด'}</span></Button>
-          <Button variant="ghost" className="h-10 px-3 text-base" onClick={() => setMode(mode === '3d' ? '2d' : '3d')} disabled={mode === 'pending'}>{mode === '3d' ? 'ดูแบบ 2 มิติ' : 'ดูแบบ 3 มิติ'}</Button>
+          <Button variant="outline" className="h-10 px-3 text-base" onClick={() => setMode(mode === '3d' ? '2d' : '3d')} disabled={mode === 'pending'}>{mode === '3d' ? 'ดูแบบ 2 มิติ' : 'ดูแบบ 3 มิติ'}</Button>
         </div>
       </div>
 

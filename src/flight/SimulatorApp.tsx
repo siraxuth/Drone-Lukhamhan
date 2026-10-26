@@ -126,9 +126,9 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
   const tabOn = `${tab} border-brand-blue bg-brand-blue/10 text-brand-blue`;
 
   return (
-    <main className="flex flex-col pt-[4.75rem] lg:h-svh">
+    <main className="flex w-full min-w-0 flex-col overflow-x-clip pt-[4.75rem] lg:h-svh">
       {/* แถบเครื่องมือเหมือนเมนูของ IDE */}
-      <div className="relative z-20 flex flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-2">
+      <div className="relative z-20 flex w-full min-w-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-2">
         <button type="button" data-tour="sim-pick" aria-expanded={panel === 'pick'} onClick={() => setPanel(panel === 'pick' ? null : 'pick')} className={`${panel === 'pick' ? tabOn : tabOff} max-w-[18rem]`}>
           <span className="truncate">โจทย์: {sc.title}</span><ChevronDown className="size-4 shrink-0" aria-hidden />
         </button>
@@ -235,11 +235,11 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
         )}
       </div>
 
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-        {/* ซ้าย: บทสอน (ถ้ามี) + ตัวแก้โค้ดเต็มความสูง */}
-        <section aria-label="ตัวแก้โค้ด" className="flex h-[30rem] min-h-0 flex-col max-lg:order-2 max-lg:border-t max-lg:border-line lg:h-auto">
+      <div className="grid w-full min-h-0 min-w-0 flex-1 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+        {/* มือถือ: สนามก่อน แล้วค่อยเขียนโค้ด · จอใหญ่: โค้ดซ้าย สนามขวา */}
+        <section aria-label="ตัวแก้โค้ด" className="flex h-[min(78svh,52rem)] min-h-[26rem] min-w-0 flex-col max-lg:order-2 max-lg:border-t max-lg:border-line lg:h-auto">
           {step && (
-            <div className="grid max-h-[55%] shrink-0 gap-2 overflow-y-auto border-b border-brand-blue/30 bg-brand-blue/5 px-4 py-3" aria-live="polite">
+            <div className="grid max-h-[35%] shrink-0 gap-2 overflow-y-auto border-b border-brand-blue/30 bg-brand-blue/5 px-4 py-3" aria-live="polite">
               <div className="flex items-center gap-2">
                 <span className="squircle-xl bg-brand-blue px-2.5 py-0.5 text-sm font-bold text-background">บทสอน {li + 1}/{LESSONS.length}</span>
                 <p className="min-w-0 flex-1 truncate text-base font-extrabold">{step.title}</p>
@@ -261,13 +261,13 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
               </div>
             </div>
           )}
-          <div className="min-h-0 flex-1">
+          <div className="min-h-0 min-w-0 flex-1">
             <CodeEditor value={code} onChange={setCode} label="โค้ดภารกิจ" fill commands={commands} />
           </div>
         </section>
 
-        {/* ขวา: สนามจำลอง (บนมือถืออยู่ก่อน) */}
-        <section data-tour="sim-stage" aria-label="สนามจำลอง" className="grid min-h-0 content-start gap-3 overflow-y-auto border-line p-3 max-lg:order-1 lg:border-l">
+        {/* สนามจำลองอยู่ก่อนตัวแก้โค้ดบนมือถือ เพื่อเห็นผลการบินทันที */}
+        <section data-tour="sim-stage" aria-label="สนามจำลอง" className="grid min-h-0 min-w-0 content-start gap-3 overflow-x-clip border-line p-3 max-lg:order-1 lg:order-2 lg:overflow-y-auto lg:border-l">
           <FlightRunner event={ev} code={code} config={config} scene={scene} maxPoints={max} playLabel="เริ่มจำลองการบิน" onFinish={onFinish} />
         </section>
       </div>
