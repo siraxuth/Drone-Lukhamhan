@@ -1,10 +1,11 @@
 import Link from 'next/link';
-import { BarChart3, CalendarCheck, Check, ClipboardCheck, Flame, Lock, Play, RefreshCw, Sparkles, Target } from 'lucide-react';
+import { BarChart3, CalendarCheck, Check, Trophy, ClipboardCheck, Flame, Lock, Play, RefreshCw, Sparkles, Target } from 'lucide-react';
 import { TRACKS } from '@/learn/content';
 import { levelOf, nextUnit, pathStates, XP_PER_LEVEL } from '@/learn/path';
+import { leagueOf } from '@/learn/board-utils';
 import type { Track } from '@/learn/types';
 
-type Profile = { displayName: string; xp: number; streak: number; todayXp: number; dailyGoal: number; activeToday: boolean; placement: 'none' | 'skipped' | 'done' };
+type Profile = { displayName: string; xp: number; streak: number; todayXp: number; dailyGoal: number; activeToday: boolean; showOnBoard: boolean; placement: 'none' | 'skipped' | 'done' };
 
 const ACCENT: Record<Track['accent'], { ring: string; fill: string; soft: string; text: string }> = {
   blue: { ring: 'ring-brand-blue', fill: 'bg-brand-blue text-white', soft: 'bg-brand-blue/10', text: 'text-brand-blue' },
@@ -43,7 +44,7 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
       </header>
 
       <section aria-label="สถิติของฉัน" className="grid gap-3 sm:grid-cols-3">
-        <Stat icon={<Sparkles className="size-5 text-brand-blue" aria-hidden />} label={`ระดับ ${level}`} value={`${profile.xp} XP`} hint={`อีก ${XP_PER_LEVEL - inLevel} XP ถึงระดับ ${level + 1}`} />
+        <Stat icon={<Sparkles className="size-5 text-brand-blue" aria-hidden />} label={`ระดับ ${level} · ${leagueOf(profile.xp).name}`} value={`${profile.xp} XP`} hint={`อีก ${XP_PER_LEVEL - inLevel} XP ถึงระดับ ${level + 1}`} />
         <Stat icon={<Flame className={`size-5 ${profile.streak ? 'text-orange-500' : 'text-muted-foreground'}`} aria-hidden />} label="เรียนต่อเนื่อง" value={`${profile.streak} วัน`} hint={profile.activeToday ? 'วันนี้เรียนแล้ว' : profile.streak ? 'เรียนวันนี้เพื่อต่อสถิติ' : 'เริ่มนับวันแรกได้เลย'} />
         <div className="flex items-center gap-3 squircle-xl border border-line bg-surface px-4 py-3">
           <span aria-hidden className="grid size-10 shrink-0 place-items-center squircle-xl bg-surface-2"><Target className="size-5 text-emerald-600" /></span>
@@ -81,6 +82,7 @@ export function PathView({ profile, done }: { profile: Profile; done: ReadonlySe
 
       <div className="flex flex-wrap items-center gap-3">
         <p className="mr-auto text-sm text-muted-foreground">จบแล้ว {done.size} จาก {total} หน่วย</p>
+        <Link href="/learn/leaderboard" className="inline-flex h-11 items-center gap-2 squircle-xl border border-line bg-surface px-4 text-base font-semibold hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"><Trophy className="size-4" aria-hidden /> อันดับ</Link>
         <Link href="/learn/daily" className="inline-flex h-11 items-center gap-2 squircle-xl border border-line bg-surface px-4 text-base font-semibold hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"><CalendarCheck className="size-4" aria-hidden /> ภารกิจรายวัน</Link>
         <Link href="/learn/skills" className="inline-flex h-11 items-center gap-2 squircle-xl border border-line bg-surface px-4 text-base font-semibold hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"><BarChart3 className="size-4" aria-hidden /> วิเคราะห์ของฉัน</Link>
         <Link href="/learn/review" className="inline-flex h-11 items-center gap-2 squircle-xl border border-line bg-surface px-4 text-base font-semibold hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"><RefreshCw className="size-4" aria-hidden /> ทบทวน 5 ข้อ</Link>

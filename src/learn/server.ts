@@ -28,6 +28,7 @@ export async function loadLearner(user: SessionUser) {
       streak: alive ? profile.streak : 0,
       todayXp: profile.todayDay === today ? profile.todayXp : 0,
       dailyGoal: profile.dailyGoal,
+      showOnBoard: profile.showOnBoard,
       activeToday: profile.lastActiveDay === today,
       placement: (profile.placement == null ? 'none' : (profile.placement as { skipped?: boolean }).skipped ? 'skipped' : 'done') as 'none' | 'skipped' | 'done',
     },
