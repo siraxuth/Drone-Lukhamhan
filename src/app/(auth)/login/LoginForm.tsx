@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { GraduationCap, ShieldAlert } from 'lucide-react';
+import { Plane, ShieldAlert } from 'lucide-react';
 import { authClient } from '@/lib/auth-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,7 +77,15 @@ export function LoginForm({ next, error, domain, googleReady, devPassword }: { n
           </form>
         )}
 
-        <p className="flex items-start gap-2 text-sm leading-6 text-muted-foreground"><GraduationCap className="mt-0.5 size-4 shrink-0" aria-hidden />ยังไม่อยากล็อกอิน? ลองเล่น <a href="/simulator" className="font-semibold text-brand-blue underline underline-offset-4">ตัวจำลองการบิน</a> ได้เลยโดยไม่ต้องใช้บัญชี</p>
+        <div className="grid gap-3 border-t border-line pt-5">
+          <div className="grid gap-1">
+            <p className="font-semibold">อยากลองก่อน?</p>
+            <p className="text-sm leading-6 text-muted-foreground">เริ่มเขียนโค้ดและทดลองบินได้เลย ไม่ต้องเข้าสู่ระบบ</p>
+          </div>
+          <a href="/simulator" className="inline-flex h-12 items-center justify-center gap-2 squircle-xl border border-line bg-surface px-4 text-sm font-semibold text-foreground transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">
+            <Plane className="size-4" aria-hidden />ลองใช้ตัวจำลองการบิน
+          </a>
+        </div>
       </section>
     </main>
   );
