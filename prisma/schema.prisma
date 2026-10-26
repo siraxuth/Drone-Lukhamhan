@@ -25,6 +25,9 @@ model User {
   updatedAt     DateTime  @updatedAt
   sessions      Session[]
   accounts      Account[]
+  learnProfile  LearnProfile?
+  unitProgress  UnitProgress[]
+  attempts      Attempt[]
 
   @@map("user")
 }
@@ -135,4 +138,53 @@ model Challenge {
   published Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ---- แพลตฟอร์มเรียน (/learn) ----
+/// โปรไฟล์ผู้เรียน: XP, streak, เป้าหมายรายวัน (วันนับตามเวลาไทย เก็บเป็น YYYY-MM-DD)
+model LearnProfile {
+  userId       String   @id
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName  String
+  xp           Int      @default(0)
+  streak       Int      @default(0)
+  lastActiveDay String?
+  todayDay     String?
+  todayXp      Int      @default(0)
+  dailyGoal    Int      @default(30)
+  /// แสดงชื่อใน leaderboard หรือไม่
+  showOnBoard  Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// หน่วยเรียนที่ผู้เรียนทำจบแล้ว (มีแถวต่อเมื่อจบ) unitId มาจาก src/learn/content
+model UnitProgress {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  unitId      String
+  xp          Int      @default(0)
+  bestScore   Int      @default(0)
+  attempts    Int      @default(1)
+  completedAt DateTime @default(now())
+
+  @@unique([userId, unitId])
+  @@index([userId])
+}
+
+/// ผลทำแบบฝึก/ควิซ/ภารกิจแต่ละครั้ง (ใช้วิเคราะห์ทักษะและทำ leaderboard) ตัดสินคะแนนฝั่งเซิร์ฟเวอร์เท่านั้น
+model Attempt {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String
+  refId     String
+  score     Int      @default(0)
+  passed    Boolean  @default(false)
+  skills    Json     @default("[]")
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([kind, refId])
 }
