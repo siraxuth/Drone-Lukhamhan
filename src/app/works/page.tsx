@@ -6,8 +6,11 @@ import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { Header } from '@/sections/Header';
 import { SiteFooter } from '@/sections/SiteFooter';
 import { getWorks } from '@/lib/works';
+import { shareMetadata } from '@/lib/og';
 
-export const metadata: Metadata = { title: 'ผลงานทั้งหมด', description: 'ผลงานที่ผ่านมาของชมรมโดรน โรงเรียนลือคำหาญวารินชำราบ รวมภารกิจปล่อยสัมภาระ เจาะลูกโป่ง และยิงเป้า', alternates: { canonical: '/works' } };
+const title = 'ผลงานการแข่งขันและกิจกรรมของชมรมโดรน';
+const description = 'รวมผลงานการแข่งขันโดรนของโรงเรียนลือคำหาญวารินชำราบ ทั้งภารกิจปล่อยสัมภาระ เจาะลูกโป่ง ยิงเป้า และกิจกรรมของชมรม';
+export const metadata: Metadata = { title, description, alternates: { canonical: '/works' }, ...shareMetadata({ title, description, path: '/works' }) };
 export const revalidate = 60;
 
 export default async function WorksPage() {

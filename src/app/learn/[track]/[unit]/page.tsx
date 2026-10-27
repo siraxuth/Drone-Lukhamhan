@@ -7,10 +7,15 @@ import { loadLearner } from '@/learn/server';
 import { toPublic } from '@/learn/types';
 import { passedSteps } from '../../actions';
 import { UnitPlayer } from './UnitPlayer';
+import { shareMetadata } from '@/lib/og';
 
 export async function generateMetadata({ params }: { params: Promise<{ track: string; unit: string }> }): Promise<Metadata> {
-  const f = findUnit((await params).unit);
-  return { title: f ? `${f.unit.title} · เรียนแบบทีละขั้น` : 'เรียนแบบทีละขั้น' };
+  const { track, unit } = await params;
+  const f = findUnit(unit);
+  if (!f) return { title: 'บทเรียนโดรน' };
+  const title = f.unit.title;
+  const description = f.unit.summary;
+  return { title, description, ...shareMetadata({ title, description, path: `/learn/${track}/${unit}`, type: 'article' }) };
 }
 
 export default async function UnitPage({ params }: { params: Promise<{ track: string; unit: string }> }) {

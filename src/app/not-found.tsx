@@ -3,6 +3,12 @@ import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { Header } from '@/sections/Header';
 import { SiteFooter } from '@/sections/SiteFooter';
 import { Button } from '@/components/ui/button';
+import type { Metadata } from 'next';
+import { shareMetadata } from '@/lib/og';
+
+const title = 'ไม่พบหน้าที่ต้องการ';
+const description = 'ลิงก์อาจพิมพ์ผิดหรือหน้านี้ถูกย้ายไปแล้ว กลับไปดูเนื้อหาจากเว็บไซต์ชมรมโดรนได้';
+export const metadata: Metadata = { title, description, ...shareMetadata({ title, description, path: '/404' }) };
 
 export default function NotFound() {
   return (

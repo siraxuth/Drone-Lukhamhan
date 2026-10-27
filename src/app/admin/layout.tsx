@@ -9,8 +9,11 @@ import { getSession } from '@/lib/auth';
 import { AdminSidebar } from './AdminSidebar';
 import { AdminCrumbs } from './AdminCrumbs';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
+import { shareMetadata } from '@/lib/og';
 
-export const metadata: Metadata = { title: 'จัดการเว็บไซต์', robots: { index: false } };
+const title = 'ระบบจัดการเว็บไซต์ชมรมโดรน';
+const description = 'เครื่องมือจัดการเนื้อหา บทเรียน ผลงาน และข้อมูลเว็บไซต์สำหรับผู้ดูแล';
+export const metadata: Metadata = { title, description, robots: { index: false }, ...shareMetadata({ title, description, path: '/admin' }) };
 export const dynamic = 'force-dynamic';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {

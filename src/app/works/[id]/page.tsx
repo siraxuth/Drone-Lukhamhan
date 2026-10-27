@@ -1,4 +1,3 @@
-import { OG_IMAGE } from '@/lib/site';
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -14,19 +13,21 @@ import { youtubeId } from '@/lib/video';
 import { WorkGallery } from '@/components/WorkGallery';
 import { JsonLd } from '@/components/JsonLd';
 import { workSchema } from '@/lib/schema';
+import { ogImageUrl } from '@/lib/og';
 
 export const revalidate = 60;
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const w = await getWork((await params).id);
   if (!w) return {};
+  const image = ogImageUrl(w.title, w.summary);
   return {
     title: w.title,
     description: w.summary,
     alternates: { canonical: `/works/${w.id}` },
     robots: w.sample ? { index: false, follow: true } : undefined,
-    openGraph: { type: 'article', title: w.title, description: w.summary, url: `/works/${w.id}`, locale: 'th_TH', images: w.image ? [{ url: w.image, alt: w.title }] : [OG_IMAGE] },
-    twitter: { card: 'summary_large_image', title: w.title, description: w.summary, images: [w.image ?? OG_IMAGE.url] },
+    openGraph: { type: 'article', title: w.title, description: w.summary, url: `/works/${w.id}`, locale: 'th_TH', images: [{ url: image, width: 1200, height: 628, alt: w.title }] },
+    twitter: { card: 'summary_large_image', title: w.title, description: w.summary, images: [image] },
   };
 }
 

@@ -6,9 +6,12 @@ import { SimulatorApp } from '@/flight/SimulatorApp';
 import { getScenarios } from '@/lib/scenario-data';
 import { JsonLd } from '@/components/JsonLd';
 import { simulatorSchema } from '@/lib/schema';
+import { shareMetadata } from '@/lib/og';
 
 export const revalidate = 60;
-export const metadata: Metadata = { title: 'ตัวจำลองการบิน', alternates: { canonical: '/simulator' }, description: 'เขียนโค้ดสั่งโดรนแล้วดูบินในสนาม 3 มิติขนาดจริง มีโจทย์ฝึกบนสนามกริด 5×5 เมตร ห่วง จุดผ่าน และต้นแบบภารกิจแข่ง' };
+const title = 'ตัวจำลองการบินโดรน 3 มิติ';
+const description = 'เขียนโค้ดสั่งโดรนและทดลองบินในสนามจำลอง 3 มิติขนาดจริง พร้อมโจทย์กริด 5×5 เมตร ห่วง จุดผ่าน และภารกิจแข่ง';
+export const metadata: Metadata = { title, alternates: { canonical: '/simulator' }, description, ...shareMetadata({ title, description, path: '/simulator' }) };
 
 export default async function Page() {
   const scenarios = await getScenarios();

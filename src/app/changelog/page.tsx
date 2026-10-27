@@ -4,11 +4,15 @@ import { Header } from '@/sections/Header';
 import { SiteFooter } from '@/sections/SiteFooter';
 import { getReleases } from '@/lib/changelog';
 import { SITE } from '@/lib/site';
+import { shareMetadata } from '@/lib/og';
 
+const title = 'บันทึกเวอร์ชันและการเปลี่ยนแปลงเว็บไซต์ชมรมโดรน';
+const description = `อ่านรายการฟีเจอร์ใหม่ การปรับปรุง และการแก้ไขในแต่ละเวอร์ชันของเว็บ ${SITE.name}`;
 export const metadata: Metadata = {
-  title: 'บันทึกการเปลี่ยนแปลง',
-  description: `ดูว่าแต่ละเวอร์ชันของเว็บ ${SITE.name} เปลี่ยนอะไรไปบ้าง ตั้งแต่เวอร์ชันแรกจนถึงเวอร์ชันล่าสุด`,
+  title,
+  description,
   alternates: { canonical: '/changelog' },
+  ...shareMetadata({ title, description, path: '/changelog' }),
 };
 
 const TONE: Record<string, string> = { เพิ่ม: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300', เปลี่ยน: 'bg-sky-500/15 text-sky-700 dark:text-sky-300', แก้: 'bg-amber-500/15 text-amber-700 dark:text-amber-300', เอาออก: 'bg-rose-500/15 text-rose-700 dark:text-rose-300' };

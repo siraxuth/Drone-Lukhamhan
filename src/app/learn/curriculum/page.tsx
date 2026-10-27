@@ -6,8 +6,11 @@ import { requireUser } from '@/lib/auth';
 import { findUnit } from '@/learn/content';
 import { CURRICULUM } from '@/learn/curriculum';
 import { loadLearner } from '@/learn/server';
+import { shareMetadata } from '@/lib/og';
 
-export const metadata: Metadata = { title: 'แผนที่ฟิสิกส์ ม.1–6' };
+const title = 'แผนที่บทเรียนฟิสิกส์โดรน ม.1–6';
+const description = 'สำรวจหัวข้อฟิสิกส์ในหลักสูตร ม.1–6 ที่เชื่อมโยงกับการบินและการทำงานของโดรน';
+export const metadata: Metadata = { title, description, ...shareMetadata({ title, description, path: '/learn/curriculum' }) };
 export const dynamic = 'force-dynamic';
 
 /** แผนที่หัวข้อฟิสิกส์ ม.1–6 ที่เกี่ยวกับโดรน พร้อมบอกว่าหัวข้อไหนมีหน่วยเรียนแล้ว และหัวข้อไหนยังรอเขียน */

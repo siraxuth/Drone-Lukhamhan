@@ -5,8 +5,15 @@ import { db } from '@/lib/db';
 import { getMission, isTier, TIERS } from '@/learn/daily';
 import { dayKey } from '@/learn/path';
 import { DailyPlayer } from './DailyPlayer';
+import { shareMetadata } from '@/lib/og';
 
-export const metadata: Metadata = { title: 'ภารกิจรายวัน' };
+export async function generateMetadata({ params }: { params: Promise<{ tier: string }> }): Promise<Metadata> {
+  const { tier } = await params;
+  const label = isTier(tier) ? TIERS[tier].label : 'ภารกิจ';
+  const title = `ภารกิจโดรนรายวันระดับ${label}`;
+  const description = isTier(tier) ? TIERS[tier].blurb : 'เขียนโค้ดควบคุมโดรนผ่านโจทย์ฝึกประจำวัน';
+  return { title, description, ...shareMetadata({ title, description, path: `/learn/daily/${tier}`, type: 'article' }) };
+}
 export const dynamic = 'force-dynamic';
 
 export default async function DailyMissionPage({ params }: { params: Promise<{ tier: string }> }) {

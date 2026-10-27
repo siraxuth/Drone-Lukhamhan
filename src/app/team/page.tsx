@@ -9,14 +9,17 @@ import { Header } from '@/sections/Header';
 import { SiteFooter } from '@/sections/SiteFooter';
 import { Ribbon } from '@/sections/Ribbon';
 import { members } from '@/lib/team';
-import { abs, OG_IMAGE, SITE } from '@/lib/site';
+import { abs, SITE } from '@/lib/site';
+import { shareMetadata } from '@/lib/og';
 
 export const revalidate = 3600;
+const title = 'ทีมผู้จัดทำเว็บไซต์ชมรมโดรน';
+const description = `รู้จักผู้สร้างเว็บ ${SITE.name} เบื้องหลังบทเรียนโดรน ตัวจำลองการบิน และเครื่องมือที่พัฒนาจากประสบการณ์ของชมรม`;
 export const metadata: Metadata = {
-  title: 'ผู้จัดทำ',
-  description: `คนเบื้องหลังเว็บ ${SITE.name}: เราพังมาก่อน คุณจะได้บินเลย รู้จักตั้น ศิรายุทธ แน่นสิงห์ นักพัฒนาวัย 15 ปีที่อยู่เบื้องหลังเว็บชมรมโดรนนี้`,
+  title,
+  description,
   alternates: { canonical: '/team' },
-  openGraph: { type: 'website', title: `ผู้จัดทำ · ${SITE.name}`, url: '/team', images: [OG_IMAGE] },
+  ...shareMetadata({ title, description, path: '/team' }),
 };
 
 const stack = ['Next.js 16', 'React 19', 'Tailwind v4', 'Three.js', 'Fumadocs', 'Prisma', 'Neon Postgres', 'Better Auth', 'Cloudflare R2', 'Arduino C++', 'Vercel'];

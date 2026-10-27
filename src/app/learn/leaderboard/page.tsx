@@ -8,8 +8,11 @@ import { loadBoard, type BoardId, type BoardRow } from '@/learn/board';
 import { isTier, TIERS, TIER_IDS, type Tier } from '@/learn/daily';
 import { loadLearner } from '@/learn/server';
 import { BoardSettings } from './BoardSettings';
+import { shareMetadata } from '@/lib/og';
 
-export const metadata: Metadata = { title: 'อันดับ' };
+const title = 'อันดับผู้เรียนและภารกิจโดรน';
+const description = 'ดูอันดับคะแนนรวม คะแนนรายสัปดาห์ และผลภารกิจประจำวันของผู้เรียน';
+export const metadata: Metadata = { title, description, ...shareMetadata({ title, description, path: '/learn/leaderboard' }) };
 export const dynamic = 'force-dynamic';
 
 const TABS: Array<{ id: BoardId; label: string; unit: string; blurb: string }> = [

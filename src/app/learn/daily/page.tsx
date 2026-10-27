@@ -7,8 +7,11 @@ import { db } from '@/lib/db';
 import { ScenePreview } from '@/field/ScenePlan';
 import { getMission, TIER_IDS, TIERS } from '@/learn/daily';
 import { dayKey } from '@/learn/path';
+import { shareMetadata } from '@/lib/og';
 
-export const metadata: Metadata = { title: 'ภารกิจรายวัน' };
+const title = 'ภารกิจบินโดรนประจำวัน';
+const description = 'ฝึกเขียนโค้ดพาโดรนผ่านจุดหมายและกลับฐาน มีภารกิจใหม่ให้ลองทุกวัน';
+export const metadata: Metadata = { title, description, ...shareMetadata({ title, description, path: '/learn/daily' }) };
 export const dynamic = 'force-dynamic';
 
 const TH_DAY = new Intl.DateTimeFormat('th-TH', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Bangkok' });

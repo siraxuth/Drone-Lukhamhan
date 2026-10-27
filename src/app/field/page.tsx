@@ -11,11 +11,16 @@ import { Tour } from '@/components/Tour';
 import { fieldTour } from '@/lib/tours';
 import { FieldExplorer } from '@/field/FieldExplorer';
 import { currentSeason as s } from '@/rules';
+import { shareMetadata } from '@/lib/og';
+
+const title = `สนามและกติกาการแข่งขัน ${s.year}`;
+const description = `กติกาการแข่งขัน ${s.title} พร้อมสนามจำลอง 3 มิติขนาดจริง 10×10 เมตร ดูภารกิจ จุดผ่าน และวิธีเก็บคะแนนก่อนลงสนาม`;
 
 export const metadata: Metadata = {
-  title: 'สนามและกติกา',
+  title,
   alternates: { canonical: '/field' },
-  description: `กติกาการแข่งขัน ${s.title} พร้อมสนามจำลอง 3 มิติขนาดจริง 10×10 เมตร ให้ดูโดรนบินตัวอย่างในสนาม`,
+  description,
+  ...shareMetadata({ title, description, path: '/field' }),
 };
 
 const facts = [

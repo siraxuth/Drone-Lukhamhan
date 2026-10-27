@@ -8,8 +8,11 @@ import { loadLearner, loadStats } from '@/learn/server';
 import { SkillRadar } from '@/learn/SkillRadar';
 import { ADVICE, BAND_LABEL, bandOf, effective, levelOfTrack, SHORT, SKILL_IDS, type Band } from '@/learn/skills';
 import { SKILLS } from '@/learn/types';
+import { shareMetadata } from '@/lib/og';
 
-export const metadata: Metadata = { title: 'วิเคราะห์ของฉัน' };
+const title = 'วิเคราะห์ทักษะการเรียนโดรนของฉัน';
+const description = 'ดูจุดแข็งและหัวข้อที่ควรทบทวนจากผลแบบฝึกหัดและบทเรียนที่ทำไปแล้ว';
+export const metadata: Metadata = { title, description, ...shareMetadata({ title, description, path: '/learn/skills' }) };
 
 const BAND_TONE: Record<Band, string> = { unknown: 'bg-surface-2 text-muted-foreground', weak: 'bg-brand-red/10 text-brand-red', ok: 'bg-amber-500/15 text-amber-700 dark:text-amber-300', strong: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' };
 
