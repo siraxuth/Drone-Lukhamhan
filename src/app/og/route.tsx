@@ -80,6 +80,7 @@ export async function GET(request: Request) {
   ])
   const titleLines = wrapThai(title, 22)
   const descriptionLines = wrapThai(description, 36).slice(0, 4)
+  const hasThaiTitle = /\p{Script=Thai}/u.test(title)
 
   return new ImageResponse(
     (
@@ -101,11 +102,12 @@ export async function GET(request: Request) {
         </div>
         <div tw="flex flex-col absolute w-[896px] justify-center inset-32">
           <div
-            tw="tracking-tight flex flex-col justify-center leading-[1.1]"
+            tw="tracking-tight flex flex-col justify-center"
             style={{
-              fontWeight: 600,
-              fontSize: titleLines.length > 1 ? 64 : 80,
-              letterSpacing: "-0.04em",
+              fontWeight: hasThaiTitle ? 400 : 600,
+              fontSize: hasThaiTitle ? 64 : titleLines.length > 1 ? 64 : 80,
+              lineHeight: hasThaiTitle ? 1.4 : 1.1,
+              letterSpacing: hasThaiTitle ? "0em" : "-0.04em",
             }}
           >
             {titleLines.map((line, index) => <div key={index}>{line}</div>)}
