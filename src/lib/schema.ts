@@ -6,7 +6,7 @@ const org = {
   name: SITE.fullName,
   alternateName: [SITE.name, 'Luekhamhan Drone Club'],
   url: SITE.url,
-  logo: { '@type': 'ImageObject', url: abs('/brand/logo.webp'), width: 640, height: 640 },
+  logo: abs('/icon.png'),
   image: abs('/opengraph-image'),
   description: SITE.description,
   parentOrganization: { '@type': 'School', name: SITE.school, address: { '@type': 'PostalAddress', addressLocality: 'วารินชำราบ', addressRegion: 'อุบลราชธานี', addressCountry: 'TH' } },

@@ -8,7 +8,7 @@ import { siteSchema } from '@/lib/schema';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
-  title: { default: `${SITE.fullName} · เรียนโดรนและเขียนโค้ดสั่งโดรน`, template: `%s · ${SITE.name}` },
+  title: { default: `${SITE.name} | ${SITE.school} — เรียนและฝึกบินโดรน`, template: `%s · ${SITE.name}` },
   description: SITE.description,
   applicationName: SITE.name,
   keywords: [...SITE.keywords],
@@ -17,6 +17,10 @@ export const metadata: Metadata = {
   publisher: SITE.school,
   category: 'education',
   alternates: { canonical: '/', languages: { 'th-TH': '/' } },
+  icons: {
+    icon: [{ url: '/icon.png', type: 'image/png', sizes: '512x512' }],
+    apple: [{ url: '/apple-icon.png', type: 'image/png', sizes: '180x180' }],
+  },
   openGraph: { type: 'website', locale: SITE.locale, siteName: SITE.name, url: SITE.url, title: SITE.fullName, description: SITE.description, images: [OG_IMAGE] },
   twitter: { card: 'summary_large_image', title: SITE.fullName, description: SITE.description, images: [OG_IMAGE.url] },
   robots: SITE.isProduction
