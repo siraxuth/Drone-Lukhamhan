@@ -10,7 +10,12 @@ export function detectQuality(): Quality {
   const nav = navigator as Navigator & { deviceMemory?: number; connection?: { saveData?: boolean; effectiveType?: string } };
   try {
     const c = document.createElement('canvas');
-    if (!(c.getContext('webgl2') || c.getContext('webgl'))) return 'off';
+    const gl = (c.getContext('webgl2') || c.getContext('webgl')) as WebGLRenderingContext | null;
+    if (!gl) return 'off';
+    // ไม่มี GPU จริง (SwiftShader/llvmpipe/เครื่องทดสอบ headless) → WebGL วาดด้วย CPU กินเมนเธรดหลายสิบวินาที ใช้ภาพนิ่งแทน
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+    if (/swiftshader|llvmpipe|softpipe|software|basic render/i.test(renderer)) return 'off';
   } catch { return 'off'; }
   const mem = nav.deviceMemory ?? 8;
   const cores = nav.hardwareConcurrency ?? 8;
