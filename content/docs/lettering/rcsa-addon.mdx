@@ -1,0 +1,66 @@
+---
+title: "2. ติดตั้ง add-on ของโดรนแปรอักษร"
+description: ติดตั้งส่วนเสริมที่มีปุ่มช่วยสร้างโดรน ลงสี และตรวจความปลอดภัย แล้วเช็กว่าแถบ add-on ขึ้นมาแล้ว
+---
+
+Blender เปล่าๆ ไม่รู้จักคำว่า "โดรน" เราเลยต้องใช้ add-on ของโดรนแปรอักษร ที่เพิ่มแถบเครื่องมือเข้ามาในแผง N มีปุ่มเพิ่มทรงกลม ปุ่มสร้าง Material ให้ทุกลำ ปุ่มกำหนดสี และส่วนตรวจความปลอดภัยที่เตือนเมื่อโดรนใกล้กันหรือเร็วเกิน
+
+## 1. โหลดไฟล์ add-on
+
+ไฟล์อยู่ใน Google Drive ของชมรม ในโฟลเดอร์ชื่อ Lukhamhan-add-ons ตามลิงก์ในสไลด์ต้นฉบับ: [ลิงก์ดาวน์โหลด add-on](https://drive.google.com/file/d/1fOiFoml57f1Q1TnIF7hou1HONQQR_pG3/view?usp=sharing) ไฟล์ที่ได้เป็น .zip
+
+<LessonImage name="addon-drive" caption="โฟลเดอร์ Lukhamhan-add-ons ใน Google Drive กดจุดสามจุดหรือปุ่มดาวน์โหลดเพื่อโหลดไฟล์ลงเครื่อง" />
+
+<Callout type="warn" title="อย่าแตก zip">
+ติดตั้งทั้งไฟล์ .zip ตามที่โหลดมา ไม่ต้องแตกไฟล์ก่อน ถ้าแตกแล้ว Blender จะหา add-on ไม่เจอ
+</Callout>
+
+## 2. ติดตั้งใน Blender
+
+<Steps>
+<Step>
+
+ไปที่เมนู **Edit → Preferences** แล้วเลือกแถบ **Add-ons**
+
+</Step>
+<Step>
+
+กดลูกศรลงมุมขวาบนของหน้าต่าง เลือก **Install from Disk…** แล้วชี้ไปที่ไฟล์ .zip ที่โหลดมา
+
+</Step>
+<Step>
+
+เมื่อ add-on โผล่ในรายการ ให้ติ๊กช่องหน้าชื่อเพื่อเปิดใช้งาน
+
+</Step>
+<Step>
+
+ปิดหน้าต่าง Preferences แล้วเอาเมาส์ไปไว้กลาง Viewport กดปุ่ม **N** มองหาแถบ **RCSA** ที่ขอบขวา
+
+</Step>
+</Steps>
+
+<LessonVideo name="addon-install" caption="ติดตั้ง add-on RCSA ตั้งแต่เปิด Preferences จนเห็นแถบ RCSA" />
+
+## 3. เช็กว่าติดตั้งสำเร็จ
+
+แถบ RCSA ต้องมีส่วนเหล่านี้ (ชื่อตามที่เห็นในสไลด์)
+
+<LessonImage name="rcsa-panel" caption="แผง RCSA ในแผง N มีหัวข้อ LED Control, Safety Check, Object พร้อมปุ่ม Add Sphere, set color, set frame, New Material [ALL], New Material [EACH] และ Rename" narrow />
+
+| ปุ่ม | ใช้ทำอะไร | เรียนที่บท |
+| --- | --- | --- |
+| Add Sphere | เพิ่มทรงกลมแทนโดรน | [สร้างวัตถุ](/docs/lettering/objects-shortcuts) |
+| New Material [ALL] | สร้าง Material ให้ของที่เลือก | [พื้นผิว สี FPS](/docs/lettering/material-color-fps) |
+| New Material [EACH] | สร้าง Material แยกให้ทีละลำ | [พื้นผิว สี FPS](/docs/lettering/material-color-fps) |
+| set color / set frame | ตั้งสีและเฟรมของโดรนที่เลือก | [ลงสี](/docs/lettering/color-animation) |
+| Rename | เปลี่ยนชื่อของที่เลือก | [สร้างวัตถุ](/docs/lettering/objects-shortcuts) |
+| Safety Check | ตรวจระยะห่าง ความสูง ความเร็ว | [ตรวจความปลอดภัย](/docs/lettering/safety-check) |
+
+## ถ้าแถบ RCSA ไม่ขึ้น
+
+1. เช็กว่าติ๊กเปิด add-on แล้ว (ดูในรายการ Add-ons)
+2. เช็กรุ่นของ Blender ว่าเป็น 4.5.x
+3. เอาเมาส์ไว้กลาง Viewport แล้วกด N อีกครั้ง ถ้าเมาส์อยู่ที่แผงอื่น ปุ่ม N ไม่เปิดแผง Sidebar
+4. ลองปิดแล้วเปิด Blender ใหม่
+5. ยังไม่ขึ้น ให้ถามพี่ในชมรมพร้อมแนบภาพหน้าจอของหน้า Preferences → Add-ons

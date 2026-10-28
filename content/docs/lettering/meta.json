@@ -1,0 +1,19 @@
+{
+  "title": "โดรนแปรอักษร",
+  "root": true,
+  "pages": [
+    "index",
+    "install-blender",
+    "rcsa-addon",
+    "startup-collections",
+    "viewport",
+    "material-color-fps",
+    "safety-check",
+    "objects-shortcuts",
+    "gradient",
+    "reference-image",
+    "heart-demo",
+    "color-animation",
+    "troubleshooting"
+  ]
+}
