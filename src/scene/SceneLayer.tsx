@@ -7,7 +7,12 @@ import { detectQuality, type Quality } from './quality';
 
 const Drone3D = dynamic(() => import('./Drone3D'), { ssr: false });
 // เริ่มดึงโค้ด 3 มิติตั้งแต่ตอนหน้าถูก hydrate ไม่ต้องรอ effect เลือกคุณภาพ (ได้เวลาคืนหลายร้อยมิลลิวินาที)
-if (typeof window !== 'undefined') void import('./Drone3D');
+// แต่รอให้ main thread ว่างก่อน (ไม่แย่ง FCP/LCP และลด TBT จากการ parse three.js)
+if (typeof window !== 'undefined') {
+  const load = () => void import('./Drone3D');
+  if ('requestIdleCallback' in window) requestIdleCallback(load, { timeout: 1500 });
+  else setTimeout(load, 800);
+}
 
 type Mode = Quality | 'pending';
 

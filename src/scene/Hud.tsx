@@ -7,12 +7,21 @@ export function Hud() {
   const refs = useRef<Record<string, HTMLElement | null>>({});
   useEffect(() => {
     let raf = 0;
-    const loop = () => {
-      const bar = refs.current.bar; if (bar) bar.style.transform = `scaleX(${(scrollY / Math.max(1, document.documentElement.scrollHeight - innerHeight)).toFixed(4)})`;
-      raf = requestAnimationFrame(loop);
+    let span = 1; // ความสูงที่เลื่อนได้ · วัดเฉพาะตอนขนาดเปลี่ยน ไม่วัดทุกเฟรม (กัน forced reflow)
+    const measure = () => { span = Math.max(1, document.documentElement.scrollHeight - innerHeight); };
+    const paint = () => {
+      raf = 0;
+      const bar = refs.current.bar; if (bar) bar.style.transform = `scaleX(${Math.min(1, scrollY / span).toFixed(4)})`;
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(paint); };
+    const onSize = () => { measure(); onScroll(); };
+    const ro = new ResizeObserver(onSize);
+    ro.observe(document.documentElement);
+    measure();
+    paint();
+    addEventListener('scroll', onScroll, { passive: true });
+    addEventListener('resize', onSize);
+    return () => { ro.disconnect(); removeEventListener('scroll', onScroll); removeEventListener('resize', onSize); cancelAnimationFrame(raf); };
   }, []);
   const r = (k: string) => (el: HTMLElement | null) => { refs.current[k] = el; };
   return (

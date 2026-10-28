@@ -74,6 +74,7 @@ export function Tour({ id, steps, waitForLoader = false }: { id: string; steps: 
     try { seen = localStorage.getItem(KEY(id)) === '1'; } catch { /* ถือว่ายังไม่เคยดู */ }
     if (seen || new URLSearchParams(location.search).has('notour')) return;
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
     const t0 = performance.now();
     const tick = () => {
       if (cancelled) return;
@@ -82,8 +83,17 @@ export function Tour({ id, steps, waitForLoader = false }: { id: string; steps: 
       if (loading) { timer = setTimeout(tick, 250); return; }
       timer = setTimeout(() => { if (!cancelled) start(); }, waitForLoader ? 700 : 150);
     };
-    let timer = setTimeout(tick, waitForLoader ? 600 : 250);
-    return () => { cancelled = true; clearTimeout(timer); };
+    // การ์ดทัวร์เป็นข้อความก้อนใหญ่ ถ้าโผล่เองระหว่างโหลดจะกลายเป็น LCP ที่ช้า
+    // → รอให้ผู้ใช้โต้ตอบก่อน (เลื่อน/แตะ/กดคีย์) ค่อยเริ่มนับ · ถ้าอยู่นิ่งจริงๆ ก็ขึ้นเองหลัง 15 วิ
+    const events = ['scroll', 'pointerdown', 'keydown', 'touchstart'] as const;
+    const arm = () => {
+      events.forEach((e) => removeEventListener(e, arm));
+      clearTimeout(timer);
+      timer = setTimeout(tick, 250);
+    };
+    events.forEach((e) => addEventListener(e, arm, { passive: true, once: true }));
+    timer = setTimeout(arm, 15000);
+    return () => { cancelled = true; clearTimeout(timer); events.forEach((e) => removeEventListener(e, arm)); };
   }, [id, waitForLoader, start]);
 
   // วัดตำแหน่งเป้าหมาย เลื่อนให้อยู่ในจอ และตามการเลื่อน/ย่อขยายหน้าต่าง

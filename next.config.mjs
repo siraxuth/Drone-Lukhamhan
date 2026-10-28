@@ -6,6 +6,8 @@ const withMDX = createMDX();
 const config = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // ใส่ CSS ลงใน HTML เลย ไม่ต้องรอโหลดไฟล์ .css ก่อนวาดหน้า (ตัด render-blocking 60 KB)
+  experimental: { inlineCss: true },
   // ไฟล์ที่อ่านด้วย fs ตอนรัน ต้องบอกให้ Vercel แพ็กไปกับฟังก์ชันด้วย
   outputFileTracingIncludes: {
     '/sitemap.xml': ['./CHANGELOG.md'],
