@@ -11,7 +11,7 @@ export type Stat = { skill: SkillId; mastery: number; answered: number; correct:
 export const PRIOR = 0.5;
 
 /** ชื่อสั้นของทักษะ (ใช้ในแผนภาพ) */
-export const SHORT: Record<SkillId, string> = { syntax: 'รูปแบบโค้ด', api: 'ชื่อคำสั่ง', timing: 'เวลา', direction: 'ทิศทาง', height: 'ความสูง', structure: 'โครงโปรแกรม', debug: 'หาบัค', drone: 'ความรู้โดรน', physics: 'ฟิสิกส์' };
+export const SHORT: Record<SkillId, string> = { syntax: 'รูปแบบโค้ด', api: 'ชื่อคำสั่ง', timing: 'เวลา', direction: 'ทิศทาง', height: 'ความสูง', structure: 'โครงโปรแกรม', debug: 'หาบัค', drone: 'ความรู้โดรน', physics: 'ฟิสิกส์', blender: 'Blender', show: 'ตั้งค่าโชว์' };
 
 /**
  * อัปเดตความชำนาญหลังตอบ 1 ครั้ง (ค่า 0–1) · ตอบถูกข้อยากได้เพิ่มมาก ตอบผิดข้อง่ายลดมาก
@@ -50,20 +50,27 @@ export const ADVICE: Record<SkillId, { weak: string; strong: string; unit?: stri
   structure: { weak: 'โครงโปรแกรม (setup/loop ฟังก์ชัน for) ยังไม่คล่อง ลองแตกภารกิจเป็นฟังก์ชันเล็กๆ ทีละท่อน', strong: 'แบ่งโปรแกรมเป็นฟังก์ชันและใช้ลูปได้คล่อง', unit: 'code-mission' },
   debug: { weak: 'การหาบัคยังช้า ลองอ่านข้อความแจ้งใต้สนามจำลอง แก้ทีละจุดแล้วรันใหม่ จุดแรกมักเป็นต้นเหตุของจุดอื่น', strong: 'หาและแก้บัคได้เร็ว', unit: 'code-first-flight' },
   drone: { weak: 'ความรู้พื้นฐานเรื่องโดรนยังต้องเสริม ลองทบทวนส่วนประกอบและหลักการบินของโดรน', strong: 'เข้าใจส่วนประกอบและการทำงานของโดรนดี', unit: 'basics-parts' },
+  blender: { weak: 'การใช้ Blender ยังไม่คล่อง ลองฝึกเปลี่ยนมุมมองด้วย Numpad และคีย์ลัด G R S Shift + D ให้เป็นนิสัยก่อนวางโดรนจริง', strong: 'ใช้ Blender และคีย์ลัดได้คล่อง', unit: 'lt-viewport' },
+  show: { weak: 'การตั้งค่าโชว์ยังพลาด ตรวจ FPS 10, Color Management เป็น Standard, Material แยกรายลำ และ Safety Check ทุกครั้งก่อนส่งงาน', strong: 'ตั้งค่าและตรวจความปลอดภัยของโชว์ได้ครบ', unit: 'lt-material' },
   physics: { weak: 'หลักฟิสิกส์ยังต้องเสริม เริ่มจากแรง น้ำหนัก และสมดุล แล้วค่อยไปกฎข้อที่ 3 และพลังงาน', strong: 'ใช้หลักฟิสิกส์อธิบายการบินของโดรนได้ดี', unit: 'phy-force' },
 };
 
 /** สายเรียนกับทักษะที่เกี่ยวข้อง ใช้สรุประดับต่อสาย */
-export const TRACK_SKILLS: Record<'code' | 'basics' | 'physics', SkillId[]> = {
+export const TRACK_SKILLS = {
   code: ['syntax', 'api', 'timing', 'direction', 'height', 'structure', 'debug'],
   basics: ['drone'],
   physics: ['physics'],
-};
+  lettering: ['blender', 'show'],
+} satisfies Record<string, SkillId[]>;
+export type TrackKey = keyof typeof TRACK_SKILLS;
+
+/** ทักษะของสายโดรนแปรอักษร ไม่อยู่ในแบบทดสอบก่อนเรียน */
+export const LETTERING_SKILLS: SkillId[] = TRACK_SKILLS.lettering;
 
 export type Level = 'เริ่มต้น' | 'กลาง' | 'สูง';
 /** ระดับของสายจากความชำนาญเฉลี่ยของทักษะที่วัดแล้ว (ไม่มีข้อมูล = null) */
-export function levelOfTrack(track: 'code' | 'basics' | 'physics', stats: Stat[]): Level | null {
-  const rows = stats.filter((s) => TRACK_SKILLS[track].includes(s.skill) && s.answered >= 1);
+export function levelOfTrack(track: TrackKey, stats: Stat[]): Level | null {
+  const rows = stats.filter((s) => (TRACK_SKILLS[track] as SkillId[]).includes(s.skill) && s.answered >= 1);
   if (!rows.length) return null;
   const avg = rows.reduce((n, s) => n + s.mastery, 0) / rows.length;
   return avg < 0.4 ? 'เริ่มต้น' : avg < 0.7 ? 'กลาง' : 'สูง';

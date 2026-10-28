@@ -1,7 +1,7 @@
 import type { ScenarioConfig } from '@/lib/scenarios';
 
 /** โครงเนื้อหาของแพลตฟอร์มเรียน (/learn) เขียนเป็นโค้ดเพื่อให้ตรวจชนิดได้และรีวิวผ่าน git */
-export type TrackId = 'code' | 'basics' | 'systems' | 'physics';
+export type TrackId = 'code' | 'basics' | 'systems' | 'physics' | 'lettering';
 
 /** ทักษะที่ระบบวิเคราะห์ (ใช้ติดป้ายให้แบบฝึกทุกข้อ) */
 export const SKILLS = {
@@ -14,6 +14,8 @@ export const SKILLS = {
   debug: 'หาและแก้บัค',
   drone: 'ความรู้เรื่องโดรน',
   physics: 'หลักฟิสิกส์',
+  blender: 'ใช้ Blender และเครื่องมือออกแบบ (มุมมอง คีย์ลัด Material)',
+  show: 'ตั้งค่าและความปลอดภัยของโชว์โดรน',
 } as const;
 export type SkillId = keyof typeof SKILLS;
 
@@ -21,7 +23,8 @@ type Exercise = { /** ทักษะที่แบบฝึกนี้วั�
 
 /** การ์ดอ่าน 1 ใบ: ข้อความ (ย่อหน้าละรายการ ใช้ `โค้ด` ในเครื่องหมายคำพูดกลับได้) + โค้ดตัวอย่าง/เคล็ดลับไม่บังคับ */
 export type ReadImage = { src: string; alt: string; caption: string; href: string };
-export type ReadVideo = { id: string; title: string };
+/** คลิป: id = YouTube · src = ไฟล์ mp4 ของเราเอง (poster ไม่บังคับ) */
+export type ReadVideo = { title: string; id?: string; src?: string; poster?: string };
 export type ReadStep = { kind: 'read'; title: string; body: string[]; code?: string; tip?: string; images?: ReadImage[]; video?: ReadVideo; sim?: { scenario: ScenarioConfig; code: string } };
 /** เลือกคำตอบข้อเดียว (answer = ลำดับตัวเลือกที่ถูก เริ่ม 0 อยู่ฝั่งเซิร์ฟเวอร์เท่านั้น) */
 export type QuizStep = Exercise & { kind: 'quiz'; title: string; question: string; code?: string; options: string[]; answer: number };
@@ -72,7 +75,7 @@ export type Track = {
   tagline: string;
   /** สายเสริม ไม่บังคับเรียน */
   optional?: boolean;
-  accent: 'blue' | 'red' | 'emerald';
+  accent: 'blue' | 'red' | 'emerald' | 'amber';
   units: Unit[];
 };
 

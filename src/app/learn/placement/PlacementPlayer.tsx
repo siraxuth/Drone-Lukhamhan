@@ -6,7 +6,7 @@ import { ArrowRight, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Inline } from '@/learn/Inline';
 import { SkillRadar } from '@/learn/SkillRadar';
-import { BAND_LABEL, SHORT, SKILL_IDS } from '@/learn/skills';
+import { BAND_LABEL, LETTERING_SKILLS, SHORT, SKILL_IDS } from '@/learn/skills';
 import { placementFinish, placementNext, skipPlacement, type PlacementNext, type PlacementResult } from '../skill-actions';
 
 type Q = Extract<PlacementNext, { done: false; ok: true }>;
@@ -71,7 +71,7 @@ export function PlacementPlayer({ already }: { already: boolean }) {
             <h1 className="font-display text-3xl font-extrabold leading-tight">ผลวัดพื้นฐานของคุณ</h1>
             <p className="text-lg text-muted-foreground">ตอบถูก {result.score}% ระบบปรับความยากตามคำตอบ จึงไม่ใช่คะแนนสอบ แต่ใช้ประเมินว่าควรเน้นตรงไหน</p>
           </div>
-          <SkillRadar items={SKILL_IDS.map((skill) => { const s = result.skills.find((x) => x.skill === skill); return { skill, value: s && s.answered >= 1 ? s.mastery : null }; })} />
+          <SkillRadar items={SKILL_IDS.filter((k) => !LETTERING_SKILLS.includes(k)).map((skill) => { const s = result.skills.find((x) => x.skill === skill); return { skill, value: s && s.answered >= 1 ? s.mastery : null }; })} />
           <div className="grid gap-2 sm:grid-cols-3">
             {(['code', 'basics', 'physics'] as const).map((t) => (
               <div key={t} className="squircle-xl border border-line bg-surface-2 px-3 py-2 text-center">

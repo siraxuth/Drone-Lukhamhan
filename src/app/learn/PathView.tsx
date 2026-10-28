@@ -12,6 +12,7 @@ type Profile = { displayName: string; xp: number; streak: number; todayXp: numbe
 const ACCENT: Record<Track['accent'], { ring: string; fill: string; soft: string; text: string }> = {
   blue: { ring: 'ring-brand-blue', fill: 'bg-brand-blue text-background', soft: 'bg-brand-blue/10', text: 'text-brand-blue' },
   red: { ring: 'ring-brand-red', fill: 'bg-brand-red text-background', soft: 'bg-brand-red/10', text: 'text-brand-red' },
+  amber: { ring: 'ring-amber-500', fill: 'bg-amber-600 text-white', soft: 'bg-amber-500/10', text: 'text-amber-700 dark:text-amber-300' },
   emerald: { ring: 'ring-emerald-500', fill: 'bg-emerald-600 text-white', soft: 'bg-emerald-500/10', text: 'text-emerald-700 dark:text-emerald-300' },
 };
 

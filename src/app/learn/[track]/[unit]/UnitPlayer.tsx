@@ -19,7 +19,7 @@ const LearnSim = dynamic(() => import('@/learn/exercises/LearnSim'), { ssr: fals
 
 type PublicUnit = Omit<Unit, 'steps'> & { steps: PublicStep[] };
 type Props = {
-  track: { id: string; title: string; accent: 'blue' | 'red' | 'emerald' };
+  track: { id: string; title: string; accent: 'blue' | 'red' | 'emerald' | 'amber' };
   unit: PublicUnit;
   index: number;
   total: number;
@@ -110,9 +110,13 @@ export function UnitPlayer({ track, unit, index, total, alreadyDone, initialPass
                   <section className="grid gap-2" aria-label="วิดีโอประกอบ">
                     <h2 className="text-base font-bold">ดูคลิปสาธิต</h2>
                     <div className="aspect-video overflow-hidden squircle-xl bg-black">
-                      <iframe className="size-full" src={`https://www.youtube-nocookie.com/embed/${step.video.id}`} title={step.video.title} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
+                      {step.video.src ? (
+                        <video className="size-full" controls playsInline preload="none" poster={step.video.poster} src={step.video.src} aria-label={step.video.title} />
+                      ) : (
+                        <iframe className="size-full" src={`https://www.youtube-nocookie.com/embed/${step.video.id}`} title={step.video.title} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
+                      )}
                     </div>
-                    <a href={`https://www.youtube.com/watch?v=${step.video.id}`} target="_blank" rel="noreferrer" className="inline-flex w-fit items-center gap-1.5 text-sm font-semibold text-brand-blue underline underline-offset-4">เปิดคลิปบน YouTube <ExternalLink className="size-3.5" aria-hidden /></a>
+                    {step.video.id && <a href={`https://www.youtube.com/watch?v=${step.video.id}`} target="_blank" rel="noreferrer" className="inline-flex w-fit items-center gap-1.5 text-sm font-semibold text-brand-blue underline underline-offset-4">เปิดคลิปบน YouTube <ExternalLink className="size-3.5" aria-hidden /></a>}
                   </section>
                 )}
                 {step.sim && (

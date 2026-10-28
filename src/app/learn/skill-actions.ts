@@ -7,7 +7,7 @@ import { db } from '@/lib/db';
 import { PLACEMENT_BANK, type PQ } from '@/learn/content/placement';
 import { findUnit, TRACKS } from '@/learn/content';
 import { canStart } from '@/learn/path';
-import { bandOf, effective, levelOfTrack, PLACEMENT_LENGTH, pickPlacement, pickReview, PRIOR, REVIEW_SIZE, updateMastery, type Band, type Candidate, type CandidateHistory, type Level, type Stat } from '@/learn/skills';
+import { bandOf, effective, levelOfTrack, PLACEMENT_LENGTH, pickPlacement, pickReview, PRIOR, REVIEW_SIZE, updateMastery, type Band, type Candidate, type CandidateHistory, type Level, type Stat, type TrackKey } from '@/learn/skills';
 import { getOrCreateProfile, loadStats } from '@/learn/server';
 import { isInteractive, toPublic, type PublicStep, type SkillId } from '@/learn/types';
 
@@ -44,7 +44,7 @@ export async function placementNext(raw: unknown): Promise<PlacementNext> {
 }
 
 export type PlacementResult =
-  | { ok: true; levels: Record<'code' | 'basics' | 'physics', Level | null>; skills: Array<{ skill: SkillId; mastery: number; band: Band; correct: number; answered: number }>; unlocked: Array<{ id: string; title: string }>; score: number }
+  | { ok: true; levels: Record<TrackKey, Level | null>; skills: Array<{ skill: SkillId; mastery: number; band: Band; correct: number; answered: number }>; unlocked: Array<{ id: string; title: string }>; score: number }
   | { ok: false; error: string };
 
 /**
@@ -74,7 +74,7 @@ export async function placementFinish(raw: unknown): Promise<PlacementResult> {
   await Promise.all([...fresh].map(([skill, v]) => db.skillStat.upsert({ where: { userId_skill: { userId, skill } }, update: { mastery: v.m, answered: v.n, correct: v.c, lastAt: now }, create: { userId, skill, mastery: v.m, answered: v.n, correct: v.c, lastAt: now } })));
 
   const all = [...(await loadStats(userId))];
-  const levels = { code: levelOfTrack('code', all), basics: levelOfTrack('basics', all), physics: levelOfTrack('physics', all) };
+  const levels = { code: levelOfTrack('code', all), basics: levelOfTrack('basics', all), physics: levelOfTrack('physics', all), lettering: levelOfTrack('lettering', all) };
   const skills = [...fresh].map(([skill, v]) => ({ skill, mastery: v.m, band: bandOf(effective(v.m, now), v.n), correct: v.c, answered: v.n }));
 
   // ปลดล็อกหน่วยตั้งแต่ต้นสาย (ต่อเนื่อง) ที่ทักษะทุกตัวที่หน่วยนั้นใช้ผ่านเกณฑ์

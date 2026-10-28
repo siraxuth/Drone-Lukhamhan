@@ -31,7 +31,7 @@ export default async function SkillsPage() {
   const measured = rows.filter((r) => r.band !== 'unknown');
   const weak = rows.filter((r) => r.band === 'weak').sort((a, b) => (a.eff as number) - (b.eff as number));
   const strong = rows.filter((r) => r.band === 'strong').sort((a, b) => (b.eff as number) - (a.eff as number));
-  const levels = { code: levelOfTrack('code', stats), basics: levelOfTrack('basics', stats), physics: levelOfTrack('physics', stats) };
+  const levels = { code: levelOfTrack('code', stats), basics: levelOfTrack('basics', stats), physics: levelOfTrack('physics', stats), lettering: levelOfTrack('lettering', stats) };
   const btn = 'inline-flex h-12 items-center gap-2 squircle-xl px-5 text-base font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue';
 
   return (
@@ -54,10 +54,10 @@ export default async function SkillsPage() {
         <>
           <section aria-label="แผนภาพความชำนาญ" className="grid gap-4 squircle-2xl border border-line bg-surface p-4 sm:p-6">
             <SkillRadar items={rows.map((r) => ({ skill: r.skill, value: r.band === 'unknown' ? null : (r.eff as number) }))} />
-            <div className="grid gap-2 sm:grid-cols-3">
-              {(['code', 'basics', 'physics'] as const).map((t) => (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {(['code', 'basics', 'physics', 'lettering'] as const).map((t) => (
                 <div key={t} className="squircle-xl bg-surface-2 px-3 py-2 text-center">
-                  <p className="text-sm text-muted-foreground">{t === 'code' ? 'สายเขียนโค้ด' : t === 'basics' ? 'สายความรู้โดรน' : 'สายฟิสิกส์'}</p>
+                  <p className="text-sm text-muted-foreground">{t === 'code' ? 'สายเขียนโค้ด' : t === 'basics' ? 'สายความรู้โดรน' : t === 'physics' ? 'สายฟิสิกส์' : 'สายแปรอักษร'}</p>
                   <p className="text-lg font-bold">{levels[t] ?? 'ยังไม่พอวัด'}</p>
                 </div>
               ))}
