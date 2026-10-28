@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 
 /** Dynamic OG endpoint follows shadcn-ui/ui's /og?title=...&description=... pattern. */
 export function ogImageUrl(title: string, description: string): string {
-  return `/og?title=${encodeURIComponent(title)}&description=${encodeURIComponent(description)}`;
+  // Increment when OG rendering changes so Discord and other crawlers drop cached images.
+  return `/og?title=${encodeURIComponent(title)}&description=${encodeURIComponent(description)}&v=2`;
 }
 
 export function shareMetadata({
