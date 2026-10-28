@@ -7,6 +7,7 @@ import { Ribbon } from '@/sections/Ribbon';
 import { About } from '@/sections/About';
 import { Numbers } from '@/sections/Numbers';
 import { Events } from '@/sections/Events';
+import { Lettering } from '@/sections/Lettering';
 import { Steps } from '@/sections/Steps';
 import { Field } from '@/sections/Field';
 import { Showcase } from '@/sections/Showcase';
@@ -33,6 +34,7 @@ export default function Home() {
         <About />
         {/* <Numbers /> */}
         <Events />
+        <Lettering />
         <Ribbon words={['ผลงาน', 'ของพวกเรา', 'ทุกปี', 'ทุกรุ่น']} reverse />
         <Showcase />
         <Field />
