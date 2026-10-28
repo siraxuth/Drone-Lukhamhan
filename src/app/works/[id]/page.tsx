@@ -11,6 +11,7 @@ import { getWork, getWorks } from '@/lib/works';
 import { clean } from '@/lib/rich';
 import { youtubeId } from '@/lib/video';
 import { WorkGallery } from '@/components/WorkGallery';
+import { OtherWorks } from '@/components/OtherWorks';
 import { JsonLd } from '@/components/JsonLd';
 import { workSchema } from '@/lib/schema';
 import { ogImageUrl } from '@/lib/og';
@@ -35,7 +36,7 @@ export default async function WorkPage({ params }: { params: Promise<{ id: strin
   const { id } = await params;
   const w = await getWork(id);
   if (!w) notFound();
-  const others = (await getWorks(12)).filter((o) => o.id !== w.id).slice(0, 6);
+  const others = (await getWorks(12)).filter((o) => o.id !== w.id).slice(0, 10);
   const html = clean(w.description);
   const yt = youtubeId(w.videoUrl);
 
@@ -94,27 +95,7 @@ export default async function WorkPage({ params }: { params: Promise<{ id: strin
           </section>
         )}
 
-        {others.length > 0 && (
-          <section className="mt-20" aria-labelledby="more">
-            <h2 id="more" className="font-display text-3xl font-extrabold">ผลงานอื่น</h2>
-            <ul className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {others.map((o) => (
-                <li key={o.id}>
-                  <Link href={`/works/${o.id}`} className="group flex h-full flex-col squircle-3xl border border-line bg-surface p-3 transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">
-                    <span className="relative block aspect-[4/3] overflow-hidden squircle-2xl bg-surface-2">
-                      {o.image ? <Image src={o.image} alt="" fill sizes="(min-width: 1024px) 28vw, (min-width: 640px) 45vw, 100vw" className="object-cover transition-transform duration-500 group-hover:scale-105" /> : <span className="grid size-full place-items-center text-muted-foreground"><Plane className="size-12" strokeWidth={1.25} aria-hidden /></span>}
-                      {o.year && <span className="absolute left-3 top-3 squircle-xl bg-background/90 px-2.5 py-0.5 text-sm font-semibold">ปี {o.year}</span>}
-                    </span>
-                    <span className="mt-3 block px-1.5 pb-1.5">
-                      <span className="line-clamp-2 block text-lg font-bold leading-snug group-hover:text-brand-blue">{o.title}</span>
-                      <span className="mt-1 line-clamp-2 block text-base text-muted-foreground">{o.summary}</span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+        {others.length > 0 && <OtherWorks items={others.map((o) => ({ id: o.id, title: o.title, summary: o.summary, image: o.image, year: o.year }))} />}
       </main>
       <SiteFooter />
     </>
