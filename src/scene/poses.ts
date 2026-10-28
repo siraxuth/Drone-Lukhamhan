@@ -46,6 +46,7 @@ export const poses: Record<string, Pose> = {
   code: P('ทำตามโค้ด', { x: 0, y: 0.1, s: 0.7, rx: 30, ry: 25, spin: 0.6 }),
   specs: P('แยกชิ้นส่วนให้ดู', { x: 0.55, y: 0.18, s: 0.9, rx: 40, ry: 25, explode: 1, spin: 0, move: 'none', alt: 0 }),
   field: P('บินเหนือสนาม', { x: -0.55, y: 0.05, s: 0.95, rx: 78, ry: 20, spin: 0.9, alt: 150 }),
+  lettering: P('โดรนแปรอักษร', { x: 0.62, y: 0.05, s: 0.78, rx: 32, ry: -28, spin: 0.8, my: 0.18, ms: 0.2, alt: 120 }),
   showcase: P('โชว์ผลงาน', { x: 0.62, y: -0.25, s: 0.6, rx: 18, ry: -50, spin: 0.9, alt: 120 }),
   simulator: P('ซ้อมในจอก่อน', { x: -0.55, y: 0.1, s: 0.8, rx: 64, ry: 30, spin: 0.8, alt: 130 }),
   faq: P('รอคำถาม', { x: 0.65, y: 0.3, s: 0.5, rx: 24, ry: -20, spin: 0.4, alt: 80 }),
