@@ -1,6 +1,6 @@
 {
   "name": "drone-lukhamhan",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "browserslist": ["chrome >= 111", "edge >= 111", "firefox >= 111", "safari >= 16.4", "ios_saf >= 16.4"],
   "scripts": {

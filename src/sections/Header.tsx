@@ -40,7 +40,8 @@ const links: readonly NavLink[] = [
  * Navbar ลอย: เลื่อนลงแล้วหดเป็นแคปซูลเล็กพร้อมเงา · เมนูมีแถบไฮไลต์ที่ไหลตามเมาส์ · จุดสีฟ้าบอกหน้า/ส่วนที่อยู่
  * มือถือ: ปุ่มสามขีดเปิด Drawer (shadcn) จากขวา เมนูไล่ขึ้นทีละรายการ
  */
-export function Header() {
+/** frame = หน้าแรก: navbar เป็นติ่ง (notch) ห้อยจากขอบบนลงมาเหมือนกล้องหน้า MacBook โคนติ่งโค้งเว้าเข้าหาเส้นกรอบ (Hud) */
+export function Header({ frame = false }: { frame?: boolean } = {}) {
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
@@ -80,13 +81,21 @@ export function Header() {
   const point = (el: HTMLElement) => setHl({ left: el.offsetLeft, width: el.offsetWidth });
 
   return (
-    <header className="fixed inset-x-0 top-3 z-40 px-3">
+    <header className={frame ? 'pointer-events-none fixed inset-x-0 top-0 z-[310]' : 'fixed inset-x-0 top-3 z-40 px-3'}>
       <nav
         data-tour="menu"
         data-scrolled={scrolled}
         aria-label="เมนูหลัก"
-        className="squircle-2xl relative mx-auto flex max-w-[84rem] items-center justify-between gap-3 border border-line bg-surface/90 px-4 py-2 backdrop-blur-md transition-[max-width,padding,box-shadow,background-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] data-[scrolled=true]:max-w-6xl data-[scrolled=true]:py-1.5 data-[scrolled=true]:bg-surface/95 "
+        className={frame
+          ? 'pointer-events-auto relative mx-auto mt-0 flex h-14 sm:mt-2 w-[calc(100%-1rem)] items-center justify-between gap-3 border border-t-0 border-line bg-[var(--canvas)] px-4 squircle-b-notch sm:w-fit sm:min-w-[22rem] sm:max-w-[calc(100%-4rem)] lg:gap-8 lg:px-6'
+          : `squircle-2xl relative mx-auto flex max-w-[84rem] items-center justify-between gap-3 border border-line bg-surface/90 px-4 py-2 backdrop-blur-md transition-[max-width,padding,box-shadow,background-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] data-[scrolled=true]:max-w-6xl data-[scrolled=true]:py-1.5 data-[scrolled=true]:bg-surface/95`}
       >
+        {frame && (
+          <>
+            <span aria-hidden className="notch-fillet notch-fillet-l" />
+            <span aria-hidden className="notch-fillet notch-fillet-r" />
+          </>
+        )}
         <Link href="/" aria-label="หน้าแรก" className="shrink-0 transition-transform hover:scale-[1.03]"><Logo /></Link>
 
         <ul ref={list} onMouseLeave={() => setHl(null)} className="relative hidden items-center lg:flex">

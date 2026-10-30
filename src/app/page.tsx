@@ -27,7 +27,7 @@ export default function Home() {
       <SceneLayer />
       <Hud />
       <Tour id="home" steps={homeTour} waitForLoader />
-      <Header /> 
+      <Header frame />
       <main className="relative z-10">
         <Stage />
         <Ribbon words={['ชมรมโดรน', 'ลือคำหาญฯ', 'เรียน', 'ซ้อม', 'แข่ง']} />
