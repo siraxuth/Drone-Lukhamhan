@@ -1,0 +1,31 @@
+{
+  "name": "drone-lukhamhan-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio",
+    "audio": "python3 scripts/make-audio.py",
+    "capture": "bun scripts/capture.ts",
+    "qr": "bun scripts/qr.ts",
+    "render": "remotion render Intro16x9 out/raw-intro-16x9.mp4 --crf=18 && remotion render Intro9x16 out/raw-intro-9x16.mp4 --crf=18 && bash scripts/finish.sh",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.539",
+    "@remotion/google-fonts": "4.0.539",
+    "@remotion/renderer": "4.0.539",
+    "@remotion/transitions": "4.0.539",
+    "qrcode": "^1.5.4",
+    "react": "19",
+    "react-dom": "19",
+    "remotion": "4.0.539",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.3.0",
+    "bun-types": "^1.4.4",
+    "puppeteer-core": "^25.16.0",
+    "typescript": "^7.0.2"
+  }
+}
