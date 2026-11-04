@@ -10,6 +10,10 @@ export type TourStep = {
   target?: string;
   title: string;
   text: string;
+  content?: React.ReactNode;
+  wide?: boolean;
+  blockedHint?: string;
+  exercise?: (setComplete: (complete: boolean) => void) => React.ReactNode;
   /** ใช้แทนเมื่อ target หลักมองไม่เห็น (เช่น เมนูที่ซ่อนอยู่หลังปุ่มบนมือถือ) */
   alt?: { target: string; title?: string; text: string };
 };
@@ -38,13 +42,20 @@ function resolve(step: TourStep | undefined) {
 
 type Box = { x: number; y: number; w: number; h: number };
 
+function TourText({ text }: { text: string }) {
+  return <>{text.split('`').map((part, index) => index % 2
+    ? <code key={index} className="squircle-sm bg-surface-2 px-1.5 py-0.5 font-mono text-[0.9em] text-brand-blue">{part}</code>
+    : <span key={index}>{part}</span>)}</>;
+}
+
 /**
  * ทัวร์แนะนำการใช้งานหน้านั้น: ขึ้นเองครั้งแรกที่เข้า มีกรอบไฮไลต์ + ข้อความ + ปุ่มถัดไป
  * จำใน localStorage ว่าดูแล้ว · ปุ่ม "วิธีใช้" มุมขวาล่างเปิดดูซ้ำได้ทุกเมื่อ
  */
-export function Tour({ id, steps, waitForLoader = false }: { id: string; steps: TourStep[]; waitForLoader?: boolean }) {
+export function Tour({ id, steps, waitForLoader = false, forceQuery, autoOpenImmediately = false, startOnFocus, trigger, allowTargetInteraction = false }: { id: string; steps: TourStep[]; waitForLoader?: boolean; forceQuery?: string; autoOpenImmediately?: boolean; startOnFocus?: string; trigger?: string; allowTargetInteraction?: boolean }) {
   const [open, setOpen] = useState(false);
   const [i, setI] = useState(0);
+  const [complete, setComplete] = useState(false);
   const [box, setBox] = useState<Box | null>(null);
   const [mounted, setMounted] = useState(false);
   const [vp, setVp] = useState({ w: 1024, h: 768 });
@@ -65,6 +76,7 @@ export function Tour({ id, steps, waitForLoader = false }: { id: string; steps: 
   const start = useCallback(() => {
     opener.current = document.activeElement as HTMLElement | null;
     setI(0);
+    setComplete(false);
     setOpen(true);
   }, []);
 
@@ -72,7 +84,20 @@ export function Tour({ id, steps, waitForLoader = false }: { id: string; steps: 
   useEffect(() => {
     let seen = false;
     try { seen = localStorage.getItem(KEY(id)) === '1'; } catch { /* ถือว่ายังไม่เคยดู */ }
-    if (seen || new URLSearchParams(location.search).has('notour')) return;
+    const force = forceQuery ? new URLSearchParams(location.search).get(forceQuery) === '1' : false;
+    if ((seen && !force) || new URLSearchParams(location.search).has('notour')) return;
+    if (startOnFocus && !force) {
+      const onFocus = (event: FocusEvent) => {
+        if (!(event.target instanceof Element) || !event.target.matches(startOnFocus)) return;
+        if (card.current || document.querySelector('[data-tour-overlay]')) return;
+        try { if (localStorage.getItem(KEY(id)) === '1') return; } catch { /* storage unavailable */ }
+        window.removeEventListener('focusin', onFocus);
+        start();
+      };
+      window.addEventListener('focusin', onFocus);
+      return () => window.removeEventListener('focusin', onFocus);
+    }
+    if (autoOpenImmediately) { start(); return; }
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const t0 = performance.now();
@@ -94,7 +119,16 @@ export function Tour({ id, steps, waitForLoader = false }: { id: string; steps: 
     events.forEach((e) => addEventListener(e, arm, { passive: true, once: true }));
     timer = setTimeout(arm, 15000);
     return () => { cancelled = true; clearTimeout(timer); events.forEach((e) => removeEventListener(e, arm)); };
-  }, [id, waitForLoader, start]);
+  }, [id, waitForLoader, start, forceQuery, autoOpenImmediately, startOnFocus]);
+
+  useEffect(() => {
+    if (!trigger) return;
+    const onClick = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest(trigger) && !document.querySelector('[data-tour-overlay]')) start();
+    };
+    window.addEventListener('click', onClick);
+    return () => window.removeEventListener('click', onClick);
+  }, [trigger, start]);
 
   // วัดตำแหน่งเป้าหมาย เลื่อนให้อยู่ในจอ และตามการเลื่อน/ย่อขยายหน้าต่าง
   const measure = useCallback(() => {
@@ -134,17 +168,28 @@ export function Tour({ id, steps, waitForLoader = false }: { id: string; steps: 
   }, [open, measure]);
 
   useLayoutEffect(() => { if (open && card.current) setCardH(card.current.offsetHeight); }, [open, i, vp.w]);
-  useEffect(() => { if (open) nextBtn.current?.focus({ preventScroll: true }); }, [open, i]);
+  useEffect(() => { if (open && !step?.exercise) nextBtn.current?.focus({ preventScroll: true }); }, [open, i, step]);
 
   const shown = resolve(step);
   const last = i === steps.length - 1;
-  const next = useCallback(() => (last ? finish() : setI((n) => n + 1)), [last, finish]);
-  const prev = useCallback(() => setI((n) => Math.max(0, n - 1)), []);
+  const canContinue = !step?.exercise || complete;
+  const next = useCallback(() => {
+    if (!canContinue) return;
+    setComplete(false);
+    if (last) finish();
+    else setI((n) => n + 1);
+  }, [canContinue, last, finish]);
+  const prev = useCallback(() => {
+    if (i === 0) return;
+    setComplete(false);
+    setI((n) => n - 1);
+  }, [i]);
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.preventDefault(); finish(); }
+      else if (e.target instanceof HTMLElement && e.target.closest('textarea, input, select, [contenteditable=true]')) return;
       else if (e.key === 'ArrowRight') { e.preventDefault(); next(); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); prev(); }
     };
@@ -157,7 +202,8 @@ export function Tour({ id, steps, waitForLoader = false }: { id: string; steps: 
   const sheet = vp.w < 640;
   const short = !sheet && vp.h < 520;
   let pos: React.CSSProperties;
-  if (sheet) pos = { left: 12, right: 12, bottom: 'max(12px, env(safe-area-inset-bottom))', maxWidth: 520, marginInline: 'auto' };
+  if (step?.wide) pos = { left: 12, right: 12, top: Math.max(12, (vp.h - cardH) / 2) };
+  else if (sheet) pos = { left: 12, right: 12, bottom: 'max(12px, env(safe-area-inset-bottom))', maxWidth: 520, marginInline: 'auto' };
   else if (short) pos = { right: 'max(12px, env(safe-area-inset-right))', top: 12, width: Math.min(320, vp.w * 0.42) };
   else if (!box) pos = { left: Math.max(12, (vp.w - cw) / 2), top: Math.max(12, (vp.h - cardH) / 2), width: cw };
   else {
@@ -171,43 +217,47 @@ export function Tour({ id, steps, waitForLoader = false }: { id: string; steps: 
     else if (box.x - 14 - cw > 12) pos = { left: box.x - 14 - cw, top: midY, width: cw };
     else pos = { left: cx, top: Math.max(12, vp.h - cardH - 12), width: cw };
   }
-  pos = { ...pos, maxHeight: vp.h - 24, overflowY: 'auto' };
+  pos = { ...pos, maxHeight: vp.h - 24, overflow: 'hidden' };
 
   return (
     <>
-      {mounted && !open && (
+      {mounted && !open && !trigger && (
         <button type="button" onClick={start} aria-label="ดูวิธีใช้หน้านี้"
           className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-30 inline-flex min-h-11 items-center gap-2 squircle-2xl border border-line bg-surface/95 px-4 text-base font-medium shadow-lg backdrop-blur transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">
           <CircleHelp className="size-5 text-brand-blue" aria-hidden /> วิธีใช้
         </button>
       )}
       {mounted && open && step && createPortal(
-        <div className="fixed inset-0 z-[200]" role="presentation">
-          {/* กันคลิกทะลุระหว่างทัวร์ */}
-          <div className="absolute inset-0" onClick={(e) => e.stopPropagation()} aria-hidden />
+        <div className={`${allowTargetInteraction ? 'pointer-events-none' : ''} fixed inset-0 z-[200]`} data-tour-overlay role="presentation">
+          {!allowTargetInteraction && <div className="absolute inset-0" onClick={(e) => e.stopPropagation()} aria-hidden />}
           {box ? (
             <div aria-hidden className="pointer-events-none absolute squircle-2xl border-2 border-brand-blue transition-all duration-300 motion-reduce:transition-none"
               style={{ left: box.x, top: box.y, width: box.w, height: box.h, boxShadow: '0 0 0 9999px rgba(8,10,16,.62), 0 0 0 4px color-mix(in oklab, var(--brand-blue) 30%, transparent)' }} />
           ) : <div aria-hidden className="pointer-events-none absolute inset-0 bg-[rgba(8,10,16,.62)]" />}
           <div ref={card} role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-text"
-            className="absolute grid gap-3 squircle-2xl border border-line bg-surface p-5 text-foreground shadow-2xl"
+            className={`${allowTargetInteraction ? 'pointer-events-auto' : ''} absolute grid grid-rows-[minmax(0,1fr)_auto] squircle-2xl border border-line bg-surface text-foreground shadow-2xl`}
             style={pos}>
-            <div className="flex items-start justify-between gap-3">
-              <p className="text-sm font-semibold text-brand-blue">ขั้นที่ {i + 1} จาก {steps.length}</p>
-              <button type="button" onClick={finish} aria-label="ปิดคำแนะนำ" className="-m-2 grid size-11 place-items-center squircle-xl text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-brand-blue">
-                <X className="size-5" aria-hidden />
-              </button>
+            <div key={i} className="grid min-h-0 min-w-0 content-start gap-3 overflow-y-auto p-4 sm:p-5">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-semibold text-brand-blue">ขั้นที่ {i + 1} จาก {steps.length}</p>
+                <button type="button" onClick={finish} aria-label="ปิดคำแนะนำ" className="-m-2 grid size-11 place-items-center squircle-xl text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-brand-blue">
+                  <X className="size-5" aria-hidden />
+                </button>
+              </div>
+              <h2 id="tour-title" className="font-display text-xl font-bold leading-snug">{shown.title}</h2>
+              <p id="tour-text" className="whitespace-pre-line text-base leading-relaxed text-muted-foreground"><TourText text={shown.text} /></p>
+              {step.content}
+              {step.exercise?.(setComplete)}
+              <div className="flex items-center gap-1.5" aria-hidden>
+                {steps.map((_, n) => <span key={n} className={`h-1.5 rounded-full transition-all ${n === i ? 'w-6 bg-brand-blue' : 'w-1.5 bg-line'}`} />)}
+              </div>
             </div>
-            <h2 id="tour-title" className="font-display text-xl font-bold leading-snug">{shown.title}</h2>
-            <p id="tour-text" className="text-base leading-relaxed text-muted-foreground">{shown.text}</p>
-            <div className="flex items-center gap-1.5" aria-hidden>
-              {steps.map((_, n) => <span key={n} className={`h-1.5 rounded-full transition-all ${n === i ? 'w-6 bg-brand-blue' : 'w-1.5 bg-line'}`} />)}
-            </div>
-            <div className="flex items-center justify-between gap-2 pt-1">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-surface px-4 py-2 sm:px-5">
+              {!canContinue && <p className="basis-full text-xs text-muted-foreground">{step.blockedHint ?? 'ทำแบบฝึกให้ครบเพื่อไปขั้นถัดไป'}</p>}
               <button type="button" onClick={finish} className="min-h-11 px-2 text-base text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-brand-blue">ข้าม</button>
               <div className="flex gap-2">
                 {i > 0 && <Button type="button" variant="outline" className="h-11 px-4 text-base" onClick={prev}><ArrowLeft className="size-4" aria-hidden /> ย้อนกลับ</Button>}
-                <Button ref={nextBtn} type="button" className="h-11 px-5 text-base" onClick={next}>{last ? 'เริ่มใช้งาน' : 'ถัดไป'} {!last && <ArrowRight className="size-4" aria-hidden />}</Button>
+                <Button ref={nextBtn} type="button" disabled={!canContinue} className="h-11 px-5 text-base" onClick={next}>{last ? 'เริ่มใช้งาน' : 'ถัดไป'} {!last && <ArrowRight className="size-4" aria-hidden />}</Button>
               </div>
             </div>
           </div>

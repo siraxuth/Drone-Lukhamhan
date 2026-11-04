@@ -166,7 +166,8 @@ function buildTree(toks: Tok[], errors: SimEvent[]): Node[] {
  * ยังไม่รองรับ if / while ที่มีเงื่อนไข
  * โหมด 'any' ยอมให้เขียนคำสั่งนอกฟังก์ชันได้ (โค้ดแบบเก่า) โหมดอื่นต้องอยู่ใน setup()/loop()/ฟังก์ชัน
  */
-export function parse(code: string, style: Style = "any"): { calls: Call[]; errors: SimEvent[] } {
+export type KeyBinding = { key: number; functionName: string };
+export function parse(code: string, style: Style = "any", selectedKey?: number): { calls: Call[]; errors: SimEvent[]; keyBindings: KeyBinding[] } {
     const errors: SimEvent[] = [];
     const calls: Call[] = [];
     const err = (line: number, text: string) => errors.push({ t: 0, kind: "error", line, text: `บรรทัด ${line}: ${text}` });
@@ -175,6 +176,7 @@ export function parse(code: string, style: Style = "any"): { calls: Call[]; erro
 
     const globals = new Map<string, number>();
     const funcs = new Map<string, { params: string[]; body: Node[]; line: number }>();
+    const keyHandlers = new Map<number, { functionName: string; line: number }>();
     const topCalls: Node[] = [];
 
     // ---- ชั้นนอกสุด: ค่าคงที่ ฟังก์ชัน (และคำสั่งลอยในโหมดผ่อนปรน) ----
@@ -276,6 +278,17 @@ export function parse(code: string, style: Style = "any"): { calls: Call[]; erro
         const rawName = m[3];
         const prefix = m[1] ? "drone" : m[2] ? "parduino" : null;
         const argv = m[4].trim() === "" ? [] : splitArgs(m[4]);
+        const keyMatch = (prefix === "drone" || prefix === "parduino") ? /^onKey(1[01]|[1-9])$/.exec(rawName) : null;
+        if (keyMatch) {
+            const key = Number(keyMatch[1]);
+            const functionName = argv[0]?.trim();
+            if (argv.length !== 1 || !functionName || !/^[A-Za-z_]\w*$/.test(functionName)) {
+                once(line, `drone.onKey${key}() ต้องรับชื่อฟังก์ชันหนึ่งตัว เช่น drone.onKey${key}(flyMission);`);
+            } else if (!funcs.has(functionName)) {
+                once(line, `ยังไม่มี void ${functionName}() ให้ KEY ${key} เรียก`);
+            } else keyHandlers.set(key, { functionName, line });
+            return;
+        }
         const args = argv.map((a) => evalExpr(a, env));
         // ฟังก์ชันของผู้ใช้
         const fn = prefix === null ? funcs.get(rawName) : undefined;
@@ -310,6 +323,14 @@ export function parse(code: string, style: Style = "any"): { calls: Call[]; erro
             if (calls.length === before) break; // loop ว่าง/ไม่มีคำสั่ง ไม่ต้องวน
         }
     }
+    if (selectedKey !== undefined) {
+        const binding = keyHandlers.get(selectedKey);
+        if (!binding) once(1, `KEY ${selectedKey} ยังไม่ได้ผูกกับฟังก์ชันใน void setup()`);
+        else {
+            const fn = funcs.get(binding.functionName);
+            if (fn) run(fn.body, new Map(globals), 0);
+        }
+    }
     if (strict && tree.length > 0 && !setup && !loop && errors.length === 0) err(1, "ไม่พบ void setup() ใส่คำสั่งไว้ในฟังก์ชันนี้ เช่น void setup() { ... }");
-    return { calls, errors };
+    return { calls, errors, keyBindings: [...keyHandlers].map(([key, binding]) => ({ key, functionName: binding.functionName })) };
 }

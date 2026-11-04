@@ -23,7 +23,6 @@ const NEEDLE_REACH_CM = 12;
 const NEEDLE_TOLERANCE_CM = 15;
 const SPEED_LIMIT_CM = 600;
 export const MAGAZINE_CAPACITY = 20; // บรรจุได้ทีละ 20 ลูกต่อชุด (ชุดซ้าย = ประตู 1&4, ชุดขวา = ประตู 2&3)
-const RELOAD_MS = 6500; // คนแข่งเดินมาบรรจุสัมภาระด้วยมือบนแท่น (ชุดซ้าย + ชุดขวา)
 const HAND_TURN_MS = 2500; // คนแข่งหมุนตัวโดรนด้วยมือบนแท่น
 const MS_PER_BALL = 80; // ปล่อยทั้งชุด 20 ลูกใช้ ~1.6 วินาที
 const HOLD_MS = 1200; // poshold: หยุดนิ่ง ล็อกตำแหน่ง
@@ -66,6 +65,8 @@ export type FlightConfig = {
     startYaw?: number;
     hoops?: FreeHoop[];
     waypoints?: Waypoint[];
+    /** Payload prepared at the launch pad by the side-panel service control. */
+    initialPayload?: { L: number; R: number };
 };
 
 /** rpm = รอบใบพัด 0–1 (ช่วงสตาร์ทหมุนจากช้าไปเร็วตาม delay หลัง takeOff) */
@@ -99,7 +100,45 @@ export type Result = {
     ok: boolean;
     /** จุดผ่าน/ห่วงที่ทำสำเร็จ พร้อมเวลา (ใช้เปลี่ยนสีวัตถุในสนามตอนเล่น) */
     visits: Array<{ id: string; kind: "waypoint" | "hoop"; t: number; points: number }>;
+    conditions: FlightConditions;
+    payloadRemaining: { L: number; R: number };
+    finalPosition: { x: number; y: number; z: number; yaw: number };
 };
+
+export type FlightConditions = {
+    seed: number;
+    windX: number;
+    windY: number;
+    batteryPercent: number;
+    distanceScale: number;
+    yawScale: number;
+    calibrationOffsetDeg: number;
+};
+
+/** Repeatable conditions for debriefs. Omitting a seed always uses the nominal run. */
+export function conditionsFor(seed = 0): FlightConditions {
+    let state = seed >>> 0;
+    const rand = () => {
+        state = (state + 0x6d2b79f5) >>> 0;
+        let t = state;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const batteryPercent = seed === 0 ? 100 : Math.round(58 + rand() * 42);
+    const distanceScale = seed === 0 ? 1 : 0.94 + rand() * 0.12;
+    const yawScale = seed === 0 ? 1 : 0.97 + rand() * 0.06;
+    const calibrationOffsetDeg = seed === 0 ? 0 : -2.5 + rand() * 5;
+    return {
+        seed: seed >>> 0,
+        windX: seed === 0 ? 0 : -5 + rand() * 10,
+        windY: seed === 0 ? 0 : -5 + rand() * 10,
+        batteryPercent,
+        distanceScale,
+        yawScale,
+        calibrationOffsetDeg,
+    };
+}
 
 /** ชื่อคำสั่งแบบไม่สนตัวพิมพ์ใหญ่เล็กและขีดล่าง: auto_land = autoLand = AUTOLAND */
 const canon = (n: string) => n.toLowerCase().replace(/_/g, "");
@@ -161,17 +200,18 @@ function evalExtras(frames: Frame[], cfg: FlightConfig): { visits: Result["visit
     return { visits, breakdown };
 }
 
-export function simulate(code: string, cfg: FlightConfig): Result {
-    const { calls, errors } = parse(code, cfg.style ?? "any");
+export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?: number): Result {
+    const conditions = conditionsFor(seed);
+    const { calls, errors } = parse(code, cfg.style ?? "any", selectedKey);
     const events: SimEvent[] = [...errors];
     const padC = cfg.padAt === undefined ? cfg.start : cfg.padAt; // null = ไม่มีฐาน
     const onPadAt = (px: number, py: number) => padC !== null && Math.abs(px - padC.x) <= cfg.pad.half && Math.abs(py - padC.y) <= cfg.pad.half;
     let x = cfg.start.x,
         y = cfg.start.y,
         z = onPadAt(cfg.start.x, cfg.start.y) ? REST_CM : LEG_CM, // เริ่มบนแท่น (สูง 20 ซม.) หรือบนพื้น
-        yaw = cfg.startYaw ?? 0,
+        yaw = (cfg.startYaw ?? 0) + conditions.calibrationOffsetDeg,
         t = 0;
-    const mag = { L: 0, R: 0 }; // ชุดบอลซ้าย (ประตู 1&4) และขวา (ประตู 2&3)
+    const mag = { L: cfg.initialPayload?.L ?? 0, R: cfg.initialPayload?.R ?? 0 }; // เติมจากแผงเตรียมโดรน
     const frames: Frame[] = [{ t, x, y, z, yaw }];
     let flying = false,
         crashed = false,
@@ -322,18 +362,23 @@ export function simulate(code: string, cfg: FlightConfig): Result {
     const inHoopBox = () => Math.abs(x - cfg.start.x) <= cfg.hoop.half && Math.abs(y - cfg.start.y) <= cfg.hoop.half;
 
     /** เดินทางเป็นเส้นตรงต่อเนื่อง ตัดที่เวลาหมด และเช็กการลอดห่วงตอนออกจากกรอบ */
-    const travel = (dx: number, dy: number, dz: number, dyaw: number, ms: number, line: number, shape = false) => {
+    const travel = (dx: number, dy: number, dz: number, dyaw: number, ms: number, line: number, { shape = false, holdPosition = false } = {}) => {
         const firstFrame = frames.length - 1;
         const remain = TIME_LIMIT_MS - t;
         const k = ms > remain ? Math.max(0, remain / ms) : 1;
         const sx = x,
             sy = y;
+        const batteryScale = 0.94 + conditions.batteryPercent * 0.0006;
+        const actualDx = dx * conditions.distanceScale * batteryScale + (flying && !holdPosition ? conditions.windX * ms / 1000 : 0);
+        const actualDy = dy * conditions.distanceScale * batteryScale + (flying && !holdPosition ? conditions.windY * ms / 1000 : 0);
+        const actualDz = dz * batteryScale;
+        const actualDyaw = dyaw * conditions.yawScale;
         if (flying && !leftHoop && (dx !== 0 || dy !== 0)) {
             // หาจุดที่ออกจากกรอบห่วงบนเส้นทางนี้ (ตรวจแบบละเอียดทุก 1 ซม.)
-            const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) * k));
+            const steps = Math.max(1, Math.ceil(Math.hypot(actualDx, actualDy) * k));
             for (let s = 1; s <= steps; s++) {
-                const px = sx + (dx * k * s) / steps,
-                    py = sy + (dy * k * s) / steps;
+                const px = sx + (actualDx * k * s) / steps,
+                    py = sy + (actualDy * k * s) / steps;
                 if (Math.abs(px - cfg.start.x) > cfg.hoop.half || Math.abs(py - cfg.start.y) > cfg.hoop.half) {
                     leftHoop = true;
                     const okHoop = z >= cfg.hoop.zMin && z <= cfg.hoop.zMax;
@@ -356,15 +401,15 @@ export function simulate(code: string, cfg: FlightConfig): Result {
             for (const u of [0.25, 0.5, 0.75, 1]) {
                 const tau = ACC_MS * u;
                 const f = (0.5 * tau * tau * v) / ACC_MS;
-                frames.push({ t: t + tau, x: sx + dx * f, y: sy + dy * f, z, yaw });
+                frames.push({ t: t + tau, x: sx + actualDx * f, y: sy + actualDy * f, z, yaw });
             }
             fEnd = v * (ms - ACC_MS / 2);
-            cruise = { vx: dx * v, vy: dy * v };
+            cruise = { vx: actualDx * v, vy: actualDy * v };
         } else cruise = null;
-        x += dx * fEnd;
-        y += dy * fEnd;
-        z += dz * k;
-        yaw += dyaw * k;
+        x += actualDx * fEnd;
+        y += actualDy * fEnd;
+        z += actualDz * k;
+        yaw += actualDyaw * k;
         t += ms * k;
         push();
         scanNeedleContacts(firstFrame, line);
@@ -475,7 +520,7 @@ export function simulate(code: string, cfg: FlightConfig): Result {
                           : name === "mr"
                             ? right
                             : { x: -right.x, y: -right.y };
-                if (!travel(v.x * cm, v.y * cm, 0, 0, cm * MS_PER_CM[name as "fw" | "bw" | "ml" | "mr"], c.line, true)) break;
+                if (!travel(v.x * cm, v.y * cm, 0, 0, cm * MS_PER_CM[name as "fw" | "bw" | "ml" | "mr"], c.line, { shape: true })) break;
                 brake(c.line);
                 if (x < 0 || x > FIELD_CM || y < 0 || y > FIELD_CM) {
                     ev({
@@ -495,7 +540,7 @@ export function simulate(code: string, cfg: FlightConfig): Result {
                 }
                 if (!needFly("yaw()")) break;
                 const deg = a ?? 0;
-                travel(0, 0, 0, deg, Math.abs(deg) * MS_PER_DEG_YAW + YAW_SETTLE_MS, c.line);
+                travel(0, 0, 0, deg, Math.abs(deg) * MS_PER_DEG_YAW + YAW_SETTLE_MS, c.line, { holdPosition: true });
                 break;
             }
             case "settle":
@@ -577,42 +622,6 @@ export function simulate(code: string, cfg: FlightConfig): Result {
                         ok: false,
                     });
                 }
-                break;
-            }
-            case "reload":
-            case "load": {
-                if (flying) {
-                    ev({
-                        kind: "warn",
-                        line: c.line,
-                        text: `บรรทัด ${c.line}: บรรจุสัมภาระขณะบินไม่ได้ ต้องลงจอดบนแท่น Takeoff ก่อน`,
-                    });
-                    break;
-                }
-                const onPad = onPadAt(x, y);
-                if (!onPad) {
-                    ev({ kind: "warn", line: c.line, text: `บรรทัด ${c.line}: บรรจุได้เฉพาะตอนจอดบนแท่น Takeoff` });
-                    break;
-                }
-                const add = MAGAZINE_CAPACITY * 2 - mag.L - mag.R;
-                if (add <= 0) {
-                    ev({ kind: "info", line: c.line, text: "สัมภาระเต็มแล้ว" });
-                    if (a) handTurn(a, c.line);
-                    break;
-                }
-                ev({
-                    kind: "info",
-                    line: c.line,
-                    id: "load",
-                    n: add,
-                    dur: RELOAD_MS,
-                    text: `บรรจุสัมภาระ ชุดซ้าย ${MAGAZINE_CAPACITY} + ชุดขวา ${MAGAZINE_CAPACITY} ลูก`,
-                });
-                mag.L = MAGAZINE_CAPACITY;
-                mag.R = MAGAZINE_CAPACITY;
-                t += RELOAD_MS;
-                push();
-                if (a) handTurn(a, c.line); // reload(180) = บรรจุแล้วหมุนโดรนด้วยมือ 180°
                 break;
             }
             case "turnbyhand":
@@ -743,7 +752,7 @@ export function simulate(code: string, cfg: FlightConfig): Result {
                         ev({
                             kind: "warn",
                             line: c.line,
-                            text: `บรรทัด ${c.line}: ไม่มีสัมภาระในชุดนี้ให้ปล่อย (ต้อง reload() บนแท่น Takeoff ก่อน)`,
+                            text: `บรรทัด ${c.line}: ไม่มีสัมภาระให้ปล่อย กลับไปเติมที่แผงเตรียมโดรนบนฐานก่อนบิน`,
                         });
                         break;
                     }
@@ -855,6 +864,9 @@ export function simulate(code: string, cfg: FlightConfig): Result {
         timedOut,
         ok: !crashed && !errors.length,
         visits: extra.visits,
+        conditions,
+        payloadRemaining: { ...mag },
+        finalPosition: { x, y, z, yaw },
     };
 }
 

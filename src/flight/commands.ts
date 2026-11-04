@@ -21,10 +21,9 @@ export const COMMANDS: Cmd[] = [
   { name: 'bw', insert: 'bw([[100]]);', sig: 'bw(ซม.)', desc: 'ถอยหลัง', group: 'เคลื่อนที่', quick: true },
   { name: 'ml', insert: 'ml([[100]]);', sig: 'ml(ซม.)', desc: 'เลื่อนซ้าย (หัวโดรนยังหันทางเดิม)', group: 'เคลื่อนที่', quick: true },
   { name: 'mr', insert: 'mr([[100]]);', sig: 'mr(ซม.)', desc: 'เลื่อนขวา (หัวโดรนยังหันทางเดิม)', group: 'เคลื่อนที่', quick: true },
-  { name: 'yaw', insert: 'yaw([[90]]);', sig: 'yaw(องศา)', desc: 'หมุนหัวโดรนขวา ค่าติดลบ = หมุนซ้าย', group: 'เคลื่อนที่' },
+  { name: 'yaw', insert: 'yaw([[90]]);', sig: 'yaw(องศา)', desc: 'หมุนหัวโดรนขวา ค่าติดลบ = หมุนซ้าย', group: 'เคลื่อนที่', quick: true },
   { name: 'poshold', insert: 'poshold();', sig: 'poshold()', desc: 'หยุดนิ่ง ล็อกตำแหน่ง ~1.2 วินาที ใช้ก่อนปล่อยบอลหรือยิง', group: 'เคลื่อนที่', quick: true },
   { name: 'settle', insert: 'settle([[500]]);', sig: 'settle(มิลลิวินาที)', desc: 'หยุดรอ (เหมือน delay(ms) ใน Arduino)', group: 'เคลื่อนที่' },
-  { name: 'reload', insert: 'reload();', sig: 'reload()', desc: 'คนแข่งใส่บอลชุดซ้าย 20 + ชุดขวา 20 ลูก (ตอนจอดบนแท่นเท่านั้น)', group: 'ภารกิจ' },
   { name: 'turnByHand', insert: 'turnByHand([[180]]);', sig: 'turnByHand(องศา)', desc: 'คนแข่งหมุนตัวโดรนด้วยมือตอนจอดบนแท่น', group: 'ภารกิจ' },
   { name: 'drop', insert: 'drop();', sig: 'drop()', desc: 'ปล่อยบอลชุดถัดไป 20 ลูก (ชุดซ้ายก่อน แล้วชุดขวา)', group: 'ภารกิจ' },
   { name: 'pop', insert: 'pop();', sig: 'pop()', desc: 'แตะลูกโป่งด้วยเข็มที่หัวโดรน (บินผ่านลูกโป่งก็แตกเอง)', group: 'ภารกิจ' },
@@ -39,8 +38,9 @@ export const canon = (n: string) => n.toLowerCase().replace(/_/g, '');
 export const KNOWN = new Set([
   ...COMMANDS.map((c) => canon(c.name)),
   ...DRONE_NAMES, ...PARDUINO_NAMES, ...FULL_NAMES, ...BARE_OK,
-  'calibrateandelay', 'calibrateanddelay', 'calibrate', 'setheight', 'turn', 'wait', 'delay', 'hold', 'load', 'rotatebyhand', 'handturn', 'needle', 'shootb', 'shoots1', 'shoots2',
+  'calibrateandelay', 'calibrateanddelay', 'calibrate', 'setheight', 'turn', 'wait', 'delay', 'hold', 'rotatebyhand', 'handturn', 'needle', 'shootb', 'shoots1', 'shoots2',
   'open_pair_ch1_ch4', 'open_pair_ch2_ch3', 'open_all_ball_gate',
+  ...Array.from({ length: 11 }, (_, i) => `onKey${i + 1}`),
   'for', 'if', 'while', 'switch', 'return', 'setup', 'loop', 'begin', 'beginDefault', 'poll', 'print', 'println', 'pinMode', 'digitalWrite', 'keyDo', 'main',
 ].map(canon));
 

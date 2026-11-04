@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 
 /** กรอบ squircle เต็มจอ + เส้นบอกความคืบหน้าการเลื่อน (อัปเดตผ่าน ref ไม่ re-render) */
-export function Hud() {
+export function Hud({ landing = false }: { landing?: boolean }) {
   const refs = useRef<Record<string, HTMLElement | null>>({});
   useEffect(() => {
     let raf = 0;
@@ -26,7 +26,7 @@ export function Hud() {
   const r = (k: string) => (el: HTMLElement | null) => { refs.current[k] = el; };
   return (
     <div
-      className="pointer-events-none fixed inset-2 z-[300] hidden squircle-panel overflow-hidden border border-line sm:block"
+      className={`pointer-events-none fixed inset-2 hidden squircle-panel overflow-hidden border border-line sm:block ${landing ? 'z-[300]' : 'z-[39]'}`}
       style={{ boxShadow: '0 0 0 100vmax var(--canvas)' }}
       aria-hidden
     >

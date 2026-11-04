@@ -6,7 +6,7 @@ import { COMMANDS, KNOWN, canon, type Cmd } from '@/flight/commands';
 const LINE = 24; // px ต่อบรรทัด (leading-6)
 
 /** ไฮไลต์: คอมเมนต์ · ชื่อคำสั่งที่รู้จัก (น้ำเงิน) · ชื่อที่ไม่รู้จัก (ขีดเส้นแดง) · ตัวเลข · เครื่องหมาย */
-function highlight(code: string) {
+export function highlightCode(code: string) {
   // ชื่อฟังก์ชันที่ผู้ใช้เขียนเอง (void ชื่อ()) ไม่ต้องขีดเส้นแดง
   const defined = new Set([...code.matchAll(/\bvoid\s+(\w+)/g)].map((m) => m[1]));
   return code.split('\n').map((line, i) => {
@@ -35,7 +35,7 @@ type Sugg = { cmd: Cmd; word: string; start: number };
  * ตัวแก้โค้ดของตัวจำลอง: ไฮไลต์สีตามชนิด · ชื่อคำสั่งผิดขีดเส้นแดง · พิมพ์แล้วมี suggestion (↑↓ เลือก, Tab/Enter ใส่, Esc ปิด)
  * ใต้ช่องมีปุ่มแทรกคำสั่งที่ใช้บ่อย ไม่ต้องพิมพ์เอง
  */
-export function CodeEditor({ value, onChange, rows = 14, name, label = 'โค้ด', fill = false, commands = COMMANDS }: { value: string; onChange: (v: string) => void; rows?: number; name?: string; label?: string; fill?: boolean; /** รายการคำสั่งตามโหมดการเขียน (ดู commandsFor) */ commands?: Cmd[] }) {
+export function CodeEditor({ value, onChange, rows = 14, name, id, autoFocus, label = 'โค้ด', fill = false, commands = COMMANDS, quickLayout = 'row', showQuick = true }: { value: string; onChange: (v: string) => void; rows?: number; name?: string; id?: string; autoFocus?: boolean; label?: string; fill?: boolean; /** รายการคำสั่งตามโหมดการเขียน (ดู commandsFor) */ commands?: Cmd[]; quickLayout?: 'row' | 'grid'; showQuick?: boolean }) {
   const ta = useRef<HTMLTextAreaElement>(null);
   const pre = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ top: 0, left: 0 });
@@ -44,7 +44,7 @@ export function CodeEditor({ value, onChange, rows = 14, name, label = 'โค�
   const [caret, setCaret] = useState({ line: 0, col: 0 });
 
   const lines = useMemo(() => value.split('\n').length, [value]);
-  const html = useMemo(() => highlight(value), [value]);
+  const html = useMemo(() => highlightCode(value), [value]);
 
   const place = (raw: string, from: number, to: number) => {
     const text = raw;
@@ -263,21 +263,26 @@ export function CodeEditor({ value, onChange, rows = 14, name, label = 'โค�
 
   return (
     <div className={fill ? 'flex h-full min-h-0 flex-col' : 'grid gap-2'}>
-      <div className={`flex gap-1.5 ${fill ? 'flex-nowrap overflow-x-auto overscroll-x-contain border-b border-line bg-surface-2/40 px-3 py-2' : 'flex-wrap'}`} role="group" aria-label="แทรกคำสั่งที่ใช้บ่อย">
-        <span className="mr-1 shrink-0 self-center text-sm text-muted-foreground">แทรกเร็ว:</span>
+      {showQuick && <div className={`${quickLayout === 'grid' ? 'grid grid-cols-2 gap-2 border-b border-line bg-surface-2/40 p-3 sm:grid-cols-3' : `flex gap-1.5 ${fill ? 'flex-nowrap overflow-x-auto overscroll-x-contain border-b border-line bg-surface-2/40 px-3 py-2' : 'flex-wrap'}`}`} role="group" aria-label="ปุ่มเพิ่มคำสั่งบิน">
+        {quickLayout !== 'grid' && <span className="mr-1 shrink-0 self-center text-sm text-muted-foreground">แทรกเร็ว:</span>}
         {commands.filter((c) => c.quick).map((c) => (
-          <button key={c.name} type="button" onClick={() => insertQuick(c)} title={c.desc} className="min-h-9 shrink-0 squircle-xl border border-line bg-surface-2 px-2.5 font-mono text-sm font-semibold text-blue-700 transition-colors hover:bg-muted dark:text-sky-300">{c.insert.replace(/\[\[|\]\]/g, '').replace(/\(.*\);$/, '()')}</button>
+          <button key={c.name} type="button" onClick={() => insertQuick(c)} title={c.desc} className={`min-h-10 squircle-xl border border-line bg-surface px-2.5 text-left transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue ${quickLayout === 'grid' ? 'grid content-center gap-0.5' : 'shrink-0'}`}>
+            <span className="font-mono text-sm font-semibold text-brand-blue">{c.insert.replace(/\[\[|\]\]/g, '').replace(/\(.*\);$/, '()')}</span>
+            {quickLayout === 'grid' && <span className="text-xs font-normal text-muted-foreground">{c.desc.split(' (')[0].split(' · ')[0]}</span>}
+          </button>
         ))}
-      </div>
+      </div>}
 
       <div className={`relative grid grid-cols-[auto_minmax(0,1fr)] overflow-hidden bg-[#fbfbfd] font-mono text-sm leading-6 dark:bg-[#10131a] ${fill ? 'min-h-0 flex-1' : 'squircle-2xl border border-line focus-within:border-brand-blue'}`}>
-        <div aria-hidden className="select-none overflow-hidden border-r border-line bg-surface-2/60 px-2 py-3 text-right text-zinc-400" style={fill ? undefined : { minHeight: rows * LINE + 24 }}>
+        <div aria-hidden className="select-none overflow-hidden border-r border-line bg-surface-2/60 px-2 py-3 text-right text-zinc-400" style={fill ? undefined : { height: rows * LINE + 24 }}>
           <div style={{ transform: `translateY(${-scroll.top}px)` }}>{Array.from({ length: Math.max(lines, rows) }, (_, i) => <div key={i} className="h-6">{i + 1}</div>)}</div>
         </div>
         <div className="relative min-w-0 overflow-hidden" style={fill ? undefined : { height: rows * LINE + 24 }}>
           <div ref={pre} aria-hidden className="pointer-events-none absolute left-0 top-0 whitespace-pre p-3" style={{ transform: `translate(${-scroll.left}px, ${-scroll.top}px)` }}>{html}</div>
           <textarea
             ref={ta}
+            id={id}
+            autoFocus={autoFocus}
             name={name}
             aria-label={label}
             value={value}
@@ -291,7 +296,7 @@ export function CodeEditor({ value, onChange, rows = 14, name, label = 'โค�
             onClick={(e) => update(e.currentTarget.value, e.currentTarget.selectionStart)}
             onBlur={() => setTimeout(() => setSugg([]), 120)}
             onScroll={(e) => setScroll({ top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft })}
-            className="absolute inset-0 size-full resize-none whitespace-pre bg-transparent p-3 font-mono text-sm leading-6 text-transparent caret-foreground outline-none selection:bg-brand-blue/25"
+            className="absolute inset-0 size-full resize-none overflow-auto whitespace-pre bg-transparent p-3 font-mono text-sm leading-6 text-transparent caret-foreground outline-none selection:bg-brand-blue/25"
           />
           {sugg.length > 0 && (
             <ul role="listbox" aria-label="คำแนะนำคำสั่ง" className="absolute z-20 w-[min(22rem,calc(100%-1rem))] overflow-hidden squircle-xl border border-line bg-popover p-1 shadow-xl"

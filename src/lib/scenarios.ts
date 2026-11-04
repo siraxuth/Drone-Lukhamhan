@@ -25,7 +25,18 @@ export type SceneObject =
 export type StartPoint = { x: number; y: number; yaw: number };
 /** ฐาน = แท่นที่ลงจอดแล้วหยุดเวลา: start = อยู่ที่จุดเริ่ม · custom = อยู่ตำแหน่งอื่น · none = ไม่มีฐาน (ลงตรงไหนก็จบภารกิจ) */
 export type BaseSpec = { mode: 'start' | 'custom' | 'none'; x?: number; y?: number };
-export type ScenarioConfig = { pattern: ScenarioPattern; event: EventId; objects: SceneObject[]; start?: StartPoint; base?: BaseSpec };
+export type ScenarioConfig = {
+  pattern: ScenarioPattern;
+  event: EventId;
+  objects: SceneObject[];
+  start?: StartPoint;
+  base?: BaseSpec;
+  /** Paired mission selector metadata. Kept in the existing JSON config. */
+  pairId?: string;
+  variant?: 'A' | 'B';
+  tags?: string[];
+  requiresPayload?: boolean;
+};
 
 export const DEFAULT_START: StartPoint = { x: 0, y: 0, yaw: 0 };
 export const DEFAULT_BASE: BaseSpec = { mode: 'start' };
@@ -60,6 +71,10 @@ const configSchema = z.object({
   objects: z.array(objectSchema).max(60),
   start: z.object({ x: num(-4.8, 4.8), y: num(-4.8, 4.8), yaw: num(0, 359) }).optional(),
   base: z.object({ mode: z.enum(['start', 'custom', 'none']), x: num(-4.8, 4.8).optional(), y: num(-4.8, 4.8).optional() }).optional(),
+  pairId: z.string().max(80).optional(),
+  variant: z.enum(['A', 'B']).optional(),
+  tags: z.array(z.string().max(40)).max(8).optional(),
+  requiresPayload: z.boolean().optional(),
 });
 
 export const DEFAULT_CONFIG: ScenarioConfig = { pattern: 'grid5', event: 'mission', objects: [] };
@@ -83,7 +98,7 @@ export type ScenarioView = {
   id: string; slug: string; title: string; briefHtml: string; starter: string; level: string; order: number; config: ScenarioConfig;
 };
 
-export const LEVELS = ['เริ่มต้น', 'กลาง', 'ยาก'] as const;
+export const LEVELS = ['เริ่มต้น', 'กลาง', 'ยาก', 'โหดมาก'] as const;
 
 /** ชื่อช่องกริด: คอลัมน์ A–E (ซ้าย→ขวา) แถว 1–5 (ล่าง→บน) เช่น กึ่งกลาง = C3 */
 export const cellName = (x: number, y: number) => `${'ABCDE'[Math.round(x) + 2] ?? '?'}${Math.round(y) + 3}`;

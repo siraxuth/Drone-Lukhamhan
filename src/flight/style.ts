@@ -28,7 +28,7 @@ export const PARDUINO_NAMES = new Set([
 /** ชื่อเต็มของโหมด full = ชื่อแบบ pArduino-> บวกชื่อที่ไม่มี _cm (move_left แทน move_left_cm) */
 export const FULL_NAMES = new Set([...PARDUINO_NAMES, 'move_forward', 'move_backward', 'move_left', 'move_right']);
 /** เขียนเปล่าๆ ได้ในทุกโหมด: ฟังก์ชัน Arduino และคำสั่งภารกิจของตัวจำลอง (บรรจุ/ปล่อย/แตะ/ยิง) */
-export const BARE_OK = new Set(['delay', 'reload', 'turnByHand', 'drop', 'pop', 'shoot', 'shot_b']);
+export const BARE_OK = new Set(['delay', 'turnByHand', 'drop', 'pop', 'shoot', 'shot_b']);
 
 const canonOf = (n: string) => n.toLowerCase().replace(/_/g, '');
 

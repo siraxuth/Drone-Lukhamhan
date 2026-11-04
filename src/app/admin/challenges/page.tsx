@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { RowMenu } from '../client';
 import { Notice, PageHead, StatusBadge } from '../ui';
 
-const TONE: Record<string, string> = { เริ่มต้น: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300', กลาง: 'bg-amber-500/15 text-amber-700 dark:text-amber-300', ยาก: 'bg-rose-500/15 text-rose-700 dark:text-rose-300' };
+const TONE: Record<string, string> = { เริ่มต้น: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300', กลาง: 'bg-amber-500/15 text-amber-700 dark:text-amber-300', ยาก: 'bg-rose-500/15 text-rose-700 dark:text-rose-300', 'โหดมาก': 'bg-brand-red/15 text-brand-red' };
 
 export default async function ChallengesPage({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string }> }) {
   const { ok, error } = await searchParams;

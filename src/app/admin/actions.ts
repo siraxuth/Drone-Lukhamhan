@@ -108,7 +108,7 @@ const challengeSchema = z.object({
   brief: z.string(),
   starter: z.string(),
   seasonId: z.string(),
-  level: z.enum(['เริ่มต้น', 'กลาง', 'ยาก']),
+  level: z.enum(['เริ่มต้น', 'กลาง', 'ยาก', 'โหดมาก']),
   order: z.coerce.number().int().min(0).max(999),
   slug: z.string().regex(/^[a-z0-9-]{0,60}$/, 'slug ใช้ได้เฉพาะ a-z 0-9 และขีดกลาง'),
 });

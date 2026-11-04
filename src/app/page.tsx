@@ -1,6 +1,5 @@
 import { SmoothScroll } from '@/motion/SmoothScroll';
 import { SceneLayer } from '@/scene/SceneLayer';
-import { Hud } from '@/scene/Hud';
 import { Header } from '@/sections/Header';
 import { Stage } from '@/sections/Stage';
 import { Ribbon } from '@/sections/Ribbon';
@@ -25,7 +24,6 @@ export default function Home() {
       <link rel="preload" href="/models/drone-lite.glb" as="fetch" crossOrigin="anonymous" media="(max-width: 767px)" fetchPriority="high" />
       <SmoothScroll />
       <SceneLayer />
-      <Hud />
       <Tour id="home" steps={homeTour} waitForLoader />
       <Header frame />
       <main className="relative z-10">

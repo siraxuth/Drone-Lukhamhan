@@ -10,7 +10,7 @@ import { UserMenu, UserMenuMobile } from '@/components/UserMenu';
 import { Button } from '@/components/ui/button';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer';
-import { ScrollProgress } from '@/components/ui/scroll-progress';
+import { Hud } from '@/scene/Hud';
 
 type Sub = { href: string; label: string; hint: string; icon: typeof Plane; on: (path: string) => boolean };
 type NavLink = { href: string; label: string; spy?: 'how' | 'showcase'; children?: readonly Sub[] };
@@ -40,10 +40,9 @@ const links: readonly NavLink[] = [
  * Navbar ลอย: เลื่อนลงแล้วหดเป็นแคปซูลเล็กพร้อมเงา · เมนูมีแถบไฮไลต์ที่ไหลตามเมาส์ · จุดสีฟ้าบอกหน้า/ส่วนที่อยู่
  * มือถือ: ปุ่มสามขีดเปิด Drawer (shadcn) จากขวา เมนูไล่ขึ้นทีละรายการ
  */
-/** frame = หน้าแรก: navbar เป็นติ่ง (notch) ห้อยจากขอบบนลงมาเหมือนกล้องหน้า MacBook โคนติ่งโค้งเว้าเข้าหาเส้นกรอบ (Hud) */
+/** frame ยก Navbar หน้าแรกขึ้นเหนือกรอบ Hud */
 export function Header({ frame = false }: { frame?: boolean } = {}) {
   const pathname = usePathname();
-  const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const [spy, setSpy] = useState<'how' | 'showcase' | null>(null);
   const [hl, setHl] = useState<{ left: number; width: number } | null>(null);
@@ -53,7 +52,6 @@ export function Header({ frame = false }: { frame?: boolean } = {}) {
     let raf = 0;
     const update = () => {
       raf = 0;
-      setScrolled(scrollY > 24);
       if (location.pathname !== '/') return setSpy(null);
       const sc = document.getElementById('showcase');
       if (sc && sc.getBoundingClientRect().top < innerHeight * 0.5) setSpy('showcase');
@@ -81,21 +79,17 @@ export function Header({ frame = false }: { frame?: boolean } = {}) {
   const point = (el: HTMLElement) => setHl({ left: el.offsetLeft, width: el.offsetWidth });
 
   return (
-    <header className={frame ? 'pointer-events-none fixed inset-x-0 top-0 z-[310]' : 'fixed inset-x-0 top-3 z-40 px-3'}>
+    <>
+    <Hud landing={frame} />
+    <header className={`pointer-events-none fixed inset-x-0 top-0 ${frame ? 'z-[310]' : 'z-40'}`}>
       <nav
         data-tour="menu"
-        data-scrolled={scrolled}
         aria-label="เมนูหลัก"
-        className={frame
-          ? 'pointer-events-auto relative mx-auto mt-0 flex h-14 sm:mt-2 w-[calc(100%-1rem)] items-center justify-between gap-3 border border-t-0 border-line bg-[var(--canvas)] px-4 squircle-b-notch sm:w-fit sm:min-w-[22rem] sm:max-w-[calc(100%-4rem)] lg:gap-8 lg:px-6'
-          : `squircle-2xl relative mx-auto flex max-w-[84rem] items-center justify-between gap-3 border border-line bg-surface/90 px-4 py-2 backdrop-blur-md transition-[max-width,padding,box-shadow,background-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] data-[scrolled=true]:max-w-6xl data-[scrolled=true]:py-1.5 data-[scrolled=true]:bg-surface/95`}
+        className="pointer-events-auto relative mx-auto flex h-14 w-[calc(100%-1rem)] items-center justify-between gap-3 border border-t-0 border-line bg-canvas px-4 squircle-b-notch sm:mt-2 sm:w-fit sm:min-w-[22rem] sm:max-w-[calc(100%-4rem)] lg:gap-8 lg:px-6"
       >
-        {frame && (
-          <>
-            <span aria-hidden className="notch-fillet notch-fillet-l" />
-            <span aria-hidden className="notch-fillet notch-fillet-r" />
-          </>
-        )}
+        <span aria-hidden className="pointer-events-none absolute -inset-x-px -top-2 hidden h-[9px] bg-canvas sm:block" />
+        <span aria-hidden className="notch-fillet notch-fillet-l" />
+        <span aria-hidden className="notch-fillet notch-fillet-r" />
         <Link href="/" aria-label="หน้าแรก" className="shrink-0 transition-transform hover:scale-[1.03]"><Logo /></Link>
 
         <ul ref={list} onMouseLeave={() => setHl(null)} className="relative hidden items-center lg:flex">
@@ -168,7 +162,6 @@ export function Header({ frame = false }: { frame?: boolean } = {}) {
           </button>
         </div>
       </nav>
-      <ScrollProgress className="top-0 z-50 h-[3px] bg-none bg-brand-blue" />
 
       <Drawer open={open} onOpenChange={setOpen} swipeDirection="right">
         <DrawerContent className="h-dvh w-[min(22rem,88vw)] [corner-shape:squircle] !rounded-l-3xl bg-surface">
@@ -236,5 +229,6 @@ export function Header({ frame = false }: { frame?: boolean } = {}) {
         </DrawerContent>
       </Drawer>
     </header>
+    </>
   );
 }

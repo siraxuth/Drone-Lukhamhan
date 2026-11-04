@@ -4,8 +4,9 @@
  */
 import { db } from '../src/lib/db';
 import { scenarioSeeds } from '../src/lib/scenario-seeds';
+import { expandedMissions } from '../src/lib/mission-expansion';
 
-for (const s of scenarioSeeds) {
+for (const s of [...scenarioSeeds, ...expandedMissions]) {
   const data = { title: s.title, brief: s.brief, starter: s.starter, config: s.config as object, level: s.level, order: s.order, published: true, slug: s.slug };
   const found = await db.challenge.findFirst({ where: { slug: s.slug } });
   if (found) await db.challenge.update({ where: { id: found.id }, data });
