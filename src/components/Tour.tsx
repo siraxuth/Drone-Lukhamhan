@@ -202,8 +202,8 @@ export function Tour({ id, steps, waitForLoader = false, forceQuery, autoOpenImm
   const sheet = vp.w < 640;
   const short = !sheet && vp.h < 520;
   let pos: React.CSSProperties;
-  if (step?.wide) pos = { left: 12, right: 12, top: Math.max(12, (vp.h - cardH) / 2) };
-  else if (sheet) pos = { left: 12, right: 12, bottom: 'max(12px, env(safe-area-inset-bottom))', maxWidth: 520, marginInline: 'auto' };
+  if (sheet) pos = { left: 12, right: 12, bottom: 'max(12px, env(safe-area-inset-bottom))', maxWidth: 520, marginInline: 'auto' };
+  else if (step?.wide) pos = { left: 12, right: 12, top: Math.max(12, (vp.h - cardH) / 2) };
   else if (short) pos = { right: 'max(12px, env(safe-area-inset-right))', top: 12, width: Math.min(320, vp.w * 0.42) };
   else if (!box) pos = { left: Math.max(12, (vp.w - cw) / 2), top: Math.max(12, (vp.h - cardH) / 2), width: cw };
   else {
