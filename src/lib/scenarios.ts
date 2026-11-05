@@ -17,7 +17,7 @@ type Base = { id: string; x: number; y: number };
 export type SceneObject =
   | (Base & { type: 'waypoint'; r?: number; zMin?: number; zMax?: number; points?: number; order?: number })
   | (Base & { type: 'hoop'; size?: number; yaw?: number; zMin?: number; zMax?: number; points?: number })
-  | (Base & { type: 'platform'; r?: number })
+  | (Base & { type: 'platform'; r?: number; requiredBalls?: number })
   | (Base & { type: 'balloon'; z?: number })
   | (Base & { type: 'target'; cz?: number; r?: number });
 
@@ -61,7 +61,7 @@ const base = { id: z.string().min(1).max(40), x: num(-5, 5), y: num(-5, 5) };
 const objectSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('waypoint'), r: num(10, 200).optional(), zMin: num(0, 300).optional(), zMax: num(0, 300).optional(), points: num(0, 100).optional(), order: num(1, 99).optional() }),
   z.object({ ...base, type: z.literal('hoop'), size: num(0.3, 3).optional(), yaw: num(-360, 360).optional(), zMin: num(0, 300).optional(), zMax: num(0, 300).optional(), points: num(0, 100).optional() }),
-  z.object({ ...base, type: z.literal('platform'), r: num(0.2, 2).optional() }),
+  z.object({ ...base, type: z.literal('platform'), r: num(0.2, 2).optional(), requiredBalls: z.number().int().min(1).max(40).optional() }),
   z.object({ ...base, type: z.literal('balloon'), z: num(30, 250).optional() }),
   z.object({ ...base, type: z.literal('target'), cz: num(30, 250).optional(), r: num(10, 100).optional() }),
 ]);
@@ -110,7 +110,7 @@ export function maxScore(c: ScenarioConfig): number | null {
   for (const o of c.objects) {
     if (o.type === 'waypoint') s += o.points ?? 10;
     else if (o.type === 'hoop') s += o.points ?? 15;
-    else if (o.type === 'platform') s += 20;
+    else if (o.type === 'platform') s += o.requiredBalls ?? 20;
     else if (o.type === 'balloon') s += 5;
     else if (o.type === 'target') s += 20;
   }

@@ -56,7 +56,7 @@ export function buildScenarioConfig(sc: ScenarioConfig): FlightConfig {
     cfg.padAt = pb ? { x: sx(pb.x), y: sy(pb.y) } : null;
     cfg.hoop = { half: 75, zMin: 0, zMax: 1000 };
     cfg.points = { ...base.points, padThroughHoop: 10, padNoHoop: 10 };
-    cfg.platforms = sc.objects.flatMap((o) => (o.type === 'platform' ? [{ id: o.id, x: sx(o.x), y: sy(o.y), r: (o.r ?? 0.5) * 100, gates: 'any' as const }] : []));
+    cfg.platforms = sc.objects.flatMap((o) => (o.type === 'platform' ? [{ id: o.id, x: sx(o.x), y: sy(o.y), r: (o.r ?? 0.5) * 100, requiredBalls: o.requiredBalls, gates: 'any' as const }] : []));
     cfg.balloons = sc.objects.flatMap((o) => (o.type === 'balloon' ? [{ id: o.id, x: sx(o.x), y: sy(o.y), z: o.z ?? 145 }] : []));
     cfg.boards = sc.objects.flatMap((o) => (o.type === 'target' ? [{ id: o.id, x: sx(o.x), y: sy(o.y), cz: o.cz ?? 140, r: o.r ?? 50 }] : []));
   }
