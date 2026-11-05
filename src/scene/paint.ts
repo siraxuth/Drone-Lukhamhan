@@ -1,29 +1,37 @@
 import { useEffect, useState } from 'react';
 import * as THREE from 'three';
 
-/** โหมดสว่างใช้โดรนสีขาว โหมดมืดใช้สีดำเดิมของโมเดล · เลนส์ ไฟฟ้า ไฟแดง ไม่เปลี่ยน */
-const WHITE_PAINT: Record<string, { color: string; metalness: number; roughness: number }> = {
-  Black: { color: '#f2f2f4', metalness: 0.05, roughness: 0.42 },
-  Graphite: { color: '#dcdce0', metalness: 0.2, roughness: 0.35 },
-  Axle: { color: '#b4b4ba', metalness: 0.3, roughness: 0.4 },
-  Prop: { color: '#f7f7f9', metalness: 0.05, roughness: 0.4 },
-};
-
-/** ทาสีตามธีม เรียกซ้ำได้ (จำสีเดิมของโมเดลไว้ใน userData ครั้งแรก) */
+/** โทนของโดรนหน้า landing เท่านั้น: สว่าง = ขาวผสมเทาเข้ม, มืด = ดำ */
 export function paintForTheme(model: THREE.Object3D, dark: boolean) {
   model.traverse((o) => {
-    const m = o as THREE.Mesh;
-    if (!m.isMesh) return;
-    let mat = m.material as THREE.MeshStandardMaterial;
-    if (!mat.userData.base) {
-      mat = mat.clone();
-      mat.userData.base = { c: mat.color.getHex(), m: mat.metalness, r: mat.roughness };
-      m.material = mat;
-    }
-    const base = mat.userData.base as { c: number; m: number; r: number };
-    const paint = WHITE_PAINT[mat.name];
-    if (!dark && paint) { mat.color.set(paint.color); mat.metalness = paint.metalness; mat.roughness = paint.roughness; }
-    else { mat.color.setHex(base.c); mat.metalness = base.m; mat.roughness = base.r; }
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const paint = (source: THREE.Material): THREE.Material => {
+      const material = source.clone() as THREE.MeshStandardMaterial;
+      if (!material.color) return material;
+      const name = material.name;
+      if (dark) {
+        material.color.set(name === 'White motor index' ? '#e6e8eb' : '#000000');
+        material.metalness = 0;
+        material.roughness = name === 'Dark grey optical glass' ? 0.3 : 0.68;
+      } else {
+        const lightColors: Record<string, string> = {
+          Black: '#ffffff',
+          'White battery wrap': '#858a92',
+          'White motor index': '#ffffff',
+          'Dark grey optical glass': '#454a52',
+          'Graphite recesses': '#555b64',
+          'Graphite hardware': '#777d86',
+          'Soft graphite polymer': '#666c75',
+          'Graphite connectors': '#5e646d',
+        };
+        material.color.set(lightColors[name] ?? '#666c75');
+        material.metalness = 0.04;
+        material.roughness = 0.52;
+      }
+      return material;
+    };
+    mesh.material = Array.isArray(mesh.material) ? mesh.material.map(paint) : paint(mesh.material);
   });
 }
 

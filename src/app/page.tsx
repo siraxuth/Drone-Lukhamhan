@@ -1,3 +1,4 @@
+import { LANDING_DRONE_MODEL } from '@/lib/drone-assets';
 import { SmoothScroll } from '@/motion/SmoothScroll';
 import { SceneLayer } from '@/scene/SceneLayer';
 import { Header } from '@/sections/Header';
@@ -19,9 +20,9 @@ export const revalidate = 60;
 export default function Home() {
   return (
     <>
-      {/* ดึงไฟล์โมเดลล่วงหน้าตั้งแต่ HTML มาถึง: จอใหญ่ใช้ตัวละเอียด (249 KB) จอเล็กใช้ตัวเบา (141 KB) */}
-      <link rel="preload" href="/models/drone.glb" as="fetch" crossOrigin="anonymous" media="(min-width: 768px)" fetchPriority="high" />
-      <link rel="preload" href="/models/drone-lite.glb" as="fetch" crossOrigin="anonymous" media="(max-width: 767px)" fetchPriority="high" />
+      {/* ดึงไฟล์โมเดลล่วงหน้าตั้งแต่ HTML มาถึง: ใช้ URL รุ่นเดียวกับตัวแสดง 3D เพื่อไม่โหลดซ้ำ */}
+      <link rel="preload" href={LANDING_DRONE_MODEL.high} as="fetch" crossOrigin="anonymous" media="(min-width: 768px)" fetchPriority="high" />
+      <link rel="preload" href={LANDING_DRONE_MODEL.low} as="fetch" crossOrigin="anonymous" media="(max-width: 767px)" fetchPriority="high" />
       <SmoothScroll />
       <SceneLayer />
       <Tour id="home" steps={homeTour} waitForLoader />

@@ -10,7 +10,7 @@ import { paintForTheme, useDarkTheme } from './paint';
 import { poses, type Pose } from './poses';
 import type { Quality } from './quality';
 
-const MODEL = { high: '/models/drone.glb', low: '/models/drone-lite.glb' } as const;
+import { LANDING_DRONE_MODEL as MODEL } from '@/lib/drone-assets';
 
 type Seg = { name: string; center: number; top: number; height: number };
 
@@ -345,13 +345,13 @@ export default function Drone3D({ quality, onFail, onReady }: { quality: Exclude
       <ambientLight intensity={fx ? 0.9 : 1.6} />
       <hemisphereLight args={['#c7d7ff', '#1a1a22', fx ? 0.4 : 1.2]} />
       <directionalLight position={[4, 6, 5]} intensity={3.2} />
-      <directionalLight position={[-5, 2, -3]} intensity={2.4} color="#6aa8ff" />
-      <directionalLight position={[5, -1, -4]} intensity={1.8} color="#ff5a7a" />
+      <directionalLight position={[-5, 2, -3]} intensity={2.4} color="#ffffff" />
+      <directionalLight position={[5, -1, -4]} intensity={1.8} color="#ffffff" />
       {fx && (
         <Environment resolution={64}>
           <Lightformer form="rect" intensity={4} position={[0, 5, 3]} scale={[10, 3, 1]} />
-          <Lightformer form="rect" intensity={3} color="#3b82f6" position={[-6, 0, 2]} scale={[2, 8, 1]} />
-          <Lightformer form="rect" intensity={3} color="#ef4466" position={[6, 1, -2]} scale={[2, 8, 1]} />
+          <Lightformer form="rect" intensity={3} color="#ffffff" position={[-6, 0, 2]} scale={[2, 8, 1]} />
+          <Lightformer form="rect" intensity={3} color="#ffffff" position={[6, 1, -2]} scale={[2, 8, 1]} />
         </Environment>
       )}
       <Drone url={MODEL[quality]} onReady={onReady} />
