@@ -13,7 +13,10 @@ function learnerBrief(html: string) {
   return clean(html
     .replace(/<b>\s*ภารกิจ\s+[AB]\s*<\/b>\s*·\s*/gi, '')
     .replace(/reload\s*\(\s*\)/gi, 'เติมสัมภาระจากแผงด้านขวา')
-    .replace(/ตำแหน่ง reload\(\)/gi, 'แผงเตรียมโดรนด้านขวา'));
+    .replace(/ตำแหน่ง reload\(\)/gi, 'แผงเตรียมโดรนด้านขวา')
+    .replace(/ผ่านจุดตรวจตามลำดับ/g, 'ผ่านจุดตรวจให้ครบ โดยเลือกทางบินเองได้')
+    .replace(/ผ่านจุดตรวจ\s*\d+\s*จุดตามลำดับ/g, (text) => text.replace('ตามลำดับ', 'ให้ครบ เลือกทางบินเองได้'))
+    .replace(/จุดผ่านต้องผ่านตามลำดับ ถ้าข้ามจุดจะไม่นับ/g, 'จุดผ่านต้องผ่านให้ครบ เลือกผ่านก่อนหลังเองได้'));
 }
 
 /** Hide legacy pair suffixes retained in already-published challenge records. */
@@ -31,10 +34,14 @@ export async function getScenarios(): Promise<ScenarioView[]> {
     level: s.level, order: s.order, config: { ...s.config, requiresPayload: s.config.requiresPayload ?? /\bdrop\s*\(/.test(s.solution) },
   }));
   try {
-    const rows = await db.challenge.findMany({ where: { published: true }, orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] });
+    const rows = await db.challenge.findMany({ orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] });
     const merged = new Map(authored.map((s) => [s.slug, s]));
     for (const c of rows) {
       const slug = c.slug ?? c.id;
+      if (!c.published) {
+        merged.delete(slug);
+        continue;
+      }
       const config = parseConfig(c.config);
       merged.set(slug, { id: c.id, slug, title: learnerTitle(c.title, slug, config), briefHtml: learnerBrief(c.brief), starter: bindStarterToKey(withoutInlineReload(c.starter)), level: c.level, order: c.order, config: { ...config, requiresPayload: config.requiresPayload ?? (config.event === 'mission' || /\bdrop\s*\(/.test(c.starter) || config.objects.some((o) => o.type === 'platform')) } });
     }

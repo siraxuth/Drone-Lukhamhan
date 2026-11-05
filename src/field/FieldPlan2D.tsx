@@ -1,11 +1,12 @@
 'use client';
 
 import { useRef } from 'react';
-import { COMPETITOR, FIELD } from './layout';
+import { FIELD } from './layout';
 import { heading, type DroneState } from './aim';
 import type { RuleEvent } from '@/rules/types';
 import { cellName } from '@/lib/scenarios';
 import type { SceneSpec } from './SceneObjects';
+import { measureColor, polygonArea, segmentLength, type Measurement } from '@/flight/measurements';
 import { BaseStartLayer, ScenePlanLayer } from './ScenePlan';
 
 /**
@@ -13,8 +14,8 @@ import { BaseStartLayer, ScenePlanLayer } from './ScenePlan';
  * พิกัดตรงกับสนามจริง 1 หน่วย = 1 เมตร, y เหนืออยู่ด้านบน
  */
 export function FieldPlan2D({
-  event, drone, onDrone, interactive = true, className, scene,
-}: { event: RuleEvent; drone?: DroneState; onDrone?: (p: Partial<DroneState>) => void; interactive?: boolean; className?: string; scene?: SceneSpec }) {
+  event, drone, onDrone, interactive = true, className, scene, measurements = [],
+}: { event: RuleEvent; drone?: DroneState; onDrone?: (p: Partial<DroneState>) => void; interactive?: boolean; className?: string; scene?: SceneSpec; measurements?: Measurement[] }) {
   const svg = useRef<SVGSVGElement>(null);
   const dragging = useRef(false);
   const h = FIELD.size / 2;
@@ -91,11 +92,6 @@ export function FieldPlan2D({
           </>
         )}
 
-        {/* คนแข่ง: ยืนอยู่ในสนามตลอด (ข้างแท่นฝั่งตะวันตก) */}
-        <g>
-          <circle cx={COMPETITOR.home.x} cy={COMPETITOR.home.y} r={0.28} fill="#1d4ed8" stroke="#fff" strokeWidth={0.04} />
-          <circle cx={COMPETITOR.home.x} cy={COMPETITOR.home.y} r={0.11} fill="#d9a074" />
-        </g>
         {/* ทิศหัวโดรน + เส้นเล็ง */}
         {drone && hd && (
           <g>
@@ -106,13 +102,26 @@ export function FieldPlan2D({
             </g>
           </g>
         )}
+        {measurements.map((item) => {
+          const color = measureColor(item.id), points = item.points;
+          return <g key={item.id} pointerEvents="none">
+            {item.kind === 'area' && points.length >= 3 && <polygon points={points.map((p) => `${p.x},${p.y}`).join(' ')} fill={color} fillOpacity={0.16} />}
+            {points.length >= 2 && <polyline points={points.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke={color} strokeWidth={0.08} />}
+            {item.kind === 'area' && points.length >= 3 && <line x1={points[points.length - 1].x} y1={points[points.length - 1].y} x2={points[0].x} y2={points[0].y} stroke={color} strokeWidth={0.06} strokeDasharray="0.15 0.1" />}
+            {points.map((p, index) => <circle key={index} cx={p.x} cy={p.y} r={0.14} fill={color} stroke="#fff" strokeWidth={0.04} />)}
+          </g>;
+        })}
       </g>
+      {measurements.flatMap((item) => item.points.slice(1).map((p, index) => {
+        const first = item.points[index];
+        return <text key={`${item.id}-${index}`} x={(first.x + p.x) / 2} y={-(first.y + p.y) / 2 - 0.12} textAnchor="middle" fontSize={0.3} fontWeight={700} fill="#fff" stroke="#111827" strokeWidth={0.08} paintOrder="stroke">{index + 1}→{index + 2} · {segmentLength(first, p).toFixed(2)} ม.</text>;
+      }))}
+      {measurements.filter((item) => item.kind === 'area' && item.points.length >= 3).map((item) => <text key={item.id} x={item.points.reduce((s, p) => s + p.x, 0) / item.points.length} y={-item.points.reduce((s, p) => s + p.y, 0) / item.points.length} textAnchor="middle" fontSize={0.32} fontWeight={800} fill="#fff" stroke="#111827" strokeWidth={0.09} paintOrder="stroke">{polygonArea(item.points).toFixed(2)} ตร.ม.</text>)}
       {/* ป้ายทิศ (ไม่กลับด้าน) */}
       <g fontSize={0.38} fill="var(--muted-foreground)" textAnchor="middle" fontWeight={600}>
         <text x={0} y={-h - 0.35}>เหนือ (ไปข้างหน้า)</text>
         <text x={0} y={h + 0.7}>ใต้ — ที่ผู้แข่งขันยืน</text>
       </g>
-      <rect x={-1} y={h - 0.02} width={2} height={0.45} fill="#8d939e" rx={0.06} />
       {/* ไม้บรรทัดมาตราส่วน 1 ม. */}
       <g stroke="var(--foreground)" strokeWidth={0.05}><line x1={-h} y1={h + 1.15} x2={-h + 1} y2={h + 1.15} /></g>
       <text x={-h + 0.5} y={h + 1.55} fontSize={0.32} textAnchor="middle" fill="var(--foreground)">1 ม.</text>

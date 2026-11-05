@@ -10,7 +10,7 @@ export function EventRules({ event }: { event: RuleEvent }) {
   return (
     <section aria-labelledby={`rules-${event.id}`} className="grid gap-6">
       <div>
-        <h2 id={`rules-${event.id}`} className="font-display text-3xl font-semibold tracking-tight">{event.name}</h2>
+        <h2 id={`rules-${event.id}`} className="font-display text-3xl font-semibold">{event.name}</h2>
         <p className="text-muted-foreground">{event.nameEn}</p>
         <p className="mt-3 max-w-2xl">{event.summary}</p>
         <div className="mt-4 flex flex-wrap gap-2">

@@ -19,7 +19,6 @@ const ScenarioViewport = dynamic(() => import('./ScenarioViewport'), {
   loading: () => <p className="p-6 text-sm text-muted-foreground">กำลังโหลดเครื่องมือจัดสนาม…</p>,
 });
 
-const SNAPS = [{ v: 0, label: 'อิสระ' }, { v: 0.25, label: '25 ซม.' }, { v: 0.5, label: '50 ซม.' }, { v: 1, label: '1 ม. (กลางช่อง)' }];
 const ADD: Array<{ type: SceneObject['type']; Icon: typeof Flag }> = [
   { type: 'waypoint', Icon: Flag }, { type: 'hoop', Icon: RectangleVertical }, { type: 'platform', Icon: Disc3 }, { type: 'balloon', Icon: Circle }, { type: 'target', Icon: TargetIcon },
 ];
@@ -32,11 +31,11 @@ const BASE_MODES: Array<{ mode: BaseSpec['mode']; label: string; text: string }>
 ];
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
-function Num({ label, value, onChange, step = 1, min, max, unit, placeholder }: { label: string; value: number | undefined; onChange: (v: number | undefined) => void; step?: number; min?: number; max?: number; unit?: string; placeholder?: string }) {
+function Num({ label, value, onChange, min, max, unit, placeholder }: { label: string; value: number | undefined; onChange: (v: number | undefined) => void; min?: number; max?: number; unit?: string; placeholder?: string }) {
   return (
     <label className="grid gap-1 text-sm">
       <span className="text-muted-foreground">{label}{unit && <span> ({unit})</span>}</span>
-      <Input type="number" inputMode="decimal" step={step} min={min} max={max} value={value ?? ''} placeholder={placeholder}
+      <Input type="number" inputMode="decimal" step="any" min={min} max={max} value={value ?? ''} placeholder={placeholder}
         onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))} className="h-10 text-base" />
     </label>
   );
@@ -52,7 +51,7 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
   useEffect(() => { if (draft.restoreNonce && draft.fields.config) { try { setCfg(JSON.parse(draft.fields.config) as ScenarioConfig); } catch { /* ignore invalid recovery data */ } } }, [draft.restoreNonce, draft.fields.config]);
   const [sel, setSel] = useState<string | null>(null);
   const [view, setView] = useState<'3d' | '2d'>('3d');
-  const [snap, setSnap] = useState(0.5);
+  const snap = 0;
   const svg = useRef<SVGSVGElement>(null);
   const drag = useRef<string | null>(null); // id วัตถุ หรือ '__start' / '__base'
   const standard = cfg.pattern === 'standard';
@@ -65,12 +64,10 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
   /** ย้ายจุดเริ่ม: ถ้าฐานอยู่ที่จุดเริ่มก็ย้ายตามไปเอง */
   const setStart = (p: Partial<{ x: number; y: number; yaw: number }>) => setCfg((c) => ({ ...c, start: { ...startOf(c), ...p } }));
   const setBase = (mode: BaseSpec['mode']) => setCfg((c) => ({ ...c, base: mode === 'custom' ? { mode, x: c.base?.x ?? 2, y: c.base?.y ?? -2 } : { mode } }));
-  const snapV = (v: number) => (snap ? Math.round(v / snap) * snap : v);
-
   const canAdd = (type: SceneObject['type']) => cfg.objects.length < 60 && (!standard || type === 'waypoint' || type === 'hoop');
   const place = (p: { x: number; y: number }) => ({
-    x: round2(clamp(snapV(p.x), -4.8, 4.8)),
-    y: round2(clamp(snapV(p.y), -4.8, 4.8)),
+    x: round2(clamp(p.x, -4.8, 4.8)),
+    y: round2(clamp(p.y, -4.8, 4.8)),
   });
   const moveItem = (id: string, point: { x: number; y: number }) => {
     const q = place(point);
@@ -117,7 +114,7 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
   };
   const onKey = (e: React.KeyboardEvent) => {
     if (!selected) return;
-    const step = snap || 0.1;
+    const step = 0.1;
     const d: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
     if (d[e.key]) { e.preventDefault(); patch(selected.id, { x: round2(clamp(selected.x + d[e.key][0], -4.8, 4.8)), y: round2(clamp(selected.y + d[e.key][1], -4.8, 4.8)) }); }
     if (e.key === 'Delete' || e.key === 'Backspace') { if ((e.target as HTMLElement).tagName === 'INPUT') return; e.preventDefault(); remove(selected.id); }
@@ -169,11 +166,7 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
           const off = !canAdd(type);
           return <Button key={type} type="button" variant="outline" className="h-10 px-3 text-base" disabled={off} draggable={!off && view === '3d'} onDragStart={(event) => { event.dataTransfer.setData(SCENE_OBJECT_DRAG, type); event.dataTransfer.effectAllowed = 'copy'; }} onClick={() => add(type)}><Icon className="size-4" /> {OBJECT_LABEL[type]}</Button>;
         })}
-        <label className="ml-auto flex items-center gap-2 text-base">ยึดติด
-          <select value={snap} onChange={(e) => setSnap(Number(e.target.value))} className="h-10 squircle-xl border border-input bg-transparent px-2 text-base">
-            {SNAPS.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
-          </select>
-        </label>
+        <span className="ml-auto text-sm text-muted-foreground">ลากวางได้อิสระ ไม่ต้องตรงช่อง</span>
       </div>
 
       {cfg.objects.length >= 60 && <p className="text-sm text-muted-foreground">วัตถุครบ 60 ชิ้นแล้ว ลบออกหนึ่งชิ้นก่อนเพิ่ม</p>}
@@ -233,13 +226,13 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
                 <Input value={selected.id} onChange={(e) => { const v = e.target.value; patch(selected.id, { id: v }); setSel(v); }} className="h-10 text-base" /></label>
               {dup && <p className="text-sm text-brand-red">ชื่อ "{dup}" ซ้ำ ต้องไม่ซ้ำกัน</p>}
               <div className="grid grid-cols-2 gap-3">
-                <Num label="ตำแหน่ง ซ้าย-ขวา (x)" unit="ม." step={0.25} min={-5} max={5} value={selected.x} onChange={(v) => patch(selected.id, { x: clamp(v ?? 0, -5, 5) })} />
-                <Num label="ตำแหน่ง หน้า-หลัง (y)" unit="ม." step={0.25} min={-5} max={5} value={selected.y} onChange={(v) => patch(selected.id, { y: clamp(v ?? 0, -5, 5) })} />
+                <Num label="ตำแหน่งซ้าย-ขวา" unit="ม." min={-5} max={5} value={selected.x} onChange={(v) => patch(selected.id, { x: clamp(v ?? 0, -5, 5) })} />
+                <Num label="ตำแหน่งหน้า-หลัง" unit="ม." min={-5} max={5} value={selected.y} onChange={(v) => patch(selected.id, { y: clamp(v ?? 0, -5, 5) })} />
               </div>
               {cfg.pattern === 'grid5' && Math.abs(selected.x) <= 2.5 && Math.abs(selected.y) <= 2.5 && <p className="text-sm text-muted-foreground">อยู่ช่อง <b>{cellName(selected.x, selected.y)}</b></p>}
               {selected.type === 'waypoint' && (
                 <div className="grid grid-cols-2 gap-3">
-                  <Num label="ลำดับ (ว่าง = ไม่บังคับลำดับ)" value={selected.order} min={1} onChange={(v) => patch(selected.id, { order: v })} />
+                  <Num label="หมายเลขบนจุด (ใช้บอกตำแหน่ง ไม่บังคับลำดับบิน)" value={selected.order} min={1} onChange={(v) => patch(selected.id, { order: v })} />
                   <Num label="คะแนน" value={selected.points ?? 10} min={0} onChange={(v) => patch(selected.id, { points: v ?? 0 })} />
                   <Num label="รัศมีที่นับว่าผ่าน" unit="ซม." value={selected.r ?? 45} min={10} onChange={(v) => patch(selected.id, { r: v })} />
                   <span />
@@ -261,8 +254,8 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <Num label="องศาที่หมุน (กรอกเองได้)" unit="องศา" step={15} value={selected.yaw ?? 0} onChange={(v) => patch(selected.id, { yaw: v ?? 0 })} />
-                    <Num label="ความกว้างช่อง" unit="ม." step={0.1} min={0.3} value={selected.size ?? 1} onChange={(v) => patch(selected.id, { size: v })} />
+                    <Num label="องศาที่หมุน (กรอกเองได้)" unit="องศา" value={selected.yaw ?? 0} onChange={(v) => patch(selected.id, { yaw: v ?? 0 })} />
+                    <Num label="ความกว้างช่อง" unit="ม." min={0.3} value={selected.size ?? 1} onChange={(v) => patch(selected.id, { size: v })} />
                     <Num label="ขอบล่างของช่องสูงจากพื้น" unit="ซม." value={selected.zMin ?? 55} min={0} onChange={(v) => patch(selected.id, { zMin: v })} />
                     <Num label="ขอบบนของช่องสูงจากพื้น" unit="ซม." value={selected.zMax ?? 150} min={0} onChange={(v) => patch(selected.id, { zMax: v })} />
                     <Num label="คะแนนที่ลอดผ่าน" value={selected.points ?? 15} min={0} onChange={(v) => patch(selected.id, { points: v ?? 0 })} />
@@ -271,7 +264,7 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
                 </div>
               )}
               {selected.type === 'platform' && <div className="grid gap-3">
-                <Num label="รัศมีแท่น" unit="ม." step={0.1} min={0.2} max={2} value={selected.r ?? 0.5} onChange={(v) => patch(selected.id, { r: v })} />
+                <Num label="รัศมีแท่น" unit="ม." min={0.2} max={2} value={selected.r ?? 0.5} onChange={(v) => patch(selected.id, { r: v })} />
                 <Num label="จำนวนบอลที่ต้องใส่แท่นนี้" unit="ลูก" min={1} max={40} value={selected.requiredBalls ?? 20} onChange={(v) => patch(selected.id, { requiredBalls: v })} />
                 <p className="text-sm text-muted-foreground">1–40 ลูก · ได้ลูกละ 1 คะแนน ใส่เกินจำนวนนี้หักลูกละ 1 คะแนน ผู้เรียนเลือกจำนวนที่บรรทุกก่อนบินได้</p>
               </div>}
@@ -298,8 +291,8 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
                 <p className="text-base font-bold">1. โดรนเริ่มที่ไหน</p>
                 <p className="text-sm text-muted-foreground">เลือกตัวแทนโดรนในสนามแล้วลากเพื่อย้าย หรือกรอกตำแหน่ง แล้วเลือกว่าหัวโดรนหันไปทางไหน</p>
                 <div className="grid grid-cols-2 gap-3">
-                  <Num label="ซ้าย-ขวา (x)" unit="ม." step={0.25} min={-4.8} max={4.8} value={st.x} onChange={(v) => setStart({ x: clamp(v ?? 0, -4.8, 4.8) })} />
-                  <Num label="หน้า-หลัง (y)" unit="ม." step={0.25} min={-4.8} max={4.8} value={st.y} onChange={(v) => setStart({ y: clamp(v ?? 0, -4.8, 4.8) })} />
+                  <Num label="ซ้าย-ขวา" unit="ม." min={-4.8} max={4.8} value={st.x} onChange={(v) => setStart({ x: clamp(v ?? 0, -4.8, 4.8) })} />
+                  <Num label="หน้า-หลัง" unit="ม." min={-4.8} max={4.8} value={st.y} onChange={(v) => setStart({ y: clamp(v ?? 0, -4.8, 4.8) })} />
                 </div>
                 <div role="radiogroup" aria-label="ทิศหัวโดรน" className="grid grid-cols-4 gap-2">
                   {HEADINGS.map((h) => (
@@ -321,8 +314,8 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
                 ))}
                 {baseMode === 'custom' && bp && (
                   <div className="grid grid-cols-2 gap-3">
-                    <Num label="ฐาน ซ้าย-ขวา (x)" unit="ม." step={0.25} min={-4.8} max={4.8} value={bp.x} onChange={(v) => setCfg((c) => ({ ...c, base: { mode: 'custom', x: clamp(v ?? 0, -4.8, 4.8), y: bp.y } }))} />
-                    <Num label="ฐาน หน้า-หลัง (y)" unit="ม." step={0.25} min={-4.8} max={4.8} value={bp.y} onChange={(v) => setCfg((c) => ({ ...c, base: { mode: 'custom', x: bp.x, y: clamp(v ?? 0, -4.8, 4.8) } }))} />
+                    <Num label="ฐานซ้าย-ขวา" unit="ม." min={-4.8} max={4.8} value={bp.x} onChange={(v) => setCfg((c) => ({ ...c, base: { mode: 'custom', x: clamp(v ?? 0, -4.8, 4.8), y: bp.y } }))} />
+                    <Num label="ฐานหน้า-หลัง" unit="ม." min={-4.8} max={4.8} value={bp.y} onChange={(v) => setCfg((c) => ({ ...c, base: { mode: 'custom', x: bp.x, y: clamp(v ?? 0, -4.8, 4.8) } }))} />
                   </div>
                 )}
               </fieldset>
@@ -344,7 +337,7 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
               ))}
               {cfg.objects.length === 0 && <li className="px-3 py-2 text-base text-muted-foreground">ยังไม่มีวัตถุ ผู้เรียนจะเห็นสนามเปล่า</li>}
             </ul>
-            {wps.length > 1 && <p className="text-sm text-muted-foreground">จุดผ่านที่มีเลขลำดับ ต้องบินผ่านตามลำดับ ถ้าข้ามจะไม่นับ</p>}
+            {wps.length > 1 && <p className="text-sm text-muted-foreground">เลขบนจุดช่วยให้ดูแผนสนามง่ายขึ้น ผู้เล่นเลือกเส้นทางเองได้ ขอให้ผ่านจุดที่โจทย์กำหนดครบ</p>}
           </div>
         </div>
       </div>

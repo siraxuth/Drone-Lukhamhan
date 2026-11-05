@@ -70,14 +70,23 @@ export function ChallengeForm({ id, children, saved, slug }: { id: string; child
     setRecovery(null);
   }
   return <ChallengeDraftContext.Provider value={draftContext}><form ref={formRef} data-challenge-form onChange={(event) => { dirty.current = true; const form = event.currentTarget; setTimeout(() => stash(form), 0); }} onInput={(event) => { dirty.current = true; const form = event.currentTarget; setTimeout(() => stash(form), 0); }} onPointerUp={(event) => { dirty.current = true; const form = event.currentTarget; setTimeout(() => stash(form), 0); }} onKeyUp={(event) => { dirty.current = true; const form = event.currentTarget; setTimeout(() => stash(form), 0); }} onSubmit={submit} onInvalidCapture={(event) => {
+    event.preventDefault();
     const field = event.target as HTMLInputElement | HTMLSelectElement;
+    if (formRef.current?.querySelector(':invalid') !== field) return;
     const labels: Record<string, string> = { title: 'ชื่อโจทย์', level: 'ระดับความยาก', order: 'ลำดับในรายการ' };
-    const label = labels[field.name] ?? 'ช่องข้อมูลนี้';
+    const label = labels[field.name] ?? field.closest('label')?.querySelector('span')?.textContent?.trim() ?? 'ช่องนี้';
     const min = field instanceof HTMLInputElement ? field.min : '';
     const max = field instanceof HTMLInputElement ? field.max : '';
-    const why = field.validity.valueMissing ? 'ยังไม่ได้กรอกข้อมูลที่จำเป็น' : field.validity.rangeUnderflow || field.validity.rangeOverflow ? `ค่าอยู่นอกช่วง ${min || 'ไม่จำกัด'} ถึง ${max || 'ไม่จำกัด'}` : field.validationMessage;
+    const why = field.validity.valueMissing ? 'ยังไม่ได้กรอก'
+      : field.validity.badInput || field.validity.typeMismatch ? 'กรอกเป็นตัวเลขที่อ่านได้ เช่น 1 หรือ 1.5'
+      : field.validity.rangeUnderflow ? `ใส่ค่าอย่างน้อย ${min}`
+      : field.validity.rangeOverflow ? `ใส่ค่าไม่เกิน ${max}`
+      : field.validity.stepMismatch ? 'ใส่เป็นจำนวนเต็ม เช่น 1 หรือ 2'
+      : field.validity.tooLong ? 'ข้อความยาวเกินไป ลองเขียนให้สั้นลง'
+      : 'ตรวจข้อมูลในช่องนี้อีกครั้ง';
     setFeedback({ error: `${label}: ${why}`, field: field.name });
     field.focus();
+    field.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }} aria-busy={pending}>
     {recovery && <div className="mb-4 flex flex-wrap items-center gap-3 squircle-2xl border border-line bg-surface-2 p-4" role="dialog" aria-label="กู้คืนข้อมูลที่ยังไม่บันทึก"><p className="min-w-0 flex-1"><strong className="block">พบข้อมูลภารกิจที่ยังไม่ได้บันทึก</strong><span className="text-sm text-muted-foreground">ต้องการกู้คืนชื่อ รายละเอียด โค้ด และของในสนามที่กรอกค้างไว้ไหม?</span></p><Button type="button" onClick={restore}>กู้คืนข้อมูล</Button><Button type="button" variant="outline" onClick={() => { try { localStorage.removeItem(storageKey); } catch {} setRecovery(null); }}>เริ่มใหม่</Button></div>}
     <fieldset disabled={pending} className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] disabled:opacity-70">{children}</fieldset>

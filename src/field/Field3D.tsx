@@ -10,10 +10,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { FIELD } from './layout';
 import { heading, type DroneState } from './aim';
-import { balloonId, COMPETITOR } from './layout';
+import { balloonId } from './layout';
 import type { RuleEvent } from '@/rules/types';
+import type { Measurement } from '@/flight/measurements';
+import { FieldDimensions3D, FieldMeasurements3D } from './FieldMeasurements3D';
 
-export type ViewPreset = 'top' | 'operator' | 'chase';
+export type ViewPreset = 'top' | 'chase';
 export type Shot = { from: [number, number, number]; to: [number, number, number]; ok: boolean; mount?: 'front' | 'back'; id?: number; t?: number; terminal?: boolean; speed?: number } | null;
 export type ShotHighlight = { id: number; from: [number, number, number]; to: [number, number, number] } | null;
 
@@ -31,7 +33,6 @@ type Props = {
   shot: Shot;
   low: boolean;
   live?: boolean;
-  simPlaying?: boolean;
   poseRef?: React.RefObject<LivePose>;
   playheadRef?: React.RefObject<number>;
   marks?: Marks;
@@ -41,14 +42,13 @@ type Props = {
   holdKey?: number;
   /** บอลที่บรรจุอยู่บนตัวโดรน (ชุดซ้าย/ขวา) */
   loaded?: { L: number; R: number };
-  /** ท่าของคนแข่ง (เขียนจากนอก Canvas) */
-  actRef?: React.RefObject<CompetitorAct>;
   /** โจทย์ฝึก: ลายสนามและวัตถุ (ไม่ใส่ = สนามแข่งจริงตามประเภท) */
   scene?: SceneSpec;
+  measurements?: Measurement[];
+  showDimensions?: boolean;
+  dimensionFrom?: string;
+  dimensionTo?: string;
 };
-
-export type CompetitorAct = { mode: 'idle' | 'load' | 'turn' };
-const IDLE_ACT: React.RefObject<CompetitorAct> = { current: { mode: 'idle' } };
 
 /** สนามอยู่ในพิกัดเมตร: field(x,y) → three(x, 0, -y) เพื่อให้ "เหนือ" อยู่ไกลจากกล้องเริ่มต้น */
 const p3 = (x: number, y: number, z = 0): [number, number, number] => [x, z, -y];
@@ -302,7 +302,7 @@ function ShootZones({ drone }: { drone: DroneState }) {
 }
 
 function Surroundings() {
-  const { bannerHeight, poleHeight, desk } = FIELD.approx;
+  const { bannerHeight, poleHeight } = FIELD.approx;
   const h = FIELD.size / 2;
   return (
     <>
@@ -320,11 +320,6 @@ function Surroundings() {
           ))}
         </group>
       ))}
-      {/* โต๊ะผู้แข่งขัน ด้านใต้ */}
-      <mesh position={[0, desk.height / 2, h + desk.depth / 2 - 0.2]}>
-        <boxGeometry args={[desk.width, desk.height, desk.depth]} />
-        <meshStandardMaterial color="#8d939e" roughness={0.8} />
-      </mesh>
     </>
   );
 }
@@ -549,197 +544,6 @@ function DroneBalls({ loaded }: { loaded: { L: number; R: number } }) {
   );
 }
 
-type WalkPoint = { x: number; y: number };
-const WALK_STEP = 0.25;
-const WALK_GRID = 39;
-const walkPoint = (index: number): WalkPoint => ({ x: -4.75 + (index % WALK_GRID) * WALK_STEP, y: -4.75 + Math.floor(index / WALK_GRID) * WALK_STEP });
-const walkBlocked = (x: number, y: number, platforms: boolean, balloons: boolean) => {
-  if (Math.abs(x) > 4.65 || Math.abs(y) > 4.65) return true;
-  if (Math.abs(x) < FIELD.takeoff.size / 2 + 0.3 && Math.abs(y) < FIELD.takeoff.size / 2 + 0.3) return true;
-  if (platforms && FIELD.platform.positions.some(([px, py]) => Math.hypot(px - x, py - y) < FIELD.platform.radius + 0.28)) return true;
-  return balloons && FIELD.balloons.groups.some((g) => [-1, 0, 1].some((k) => {
-    const px = g.center[0] + (g.along === 'x' ? k * FIELD.balloons.spacing : 0);
-    const py = g.center[1] + (g.along === 'y' ? k * FIELD.balloons.spacing : 0);
-    return Math.hypot(px - x, py - y) < FIELD.balloons.pillar.size / 2 + 0.31;
-  }));
-};
-const WALK_MAPS = [false, true].flatMap((platforms) => [false, true].map((balloons) =>
-  Array.from({ length: WALK_GRID * WALK_GRID }, (_, i) => { const p = walkPoint(i); return !walkBlocked(p.x, p.y, platforms, balloons); })
-));
-
-/** ตารางเดิน 25 ซม. พร้อมกันมุม: เท้าไม่ตัดผ่านแท่น เสาลูกโป่ง หรือฐาน Takeoff */
-function walkRoute(start: WalkPoint, end: WalkPoint, platforms: boolean, balloons: boolean): WalkPoint[] {
-  const walkOpen = WALK_MAPS[Number(platforms) * 2 + Number(balloons)];
-  const nearest = (p: WalkPoint) => {
-    let best = -1, bestD = Infinity;
-    for (let i = 0; i < walkOpen.length; i++) {
-      if (!walkOpen[i]) continue;
-      const q = walkPoint(i), d = (p.x - q.x) ** 2 + (p.y - q.y) ** 2;
-      if (d < bestD) { best = i; bestD = d; }
-    }
-    return best;
-  };
-  const first = nearest(start), last = nearest(end);
-  if (first < 0 || last < 0) return [];
-  const cost = new Float32Array(walkOpen.length).fill(Infinity);
-  const previous = new Int32Array(walkOpen.length).fill(-1);
-  const open: number[] = [first];
-  const queued = new Uint8Array(walkOpen.length);
-  queued[first] = 1; cost[first] = 0;
-  while (open.length) {
-    let bestAt = 0, bestScore = Infinity;
-    for (let i = 0; i < open.length; i++) {
-      const p = walkPoint(open[i]), goal = walkPoint(last);
-      const score = cost[open[i]] + Math.hypot(p.x - goal.x, p.y - goal.y);
-      if (score < bestScore) { bestScore = score; bestAt = i; }
-    }
-    const current = open.splice(bestAt, 1)[0];
-    queued[current] = 0;
-    if (current === last) break;
-    const cx = current % WALK_GRID, cy = Math.floor(current / WALK_GRID);
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      if (!dx && !dy) continue;
-      const nx = cx + dx, ny = cy + dy;
-      if (nx < 0 || nx >= WALK_GRID || ny < 0 || ny >= WALK_GRID) continue;
-      const next = ny * WALK_GRID + nx;
-      if (!walkOpen[next]) continue;
-      if (dx && dy && (!walkOpen[cy * WALK_GRID + nx] || !walkOpen[ny * WALK_GRID + cx])) continue;
-      const nextCost = cost[current] + (dx && dy ? Math.SQRT2 : 1) * WALK_STEP;
-      if (nextCost >= cost[next]) continue;
-      previous[next] = current; cost[next] = nextCost;
-      if (!queued[next]) { open.push(next); queued[next] = 1; }
-    }
-  }
-  if (first !== last && previous[last] < 0) return [];
-  const route: WalkPoint[] = [];
-  for (let at = last; at !== first && at >= 0; at = previous[at]) route.push(walkPoint(at));
-  return route.reverse();
-}
-
-/** คนแข่งเดินตามโดรน เข้าจับตัวโดรนเมื่อจอด และใช้มือหมุนก่อนขึ้นบินต่อ */
-function Competitor({ actRef, poseRef, live, simPlaying, platforms, balloons }: { actRef: React.RefObject<CompetitorAct>; poseRef?: React.RefObject<LivePose>; live: boolean; simPlaying: boolean; platforms: boolean; balloons: boolean }) {
-  const root = useRef<THREE.Group>(null);
-  const body = useRef<THREE.Group>(null);
-  const armL = useRef<THREE.Group>(null);
-  const armR = useRef<THREE.Group>(null);
-  const forearmL = useRef<THREE.Group>(null);
-  const forearmR = useRef<THREE.Group>(null);
-  const legL = useRef<THREE.Group>(null);
-  const legR = useRef<THREE.Group>(null);
-  const st = useRef({ x: COMPETITOR.home.x, y: COMPETITOR.home.y, face: Math.PI / 2, phase: 0 });
-  const route = useRef({ points: [] as WalkPoint[], goal: { ...COMPETITOR.home }, next: 0 });
-  const previousDrone = useRef({ x: 0, y: 0 });
-  const skin = '#bb815f', shirt = '#2056ad', pants = '#243047', shoes = '#171b23';
-
-  useFrame((state, rawDt) => {
-    const g = root.current;
-    if (!g || (live && !simPlaying)) return;
-    const dt = Math.min(rawDt, 1 / 20);
-    const t = state.clock.elapsedTime;
-    const act = actRef.current?.mode ?? 'idle';
-    const p = live ? poseRef?.current : null;
-    const hd = heading(p?.yaw ?? 0);
-    const side = { x: hd.y, y: -hd.x };
-    const near = act === 'turn' || act === 'load';
-    const onBase = p && Math.abs(p.x) < FIELD.takeoff.size / 2 && Math.abs(p.y) < FIELD.takeoff.size / 2;
-    const approach = onBase ? 1.2 : 0.86;
-    const droneMoving = !!p && Math.hypot(p.x - previousDrone.current.x, p.y - previousDrone.current.y) > 0.002;
-    if (p) previousDrone.current = { x: p.x, y: p.y };
-    const goal = p && (near || droneMoving) ? {
-      x: Math.max(-4.65, Math.min(4.65, p.x - hd.x * (near ? 0.08 : 0.78) + side.x * (near ? approach : 0.42))),
-      y: Math.max(-4.65, Math.min(4.65, p.y - hd.y * (near ? 0.08 : 0.78) + side.y * (near ? approach : 0.42))),
-    } : COMPETITOR.home;
-    const s = st.current;
-    const nav = route.current;
-    const destinationGoal = p && !near && !droneMoving ? { x: s.x, y: s.y } : goal;
-    if (t >= nav.next || Math.hypot(destinationGoal.x - nav.goal.x, destinationGoal.y - nav.goal.y) > 0.35 || (!droneMoving && !near && nav.points.length > 0)) {
-      nav.points = walkRoute(s, destinationGoal, platforms, balloons);
-      nav.goal = destinationGoal;
-      nav.next = t + 0.45;
-    }
-    while (nav.points.length && Math.hypot(nav.points[0].x - s.x, nav.points[0].y - s.y) < 0.13) nav.points.shift();
-    const destination = p && !near && !droneMoving ? s : nav.points[0] ?? s;
-    const dx = destination.x - s.x, dy = destination.y - s.y, dist = Math.hypot(dx, dy);
-    const moving = dist > 0.03;
-    if (moving) {
-      const step = Math.min(dist, (near ? 1.85 : 1.55) * dt);
-      s.x += (dx / dist) * step; s.y += (dy / dist) * step; s.phase += dt * 9;
-    }
-    // หันหน้า: ขณะเดินหันไปทางที่เดิน · เมื่อถึงที่แล้วหันหาตัวโดรน
-    const tx = p?.x ?? 0, ty = p?.y ?? 0;
-    const want = moving ? Math.atan2(dx, -dy) : Math.atan2(tx - s.x, -(ty - s.y));
-    let dAng = ((want - s.face + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-    s.face += dAng * (1 - Math.exp(-dt * 8));
-    g.position.set(s.x, moving ? Math.abs(Math.sin(s.phase * 2)) * 0.008 : 0, -s.y);
-    g.rotation.y = s.face;
-    const sw = moving ? Math.sin(s.phase) * 0.48 : 0;
-    if (legL.current) legL.current.rotation.x = sw;
-    if (legR.current) legR.current.rotation.x = -sw;
-    const idleSway = Math.sin(t * 1.3) * 0.04;
-    let aL = idleSway, aR = -idleSway, lean = 0;
-    if (moving) { aL = -sw * 0.7; aR = sw * 0.7; }
-    else if (act === 'load') { aL = -0.65 + Math.sin(t * 6) * 0.13; aR = -0.65 - Math.sin(t * 6 + 1) * 0.13; lean = 0.42; }
-    else if (act === 'turn') { aL = -0.55 + Math.sin(t * 2.5) * 0.08; aR = -0.55 - Math.sin(t * 2.5) * 0.08; lean = 0.58; }
-    else { aL = -0.78 + idleSway; aR = -0.78 - idleSway; } // ยืนถือรีโมทเล็งตามโดรน
-    if (armL.current) armL.current.rotation.x += (aL - armL.current.rotation.x) * (1 - Math.exp(-dt * 10));
-    if (armR.current) armR.current.rotation.x += (aR - armR.current.rotation.x) * (1 - Math.exp(-dt * 10));
-    if (forearmL.current) forearmL.current.rotation.x += ((near ? -0.48 : -0.42) - forearmL.current.rotation.x) * (1 - Math.exp(-dt * 10));
-    if (forearmR.current) forearmR.current.rotation.x += ((near ? -0.48 : -0.42) - forearmR.current.rotation.x) * (1 - Math.exp(-dt * 10));
-    if (body.current) {
-      body.current.rotation.x += (lean - body.current.rotation.x) * (1 - Math.exp(-dt * 6));
-      body.current.position.y += ((moving ? 0.9 : act === 'turn' ? 0.48 : act === 'load' ? 0.62 : 0.9) - body.current.position.y) * (1 - Math.exp(-dt * 7));
-    }
-  });
-
-  const leg = (ref: React.RefObject<THREE.Group | null>, side: number) => (
-    <group ref={ref} position={[side * 0.105, 0.88, 0]}>
-      <mesh position={[0, -0.22, 0]}><cylinderGeometry args={[0.095, 0.075, 0.44, 12]} /><meshStandardMaterial color={pants} roughness={0.85} /></mesh>
-      <mesh position={[0, -0.62, 0.01]}><cylinderGeometry args={[0.075, 0.065, 0.4, 12]} /><meshStandardMaterial color={pants} roughness={0.85} /></mesh>
-      <mesh position={[0, -0.83, 0.07]}><boxGeometry args={[0.14, 0.09, 0.28]} /><meshStandardMaterial color={shoes} roughness={0.85} /></mesh>
-      <mesh position={[0, -0.79, 0.185]}><boxGeometry args={[0.145, 0.018, 0.04]} /><meshStandardMaterial color="#d8e0e9" roughness={0.7} /></mesh>
-    </group>
-  );
-  const arm = (ref: React.RefObject<THREE.Group | null>, forearm: React.RefObject<THREE.Group | null>, side: number) => (
-    <group ref={ref} position={[side * 0.245, 0.55, 0]} rotation={[0, 0, side * 0.08]}>
-      <mesh position={[0, -0.16, 0]}><capsuleGeometry args={[0.07, 0.23, 6, 12]} /><meshStandardMaterial color={shirt} roughness={0.82} /></mesh>
-      <group ref={forearm} position={[0, -0.33, 0]}>
-        <mesh position={[0, -0.14, 0]}><capsuleGeometry args={[0.052, 0.19, 6, 12]} /><meshStandardMaterial color={skin} roughness={0.85} /></mesh>
-        <mesh position={[0, -0.29, 0]}><sphereGeometry args={[0.055, 12, 10]} /><meshStandardMaterial color={skin} roughness={0.86} /></mesh>
-        {side < 0 && (
-          <group position={[0, -0.32, 0.07]}>
-            <mesh><boxGeometry args={[0.14, 0.035, 0.095]} /><meshStandardMaterial color="#1e2733" metalness={0.3} roughness={0.55} /></mesh>
-            <mesh position={[-0.045, 0.022, 0]}><cylinderGeometry args={[0.005, 0.005, 0.045, 6]} /><meshStandardMaterial color="#b9c5d4" metalness={0.65} /></mesh>
-            <mesh position={[0.045, 0.022, 0]}><cylinderGeometry args={[0.005, 0.005, 0.045, 6]} /><meshStandardMaterial color="#b9c5d4" metalness={0.65} /></mesh>
-          </group>
-        )}
-      </group>
-    </group>
-  );
-  return (
-    <group ref={root} position={[COMPETITOR.home.x, 0, -COMPETITOR.home.y]}>
-      <mesh position={[0, 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}><circleGeometry args={[0.32, 20]} /><meshBasicMaterial color="#000" transparent opacity={0.35} depthWrite={false} /></mesh>
-      {leg(legL, 1)}
-      {leg(legR, -1)}
-      <group ref={body} position={[0, 0.9, 0]}>
-        <mesh position={[0, 0.28, 0]}><cylinderGeometry args={[0.235, 0.175, 0.55, 16]} /><meshStandardMaterial color={shirt} roughness={0.82} /></mesh>
-        <mesh position={[0, 0.19, 0.175]}><boxGeometry args={[0.31, 0.035, 0.018]} /><meshStandardMaterial color="#f1b84b" roughness={0.7} /></mesh>
-        <mesh position={[0, 0.59, 0]}><cylinderGeometry args={[0.07, 0.075, 0.15, 12]} /><meshStandardMaterial color={skin} roughness={0.85} /></mesh>
-        <mesh position={[0, 0.79, 0]} scale={[1, 1.18, 0.93]}><sphereGeometry args={[0.13, 20, 16]} /><meshStandardMaterial color={skin} roughness={0.78} /></mesh>
-        <mesh position={[0, 0.91, -0.025]} scale={[1, 0.72, 1]}><sphereGeometry args={[0.135, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2]} /><meshStandardMaterial color="#201a18" roughness={0.93} /></mesh>
-        <mesh position={[0, 0.76, 0.125]}><sphereGeometry args={[0.022, 10, 8]} /><meshStandardMaterial color={skin} roughness={0.8} /></mesh>
-        {[-1, 1].map((side) => (
-          <group key={side}>
-            <mesh position={[side * 0.048, 0.82, 0.111]}><sphereGeometry args={[0.012, 8, 6]} /><meshBasicMaterial color="#261e1c" /></mesh>
-            <mesh position={[side * 0.127, 0.79, 0]}><sphereGeometry args={[0.025, 10, 8]} /><meshStandardMaterial color={skin} roughness={0.8} /></mesh>
-          </group>
-        ))}
-        {arm(armL, forearmL, 1)}
-        {arm(armR, forearmR, -1)}
-      </group>
-    </group>
-  );
-}
-
 /** เอฟเฟกต์ poshold: วงคลื่นแผ่ออกจากโดรน 2 ชั้น แล้วจางหาย (โดรนล็อกตำแหน่งนิ่ง) */
 function HoldPulse({ k, poseRef }: { k: number; poseRef?: React.RefObject<LivePose> }) {
   const g = useRef<THREE.Group>(null);
@@ -900,7 +704,6 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { 
     if (!c) return;
     const cam = camera as THREE.PerspectiveCamera;
     if (view === 'top') { cam.position.set(0, topH, 0.01); c.target.set(0, 0, 0); }
-    if (view === 'operator') { cam.position.set(0, 1.7, 6.6); c.target.set(0, 0.9, -1.5); }
     c.update();
     invalidate();
   }, [view, topH, camera, invalidate]);
@@ -1007,7 +810,7 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { 
   );
 }
 
-export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, simPlaying = true, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, actRef = IDLE_ACT, scene }: Props) {
+export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo }: Props) {
   const [dragging, setDragging] = useState(false);
   // โจทย์ฝึกบนกริด/พื้นว่าง: วาดวัตถุจาก scene แทนของตามกติกา และให้โดรนมีเข็ม/ลูกดอกตามวัตถุที่วางไว้
   const custom = !!scene && scene.pattern !== 'standard';
@@ -1039,7 +842,8 @@ export default function Field3D({ event, drone, onDrone, view, shot, low, live =
       {!custom && event.field.balloons && <Balloons popped={marks.popped} />}
       {!custom && event.field.targets && (<><Targets /><ShootZones drone={drone} /></>)}
       <Drone drone={drone} onDrone={onDrone} setDragging={setDragging} low={low} live={live} poseRef={poseRef} platforms={event.field.platforms && !custom} loaded={loaded} dartInventory={hasTargets ? dartInventory : { front: 0, back: 0 }} needle={hasBalloons} />
-      <Competitor actRef={actRef} poseRef={poseRef} live={live} simPlaying={simPlaying} platforms={event.field.platforms && !custom} balloons={event.field.balloons && !custom} />
+      {showDimensions && <FieldDimensions3D scene={scene} fromId={dimensionFrom} toId={dimensionTo} />}
+      {measurements.some((item) => item.points.length > 0) && <FieldMeasurements3D measurements={measurements} />}
       <MarksLayer marks={marks} playheadRef={playheadRef} />
       {live && <HoldPulse k={holdKey} poseRef={poseRef} />}
       {shot && <DartFlight key={shot.id ?? 0} shot={shot} />}

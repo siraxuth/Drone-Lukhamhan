@@ -88,9 +88,27 @@ export function parseConfig(raw: unknown): ScenarioConfig {
 }
 export function parseConfigStrict(raw: unknown): { ok: true; config: ScenarioConfig } | { ok: false; error: string } {
   let v = raw;
-  if (typeof v === 'string') { try { v = JSON.parse(v); } catch { return { ok: false, error: 'การตั้งค่าสนามไม่ใช่ JSON' }; } }
+  if (typeof v === 'string') { try { v = JSON.parse(v); } catch { return { ok: false, error: 'อ่านข้อมูลสนามไม่ได้ ลองบันทึกอีกครั้ง' }; } }
   const r = configSchema.safeParse(v);
-  return r.success ? { ok: true, config: r.data as ScenarioConfig } : { ok: false, error: `การตั้งค่าสนามไม่ถูกต้อง: ${r.error.issues[0]?.path.join('.')} ${r.error.issues[0]?.message}` };
+  if (r.success) return { ok: true, config: r.data as ScenarioConfig };
+  const issue = r.error.issues[0];
+  if (!issue) return { ok: false, error: 'ตรวจรายละเอียดในสนามอีกครั้ง' };
+  const path = issue.path.map(String);
+  const names: Record<string, string> = {
+    objects: 'วัตถุในสนาม', id: 'ชื่อวัตถุ', x: 'ตำแหน่งซ้าย-ขวา', y: 'ตำแหน่งหน้า-หลัง',
+    z: 'ความสูง', zMin: 'ความสูงต่ำสุด', zMax: 'ความสูงสูงสุด', cz: 'ความสูงกึ่งกลางเป้า',
+    r: 'ขนาด', size: 'ความกว้างช่อง', yaw: 'มุมที่หมุน', points: 'คะแนน',
+    order: 'ลำดับ', requiredBalls: 'จำนวนบอลที่ต้องใส่', start: 'จุดเริ่มโดรน',
+    base: 'ฐานลงจอด', pattern: 'ลายสนาม', event: 'ประเภทภารกิจ',
+  };
+  const objectNumber = path[0] === 'objects' && /^\d+$/.test(path[1] ?? '') ? Number(path[1]) + 1 : null;
+  const label = objectNumber ? `วัตถุชิ้นที่ ${objectNumber} · ${names[path[2]] ?? 'รายละเอียด'}` : names[path.at(-1) ?? ''] ?? 'รายละเอียดสนาม';
+  let why = 'กรอกค่าใหม่อีกครั้ง';
+  if (issue.code === 'too_small') why = `ใส่ค่าอย่างน้อย ${issue.minimum}`;
+  if (issue.code === 'too_big') why = `ใส่ค่าไม่เกิน ${issue.maximum}`;
+  if (issue.code === 'invalid_type') why = 'รูปแบบข้อมูลไม่ถูกต้อง';
+  if (path[0] === 'objects' && !objectNumber && issue.code === 'too_big') why = 'ใส่วัตถุได้ไม่เกิน 60 ชิ้น';
+  return { ok: false, error: `${label}: ${why}` };
 }
 
 /** ข้อมูลโจทย์ที่ส่งไปให้หน้าตัวจำลอง */

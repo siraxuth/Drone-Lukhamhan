@@ -2,11 +2,13 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { NO_MARKS, type CompetitorAct, type LivePose, type Marks, type ShotHighlight, type ViewPreset } from '@/field/Field3D';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { NO_MARKS, type LivePose, type Marks, type ShotHighlight, type ViewPreset } from '@/field/Field3D';
 import { FieldPlan2D } from '@/field/FieldPlan2D';
 import type { RuleEvent } from '@/rules/types';
 import { detectQuality } from '@/scene/quality';
-import { Eye, Layers, Maximize2, Minimize2, Pause, Play, RotateCcw, Video, Volume2, VolumeX } from 'lucide-react';
+import { Layers, Maximize2, Minimize2, Pause, Play, RotateCcw, Ruler, Video, Volume2, VolumeX } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildConfig, toField } from './config';
@@ -15,6 +17,9 @@ import type { FlightConfig } from './engine';
 import type { SceneSpec } from '@/field/SceneObjects';
 import { frameAt, parse, simulate, type Frame, type Result, type SimEvent } from './engine';
 import { FlightAudio } from './sound';
+import { FieldMeasure } from './FieldMeasure';
+import type { Measurement } from './measurements';
+import { dimensionTargets } from '@/field/dimension-targets';
 
 const Field3D = dynamic(() => import('@/field/Field3D'), {
   ssr: false,
@@ -25,10 +30,9 @@ const Field3D = dynamic(() => import('@/field/Field3D'), {
 const LEG = 0.0702;
 const PAD = 0.2;
 const REST = PAD + LEG;
-const VIEWS: Array<{ id: ViewPreset; label: string; Icon: typeof Eye }> = [
+const VIEWS: Array<{ id: ViewPreset; label: string; Icon: typeof Video }> = [
   { id: 'chase', label: 'ตามโดรน', Icon: Video },
   { id: 'top', label: 'มองจากบน', Icon: Layers },
-  { id: 'operator', label: 'มุมคนแข่ง', Icon: Eye },
 ];
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const fmtTime = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}.${Math.floor((ms % 1000) / 100)}`;
@@ -82,7 +86,13 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
   const [playing, setPlaying] = useState(false);
   const [now, setNow] = useState(0);
   const [done, setDone] = useState(false);
-  const speed = 1; // เล่นด้วยความเร็วจริงเสมอ
+  const [speed, setSpeed] = useState(1);
+  const [measureOpen, setMeasureOpen] = useState(false);
+  const [showDimensions, setShowDimensions] = useState(false);
+  const [dimensionFromId, setDimensionFromId] = useState('start');
+  const [dimensionToId, setDimensionToId] = useState('');
+  const [measurements, setMeasurements] = useState<Measurement[]>([{ id: 1, kind: 'distance', points: [] }]);
+  const [activeMeasureId, setActiveMeasureId] = useState(1);
   const [view, setView] = useState<ViewPreset>(initialView ?? (bigPlay && !previewKey ? 'top' : 'chase'));
   const [marks, setMarks] = useState<Marks>(NO_MARKS);
   const [highlight, setHighlight] = useState<ShotHighlight>(null);
@@ -100,7 +110,6 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
   const [pose2d, setPose2d] = useState(HOME);
   const [holdKey, setHoldKey] = useState(0);
   const [loaded, setLoaded] = useState({ L: 0, R: 0 });
-  const actRef = useRef<CompetitorAct>({ mode: 'idle' });
   const [holding, setHolding] = useState(false);
   const [manualActive, setManualActive] = useState(true);
   const [activeKey, setActiveKey] = useState<number | null>(null);
@@ -166,7 +175,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
     shotSequence.current = 0;
     popSequence.current = 0;
     landingSequence.current = 0;
-    setPose2d(HOME); setResult(null); setPlannedResult(null); setPlaying(false); setDone(false); setNow(0); setMarks(NO_MARKS); setHighlight(null); setShotCallout(null); setPopCallout(null); setDropCallout(null); setLandingCallout(null); setLog([]); setHolding(false); setLoaded(payloadRef.current ?? { L: 0, R: 0 }); setManualActive(true); setActiveKey(null); actRef.current.mode = 'idle';
+    setPose2d(HOME); setResult(null); setPlannedResult(null); setPlaying(false); setDone(false); setNow(0); setMarks(NO_MARKS); setHighlight(null); setShotCallout(null); setPopCallout(null); setDropCallout(null); setLandingCallout(null); setLog([]); setHolding(false); setLoaded(payloadRef.current ?? { L: 0, R: 0 }); setManualActive(true); setActiveKey(null);
     onResult?.(null);
   }, [onResult]);
 
@@ -198,21 +207,17 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
       if (e.id === 'pad' && r.stopTime !== null) later(() => a?.sfx('win'), 1300 / sp);
     }
     else if (e.kind === 'info' && e.id === 'load') {
-      // คนแข่งเดินมาใส่บอลที่ตัวโดรนทีละลูก (ซ้ายแล้วขวา) ตลอดช่วงบรรจุ
+      // แสดงจำนวนบอลเพิ่มทีละลูกตลอดช่วงบรรจุ
       a?.sfx('load');
       const dur = (e.dur ?? 4000) / sp;
-      actRef.current.mode = 'load';
       setLoaded({ L: 0, R: 0 });
       const total = 40;
       for (let i = 1; i <= total; i++) later(() => setLoaded({ L: Math.min(20, i), R: Math.max(0, i - 20) }), (dur * 0.12) + ((dur * 0.8) * i) / total);
       for (let i = 0; i < 8; i++) later(() => a?.ting(i, true), dur * 0.15 + (dur * 0.75 * i) / 8);
-      later(() => { if (actRef.current.mode === 'load') actRef.current.mode = 'idle'; }, dur);
     }
     else if (e.kind === 'info' && e.id === 'turn') {
-      // คนแข่งหมุนตัวโดรนด้วยมือ (โดรนหมุนเองตามเฟรมจากเอนจิน)
+      // โดรนหมุนตามเฟรมจากเอนจิน
       a?.sfx('load');
-      actRef.current.mode = 'turn';
-      later(() => { if (actRef.current.mode === 'turn') actRef.current.mode = 'idle'; }, (e.dur ?? 2500) / sp);
     }
     else if (e.kind === 'hold') {
       a?.sfx('hold');
@@ -411,6 +416,13 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
   const visitMap = useMemo(() => Object.fromEntries((result?.visits ?? []).map((v) => [v.id, v.t])), [result]);
   const spec3d = useMemo(() => (scene ? { ...scene, visits: visitMap } : undefined), [scene, visitMap]);
   const spec2d = scene ? { ...scene, visits: Object.fromEntries(Object.entries(visitMap).filter(([, t]) => t <= now)) } : undefined;
+  const dimensionOptions = useMemo(() => dimensionTargets(scene), [scene]);
+  const dimensionFrom = dimensionOptions.find((target) => target.id === dimensionFromId) ?? dimensionOptions[0];
+  const dimensionTo = dimensionOptions.find((target) => target.id === dimensionToId && target.id !== dimensionFrom.id)
+    ?? dimensionOptions.find((target) => target.id !== dimensionFrom.id);
+  const requiredWaypoints = scene?.objects.filter((object) => object.type === 'waypoint') ?? [];
+  const visitedWaypointIds = new Set(result?.visits.filter((visit) => visit.kind === 'waypoint').map((visit) => visit.id) ?? []);
+  useEffect(() => { setDimensionFromId('start'); setDimensionToId(''); }, [scene]);
   const cap = maxPoints === undefined ? event.maxPoints : maxPoints;
   const started = !!result;
   const flightError = result?.events.find((event) => event.kind === 'error');
@@ -429,9 +441,9 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
         ? 'fixed inset-0 z-[70] h-dvh w-screen overflow-hidden bg-[#0b0d12]'
         : `relative w-full overflow-hidden squircle-2xl border border-line bg-[#0b0d12] ${previewKey ? "aspect-[4/3] max-h-[55dvh] sm:aspect-video" : fullHeightField ? "h-[min(50svh,36rem)] min-h-[18rem]" : "aspect-[4/3] sm:aspect-video xl:aspect-auto xl:h-full xl:min-h-0"}`}>
         {mode === '3d' ? (
-          <Field3D event={event} drone={{ ...pose2d }} onDrone={() => { }} view={view} shot={null} low={low} live={live} simPlaying={playing} poseRef={poseRef} playheadRef={playheadRef} marks={marks} highlight={highlight} dartInventory={{ front: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'front').length), back: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'back').length) }} holdKey={holdKey} loaded={loaded} actRef={actRef} scene={spec3d} />
+          <Field3D event={event} drone={{ ...pose2d }} onDrone={() => { }} view={view} shot={null} low={low} live={live} poseRef={poseRef} playheadRef={playheadRef} marks={marks} highlight={highlight} dartInventory={{ front: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'front').length), back: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'back').length) }} holdKey={holdKey} loaded={loaded} scene={spec3d} measurements={measurements} showDimensions={!previewKey && showDimensions} dimensionFrom={dimensionFrom.id} dimensionTo={dimensionTo?.id} />
         ) : (
-          <FieldPlan2D event={event} drone={pose2d} interactive={false} className="size-full p-2" scene={spec2d} />
+          <FieldPlan2D event={event} drone={pose2d} interactive={false} className="size-full p-2" scene={spec2d} measurements={measurements} />
         )}
 
         {/* HUD เวลา/คะแนน */}
@@ -454,12 +466,30 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
             {expanded ? <Minimize2 className="size-4" aria-hidden /> : <Maximize2 className="size-4" aria-hidden />}
           </Button>
         )}
+        {!previewKey && mode === '3d' && showDimensions && dimensionOptions.length > 1 && <div className="absolute right-3 top-14 z-20 grid max-w-[min(19rem,calc(100%-1.5rem))] gap-1.5 squircle-xl border border-white/25 bg-black/80 p-2 text-xs font-semibold text-white shadow-lg">
+          <span>วัดระหว่างจุดในสนาม</span>
+          <div className="grid grid-cols-2 gap-1.5">
+            <label className="grid min-w-0 gap-0.5">จาก
+              <Select value={dimensionFrom.id} onValueChange={(value) => { if (value) setDimensionFromId(value); }}>
+                <SelectTrigger aria-label="วัดระยะจาก" className="w-full min-w-0 border-white/25 bg-[#202735] text-white"><SelectValue>{dimensionFrom.label}</SelectValue></SelectTrigger>
+                <SelectContent>{dimensionOptions.map((target) => <SelectItem key={target.id} value={target.id}>{target.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </label>
+            <label className="grid min-w-0 gap-0.5">ถึง
+              <Select value={dimensionTo?.id ?? ''} onValueChange={(value) => { if (value) setDimensionToId(value); }}>
+                <SelectTrigger aria-label="วัดระยะถึง" className="w-full min-w-0 border-white/25 bg-[#202735] text-white"><SelectValue>{dimensionTo?.label ?? 'เลือกปลายทาง'}</SelectValue></SelectTrigger>
+                <SelectContent>{dimensionOptions.filter((target) => target.id !== dimensionFrom.id).map((target) => <SelectItem key={target.id} value={target.id}>{target.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </label>
+          </div>
+          {dimensionTo && <span className="font-mono text-[11px] text-cyan-200">Δx {(dimensionTo.x - dimensionFrom.x).toFixed(2)} ม. · Δy {(dimensionTo.y - dimensionFrom.y).toFixed(2)} ม.</span>}
+        </div>}
 
         <div className="pointer-events-none absolute inset-x-0 top-[12%] z-10 flex justify-center px-4" aria-live="polite">
           {shotCallout && (
             <div key={shotCallout.id} className={`flight-shot-pop min-w-48 border px-6 py-3 text-center shadow-[0_18px_60px_rgba(0,0,0,.65)] squircle-2xl backdrop-blur-xl ${shotCallout.ok ? 'border-amber-300/70 bg-[#171e22]/90 text-amber-100 shadow-amber-500/20' : 'border-rose-400/60 bg-[#25191d]/90 text-rose-100 shadow-rose-500/20'}`}>
-              <div className="text-[10px] font-black tracking-[0.35em] opacity-75">{shotCallout.ok ? 'TARGET HIT' : 'SHOT MISSED'}</div>
-              <div className="mt-1 text-2xl font-black tracking-tight sm:text-4xl">{shotCallout.ok ? `+${shotCallout.points} คะแนน` : 'พลาดเป้า'}</div>
+              <div className="text-sm font-semibold opacity-80">{shotCallout.ok ? 'ยิงถูกเป้า' : 'ยิงพลาด'}</div>
+              <div className="mt-1 text-2xl font-bold sm:text-3xl">{shotCallout.ok ? `+${shotCallout.points} คะแนน` : 'พลาดเป้า'}</div>
               {shotCallout.ok && shotCallout.target && <div className="mt-1 text-xs font-semibold opacity-80">{shotCallout.target}</div>}
             </div>
           )}
@@ -537,6 +567,19 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
         )}
         {started && <Button variant="ghost" className="h-11 px-4 text-base" onClick={reset}>รีเซ็ตเที่ยวบิน</Button>}
         {!previewKey && done && <Button variant="outline" className="h-11 px-4 text-base" onClick={randomizeConditions}>บินใหม่ · สภาพใหม่</Button>}
+        {!previewKey && mode === '3d' && <Button type="button" variant="outline" aria-pressed={showDimensions} className="h-11 px-3 text-base" onClick={() => setShowDimensions((current) => !current)}><Ruler className="size-4" /> {showDimensions ? 'ซ่อนเส้นระยะ' : 'แสดงเส้นระยะ'}</Button>}
+        {!previewKey && <Button type="button" variant="outline" className="h-11 px-3 text-base" onClick={() => setMeasureOpen(true)}><Ruler className="size-4" /> เปิดแผนวัดใหญ่</Button>}
+        <Select value={String(speed)} onValueChange={(value) => { if (value) setSpeed(Number(value)); }}>
+          <SelectTrigger aria-label="ความเร็วการเล่นภาพจำลอง" className="h-11 squircle-xl border-line bg-surface px-3 text-sm hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-brand-blue">
+            <span className="text-muted-foreground">ความเร็วภาพ</span>
+            <SelectValue className="font-semibold">{speed}×</SelectValue>
+          </SelectTrigger>
+          <SelectContent align="start">
+            <SelectItem value="1">1× · ปกติ</SelectItem>
+            <SelectItem value="2">2× · เร็ว</SelectItem>
+            <SelectItem value="4">4× · เร็วมาก</SelectItem>
+          </SelectContent>
+        </Select>
         <div data-tour={previewKey ? undefined : "sim-camera"} className="ml-auto flex flex-wrap items-center gap-2">
           {mode === '3d' && (
             <div role="group" aria-label="เลือกมุมมอง" className="flex gap-1 squircle-xl border border-line bg-surface p-1">
@@ -549,6 +592,13 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
           <Button variant="outline" className="h-10 px-3 text-base" onClick={() => setMode(mode === '3d' ? '2d' : '3d')} disabled={mode === 'pending' || !supports3d}>{mode === 'pending' ? 'กำลังเตรียมสนาม' : !supports3d ? 'สนาม 2D · เครื่องนี้ใช้ 3D ไม่ได้' : mode === '3d' ? 'สลับเป็น 2D' : 'สลับเป็น 3D'}</Button>
         </div>
       </div>
+
+      {!previewKey && <Dialog open={measureOpen} onOpenChange={setMeasureOpen}>
+        <DialogContent className="max-h-[96svh] w-[min(98vw,86rem)] max-w-[min(98vw,86rem)] gap-3 overflow-y-auto p-4 sm:max-w-[min(98vw,86rem)] sm:p-6">
+          <DialogHeader><DialogTitle>วัดระยะและพื้นที่ในสนาม</DialogTitle><DialogDescription>สร้างเส้นวัดได้หลายชุด ลากจุดเพื่อปรับตำแหน่ง แล้วดูผลบนสนาม 3D ได้ทันที</DialogDescription></DialogHeader>
+          <FieldMeasure event={event} scene={spec2d} measurements={measurements} onChange={setMeasurements} activeId={activeMeasureId} onActiveChange={setActiveMeasureId} />
+        </DialogContent>
+      </Dialog>}
 
       {previewKey && result?.events.some((event) => event.kind === 'error') && (
         <p role="status" className="squircle-xl border border-line p-2 text-sm text-destructive">
@@ -572,18 +622,23 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
         };
         const actual = result.finalPosition;
         const planned = plannedResult.finalPosition;
-        const drift = Math.hypot(actual.x - planned.x, actual.y - planned.y) / 100;
+        const drift = Math.hypot(actual.x - planned.x, actual.y - planned.y);
         const c = result.conditions;
         return <section className="grid gap-3 squircle-2xl border border-line bg-surface p-4" aria-label="ทบทวนสภาพการบิน">
           <div className="flex flex-wrap items-start gap-2"><div className="min-w-0 flex-1"><h3 className="font-bold">ทบทวนเที่ยวบิน {activeKey ? `· KEY ${activeKey}` : ''} · seed {flightSeed}</h3><p className="mt-1 text-sm text-muted-foreground">เส้นฟ้า = แผนตามคำสั่ง · เส้นแดง = เส้นทางที่โดรนบินจริง</p></div><Button size="sm" variant="outline" onClick={() => play(activeKey ?? undefined)}>เล่นซ้ำสภาพเดิม</Button></div>
-          <svg viewBox="0 0 400 240" role="img" aria-label={`เส้นทางวางแผนเทียบกับเส้นทางจริง คลาด ${drift.toFixed(2)} เมตร`} className="h-48 w-full squircle-xl border border-line bg-canvas">
+          <svg viewBox="0 0 400 240" role="img" aria-label={`เส้นทางวางแผนเทียบกับเส้นทางจริง ปลายทางต่างกัน ${drift.toFixed(1)} เซนติเมตร`} className="h-48 w-full squircle-xl border border-line bg-canvas">
             <defs><pattern id="flight-grid" width="38" height="38" patternUnits="userSpaceOnUse"><path d="M 38 0 L 0 0 0 38" fill="none" stroke="currentColor" strokeOpacity=".12" strokeWidth="1" /></pattern></defs>
             <rect width="400" height="240" fill="url(#flight-grid)" />
             <polyline className="text-brand-blue" points={sample(plannedResult.frames)} fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray="7 5" strokeLinejoin="round" strokeLinecap="round" />
             <polyline className="text-destructive" points={sample(result.frames)} fill="none" stroke="currentColor" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
             <circle cx="200" cy="120" r="5" fill="currentColor" /><text x="208" y="115" fontSize="11" fill="currentColor">ฐาน</text>
           </svg>
-          <div className="grid gap-2 text-sm sm:grid-cols-2"><p className="squircle-xl border border-line bg-surface-2 p-2.5">ลม: {c.windX > 0 ? 'ขวา' : 'ซ้าย'} {Math.abs(c.windX).toFixed(1)} ซม./วินาที · {c.windY > 0 ? 'ใต้' : 'เหนือ'} {Math.abs(c.windY).toFixed(1)} ซม./วินาที</p><p className="squircle-xl border border-line bg-surface-2 p-2.5">แบตเตอรี่ {c.batteryPercent}% · ระยะตอบสนอง {Math.round(c.distanceScale * 100)}% · หัวหมุน {Math.round(c.yawScale * 100)}%</p><p className="squircle-xl border border-line bg-surface-2 p-2.5">ไจโรเริ่มคลาด {c.calibrationOffsetDeg > 0 ? '+' : ''}{c.calibrationOffsetDeg.toFixed(1)}° · ปลายทางต่างจากแผน {drift.toFixed(2)} ม.</p><p className="squircle-xl border border-line bg-surface-2 p-2.5">ลองแก้: ลดระยะต่อคำสั่ง แบ่งเป็นช่วงสั้น แล้วเผื่อระยะเบรกก่อน checkpoint</p></div>
+          <div className="grid gap-2 text-sm sm:grid-cols-2">
+            <p className="squircle-xl border border-line bg-surface-2 p-2.5">ความคลาดที่จำลองไว้ {Math.hypot(c.driftX, c.driftY).toFixed(1)} ซม. ต่อเที่ยว · ไม่สะสมเพิ่มทุกคำสั่ง</p>
+            <p className="squircle-xl border border-line bg-surface-2 p-2.5">แบตเตอรี่ {c.batteryPercent}% · ปลายทางต่างจากแผน {drift.toFixed(1)} ซม.</p>
+            <p className="squircle-xl border border-line bg-surface-2 p-2.5">ถ้าโดรนชนหรือตก ระยะปลายทางอาจต่างจากแผนมากกว่า 3 ซม. เพราะเที่ยวบินหยุดก่อนจบ</p>
+            <p className="squircle-xl border border-line bg-surface-2 p-2.5">ลองแก้: ดูจุดที่เริ่มพลาดจากเส้นทาง แล้วปรับคำสั่งช่วงนั้นทีละอย่าง</p>
+          </div>
         </section>;
       })()}
 
@@ -620,6 +675,9 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
           {done && result && (
             <div className="grid content-start gap-2 squircle-xl border border-line bg-surface p-4" role="status">
               <div className="flex items-baseline justify-between"><span className="font-display text-lg font-semibold">สรุปคะแนน</span><Badge>{result.score}{cap !== null ? ` / ${cap}` : ' คะแนน'}</Badge></div>
+              {requiredWaypoints.length > 0 && <p className={`text-sm font-semibold ${requiredWaypoints.every((point) => visitedWaypointIds.has(point.id)) ? 'text-emerald-500' : 'text-amber-500'}`}>
+                จุดที่ต้องผ่าน {visitedWaypointIds.size}/{requiredWaypoints.length} · {requiredWaypoints.every((point) => visitedWaypointIds.has(point.id)) ? 'ผ่านครบแล้ว' : `ยังขาด ${requiredWaypoints.filter((point) => !visitedWaypointIds.has(point.id)).map((point) => point.order ? `จุด ${point.order}` : point.id).join(', ')}`}
+              </p>}
               <ul className="grid gap-1 text-sm">
                 {result.breakdown.map((b) => <li key={b.label} className="flex justify-between gap-3"><span className="text-muted-foreground">{b.label}</span><span className="font-medium">{b.points > 0 ? '+' : ''}{b.points}</span></li>)}
                 {result.breakdown.length === 0 && <li className="text-muted-foreground">ยังไม่ได้คะแนน</li>}

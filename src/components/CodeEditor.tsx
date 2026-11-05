@@ -42,6 +42,7 @@ export function CodeEditor({ value, onChange, rows = 14, name, id, autoFocus, la
   const [sugg, setSugg] = useState<Sugg[]>([]);
   const [sel, setSel] = useState(0);
   const [caret, setCaret] = useState({ line: 0, col: 0 });
+  const copiedLine = useRef<string | null>(null);
 
   const lines = useMemo(() => value.split('\n').length, [value]);
   const html = useMemo(() => highlightCode(value), [value]);
@@ -103,8 +104,14 @@ export function CodeEditor({ value, onChange, rows = 14, name, id, autoFocus, la
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return; // กำลังพิมพ์ไทย/IME
     if (sugg.length) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => (s + 1) % sugg.length); return; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => (s - 1 + sugg.length) % sugg.length); return; }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (!e.altKey && !e.ctrlKey && !e.metaKey) {
+          e.preventDefault();
+          setSel((current) => (current + (e.key === 'ArrowDown' ? 1 : -1) + sugg.length) % sugg.length);
+          return;
+        }
+        setSugg([]); // Alt+ลูกศรยังย้ายบรรทัดได้
+      }
       if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); const s = sugg[sel]; place(s.cmd.insert, s.start, s.start + s.word.length); return; }
       if (e.key === 'Escape') { e.preventDefault(); setSugg([]); return; }
     }
@@ -249,6 +256,28 @@ export function CodeEditor({ value, onChange, rows = 14, name, id, autoFocus, la
     if ((key === ')' || key === ']' || key === '}') && ss === se && v[ss] === key) { e.preventDefault(); el.setSelectionRange(ss + 1, ss + 1); return; }
   };
 
+  const onCopy = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
+    if (el.selectionStart !== el.selectionEnd) { copiedLine.current = null; return; }
+    const { ls, le } = lineRange(el.value, el.selectionStart, el.selectionStart);
+    const text = el.value.slice(ls, le) + '\n';
+    e.clipboardData.setData('text/plain', text);
+    e.preventDefault();
+    copiedLine.current = text;
+  };
+
+  const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
+    const text = e.clipboardData.getData('text/plain');
+    if (!copiedLine.current || text !== copiedLine.current || el.selectionStart !== el.selectionEnd) return;
+    e.preventDefault();
+    const { le } = lineRange(el.value, el.selectionStart, el.selectionStart);
+    const insert = le < el.value.length ? text : '\n' + text.slice(0, -1);
+    const at = le < el.value.length ? le + 1 : le;
+    edit(el, at, at, insert, at + insert.length);
+    setSugg([]);
+  };
+
   const insertQuick = (c: Cmd) => {
     const el = ta.current;
     const pos = el?.selectionStart ?? value.length;
@@ -292,8 +321,9 @@ export function CodeEditor({ value, onChange, rows = 14, name, id, autoFocus, la
             wrap="off"
             onChange={(e) => { onChange(e.target.value); update(e.target.value, e.target.selectionStart); }}
             onKeyDown={onKey}
-            onKeyUp={(e) => { if (!['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(e.key)) return; if (!sugg.length) update(e.currentTarget.value, e.currentTarget.selectionStart); }}
-            onClick={(e) => update(e.currentTarget.value, e.currentTarget.selectionStart)}
+            onClick={() => setSugg([])}
+            onCopy={onCopy}
+            onPaste={onPaste}
             onBlur={() => setTimeout(() => setSugg([]), 120)}
             onScroll={(e) => setScroll({ top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft })}
             className="absolute inset-0 size-full resize-none overflow-auto whitespace-pre bg-transparent p-3 font-mono text-sm leading-6 text-transparent caret-foreground outline-none selection:bg-brand-blue/25"

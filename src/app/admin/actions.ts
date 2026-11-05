@@ -8,6 +8,8 @@ import { getSession, requireRole } from '@/lib/auth';
 import { clean } from '@/lib/rich';
 import { parseConfigStrict } from '@/lib/scenarios';
 import { challengeSlug } from '@/lib/challenge-slug';
+import { scenarioSeeds } from '@/lib/scenario-seeds';
+import { expandedMissions } from '@/lib/mission-expansion';
 
 type Role = 'ADMIN' | 'TEACHER' | 'MEMBER';
 
@@ -104,6 +106,29 @@ export async function saveSection(id: string, f: FormData) {
 }
 
 // ---------- โจทย์ฝึกของตัวจำลอง ----------
+/** เพิ่มเฉพาะโจทย์ตั้งต้นที่ยังไม่มีในฐานข้อมูล เพื่อให้แก้ไขจากหลังบ้านได้ */
+export async function importMissingChallenges() {
+  await guard();
+  try {
+    const seeds = [...scenarioSeeds, ...expandedMissions];
+    const existing = await db.challenge.findMany({ where: { slug: { in: seeds.map((s) => s.slug) } }, select: { slug: true } });
+    const present = new Set(existing.map((row) => row.slug));
+    const missing = seeds.filter((seed) => !present.has(seed.slug));
+    if (missing.length) {
+      await db.challenge.createMany({ data: missing.map((seed) => ({
+        title: seed.title, brief: seed.brief, starter: seed.starter,
+        config: seed.config as object, level: seed.level, order: seed.order,
+        published: true, slug: seed.slug,
+      })) });
+    }
+    refresh('/admin', '/admin/challenges', '/simulator');
+    done('/admin/challenges', `นำเข้า ${missing.length} ด่านแล้ว · ด่านที่แก้ไว้ก่อนหน้ายังอยู่เหมือนเดิม`);
+  } catch (error) {
+    console.error('importMissingChallenges failed', error);
+    back('/admin/challenges', 'นำเข้าด่านไม่สำเร็จ กรุณาลองอีกครั้ง');
+  }
+}
+
 const challengeSchema = z.object({
   title: z.string().min(1, 'ใส่ชื่อภารกิจก่อนบันทึก').max(200, 'ชื่อภารกิจยาวเกิน 200 ตัวอักษร'),
   brief: z.string(),

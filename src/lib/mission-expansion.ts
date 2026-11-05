@@ -78,7 +78,7 @@ function makeMission(tier: number, pairNo: number, variant: 'A' | 'B', family: F
 
   if (family === 'route') {
     baseConfig.objects = route.map((p, i) => wp(`จุด ${i + 1}`, p, i + 1));
-    description = `บินผ่านจุดตรวจ ${route.length} จุดตามลำดับ แล้วกลับมาลงที่ฐาน`;
+    description = `บินผ่านจุดตรวจให้ครบ ${route.length} จุด เลือกเส้นทางเองได้ แล้วกลับมาลงที่ฐาน`;
   } else if (family === 'height') {
     const heights = route.map((_, i) => [85, 125, 165, 110][(i + pairNo + tier) % 4]);
     baseConfig.objects = route.map((p, i) => wp(`จุดสูง ${i + 1}`, p, i + 1, heights[i]));
@@ -134,7 +134,7 @@ function makeMission(tier: number, pairNo: number, variant: 'A' | 'B', family: F
     });
     lines.push(...move(-current.x, -current.y).map((s) => `  ${s}`), '  poshold();', '  auto_land();');
     solution = `void setup() {\n${lines.map((s) => `  ${s}`).join('\n')}\n}\n\nvoid loop() {\n}\n`;
-    description = 'เตรียมสัมภาระ ลอดห่วง ผ่านจุดตรวจตามลำดับ ไปส่งของ แล้วกลับผ่าน checkpoint ก่อนลงฐาน';
+    description = 'เตรียมสัมภาระ ลอดห่วง ผ่านจุดตรวจให้ครบ ไปส่งของ แล้วกลับผ่าน checkpoint ก่อนลงฐาน เลือกทางบินเองได้';
   }
 
   const slug = `flight-${tier + 1}-${String(pairNo + 1).padStart(2, '0')}-${variant.toLowerCase()}`;

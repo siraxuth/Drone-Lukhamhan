@@ -24,7 +24,7 @@ const CARD_W = 360;
 
 /** เจอได้หลายตัว (เช่น ปุ่มของจอใหญ่/จอเล็ก) → เอาตัวแรกที่มองเห็นจริง */
 function findVisible(sel?: string): HTMLElement | null {
-  if (!sel) return null;
+  if (!sel || typeof document === 'undefined') return null;
   for (const el of document.querySelectorAll<HTMLElement>(sel)) {
     const r = el.getBoundingClientRect();
     if (r.width > 0 && r.height > 0) return el;

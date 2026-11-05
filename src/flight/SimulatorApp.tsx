@@ -26,7 +26,7 @@ const KEYS: Array<[string, string]> = [
   ['Tab / Shift+Tab', 'เยื้องเข้า / ออก (เลือกหลายบรรทัดได้)'], ['Ctrl+] / Ctrl+[', 'เยื้องเข้า / ออกทั้งบรรทัด'],
   ['Enter', 'ขึ้นบรรทัดใหม่ คงการเยื้อง · หลัง { เยื้องเพิ่มและปิด } ให้'], ['Ctrl+Enter / Ctrl+Shift+Enter', 'เพิ่มบรรทัดใหม่ด้านล่าง / ด้านบน'],
   ['Ctrl+/', 'คอมเมนต์ / เลิกคอมเมนต์บรรทัด'], ['Alt+↑ / Alt+↓', 'ย้ายบรรทัดขึ้น / ลง'], ['Shift+Alt+↑ / ↓', 'คัดลอกบรรทัดขึ้น / ลง'],
-  ['Ctrl+Shift+K', 'ลบทั้งบรรทัด'], ['Ctrl+L', 'เลือกทั้งบรรทัด'], ['Ctrl+D', 'เลือกคำ กดซ้ำไปคำเดียวกันถัดไป'],
+  ['Ctrl+Shift+K', 'ลบทั้งบรรทัด'], ['Ctrl+L', 'เลือกทั้งบรรทัด'], ['Ctrl+C', 'ถ้าไม่ได้เลือกข้อความ จะคัดลอกทั้งบรรทัด'], ['Ctrl+D', 'เลือกคำ กดซ้ำไปคำเดียวกันถัดไป'],
   ['Ctrl+Z / Ctrl+Y', 'ย้อนกลับ / ทำซ้ำ'], ['( [ { " \'', 'พิมพ์เปิดแล้วปิดให้เอง พิมพ์ปิดซ้ำเพื่อข้าม · Backspace ลบทั้งคู่'],
   ['Esc แล้ว Tab', 'ออกจากช่องโค้ดไปปุ่มถัดไป (สำหรับผู้ใช้คีย์บอร์ด)'],
 ];
@@ -269,7 +269,7 @@ const CODE_COURSE: TourStep[] = [
     target: '#sim-exercise-code',
     title: 'ระดับกลาง · ผ่านสองจุดที่คนละความสูง',
     wide: true,
-    text: 'ใช้ลำดับตั้งศูนย์และขึ้นบินจากขั้นก่อน แล้วผ่านจุด 1 ตรงหน้าที่ 100 ซม. ก่อน จุด 2 อยู่ทางขวาของจุด 1 อีก 100 ซม. และต้องผ่านที่ระดับ 125–175 ซม. ลองวางแผนว่าจะตั้งความสูง 150 ซม. ตอนไหน แล้วหาทางกลับฐานเอง เปิดมองจากบนและใช้ผลหลังบินตรวจว่าผ่านครบตามลำดับหรือยัง',
+    text: 'ใช้ขั้นตั้งศูนย์และขึ้นบินจากบทก่อน สนามนี้มีจุด 1 ตรงหน้า 100 ซม. และจุด 2 อยู่ทางขวาอีก 100 ซม. ที่ระดับ 125–175 ซม. เลือกผ่านจุดไหนก่อนก็ได้ ลองวางแผนว่าจะตั้งความสูง 150 ซม. ตอนไหน แล้วหาทางกลับฐานเอง เปิดมองจากบนเพื่อเช็กว่าผ่านครบทั้งสองจุดหรือยัง',
     content: <FlightExercise initialCode={starter} objects={middleRoute} />,
   },
   {
@@ -367,6 +367,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
             <div id="sim-mission-brief" inert={!briefOpen} className={`grid transition-[grid-template-rows] duration-200 motion-reduce:transition-none ${briefOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
               <div className="min-h-0 overflow-hidden">
                 <div className="rich max-h-[25svh] overflow-y-auto border-t border-line px-3 py-3 text-sm leading-6" dangerouslySetInnerHTML={{ __html: sc.briefHtml }} />
+                {sc.config.objects.filter((object) => object.type === 'waypoint').length > 1 && <p className="border-t border-line px-3 py-2 text-xs text-muted-foreground">เลขบนจุดใช้ดูตำแหน่งในสนาม เลือกผ่านจุดไหนก่อนก็ได้ ขอให้ผ่านครบตามโจทย์</p>}
               </div>
             </div>
           </div>

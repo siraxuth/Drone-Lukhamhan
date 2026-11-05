@@ -2,17 +2,21 @@ import Link from 'next/link';
 import { ArrowUpRight, Flag, FolderKanban, LayoutList, Puzzle, Users } from 'lucide-react';
 import { db } from '@/lib/db';
 import { PageHead, Panel, dateTh } from './ui';
+import { scenarioSeeds } from '@/lib/scenario-seeds';
+import { expandedMissions } from '@/lib/mission-expansion';
 
 export default async function AdminHome() {
-  const [projects, seasons, challenges, sections, users, draft, recent] = await Promise.all([
-    db.project.count(), db.season.count(), db.challenge.count(), db.section.count(), db.user.count(),
+  const [projects, seasons, challengeRows, sections, users, draft, recent] = await Promise.all([
+    db.project.count(), db.season.count(), db.challenge.findMany({ select: { slug: true } }), db.section.count(), db.user.count(),
     db.project.count({ where: { published: false } }),
     db.project.findMany({ orderBy: { updatedAt: 'desc' }, take: 5 }),
   ]);
+  const savedSlugs = new Set(challengeRows.map((row) => row.slug));
+  const challenges = challengeRows.length + [...scenarioSeeds, ...expandedMissions].filter((seed) => !savedSlugs.has(seed.slug)).length;
   const cards = [
     { href: '/admin/projects', label: 'ผลงาน', n: projects, note: draft ? `${draft} ฉบับร่าง` : 'เผยแพร่ครบ', icon: FolderKanban },
     { href: '/admin/seasons', label: 'ฤดูกาล / กติกา', n: seasons, note: 'ปีการแข่งขัน', icon: Flag },
-    { href: '/admin/challenges', label: 'โจทย์ตัวจำลอง', n: challenges, note: 'ในตัวจำลอง', icon: Puzzle },
+    { href: '/admin/challenges', label: 'โจทย์ตัวจำลอง', n: challenges, note: `${challengeRows.length} ด่านอยู่ในฐานข้อมูล`, icon: Puzzle },
     { href: '/admin/sections', label: 'หมวดเนื้อหา', n: sections, note: 'จัดลำดับได้', icon: LayoutList },
     { href: '/admin/users', label: 'สมาชิก', n: users, note: 'ที่สมัครไว้', icon: Users },
   ];

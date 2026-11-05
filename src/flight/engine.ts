@@ -19,8 +19,12 @@ const MS_PER_DEG_YAW = 42; // yaw_block ใน config.hpp
 const YAW_SETTLE_MS = 220;
 const TAKEOFF_CM = 80;
 const SHOT_MIN_DIST_CM = 100;
+// ลูกดอกถึงเป้า ~220 ms, เอฟเฟกต์กระทบ ~550 ms, ป้ายคะแนน ~1350 ms และกล้องคืนมุม ~1550 ms
+// ค้างภาพเป้าแรกอีก 1 วินาทีหลังป้ายคะแนนและกล้องแสดงผลจบ ก่อนทำคำสั่งถัดไป
+const SHOT_PRESENT_MS = 2550;
 const NEEDLE_REACH_CM = 12;
-const NEEDLE_TOLERANCE_CM = 15;
+// ลูกโป่งรัศมีประมาณ 15 ซม. เผื่อปลายเข็มเฉี่ยวขอบอีก 10 ซม. เพื่อให้ด่านฝึกเล่นง่ายขึ้น
+const NEEDLE_TOLERANCE_CM = 25;
 const SPEED_LIMIT_CM = 600;
 export const MAGAZINE_CAPACITY = 20; // บรรจุได้ทีละ 20 ลูกต่อชุด (ชุดซ้าย = ประตู 1&4, ชุดขวา = ประตู 2&3)
 const HAND_TURN_MS = 2500; // คนแข่งหมุนตัวโดรนด้วยมือบนแท่น
@@ -40,7 +44,7 @@ export type Balloon = { id: string; x: number; y: number; z: number };
 export type Board = { id: string; x: number; y: number; cz: number; r: number };
 /** ห่วงอิสระ: ระนาบตั้งฉากกับทิศ yaw (0° = หันไปเหนือ) โดรนต้องผ่านช่องกว้าง size ซม. ที่ความสูงกึ่งกลางโดรน zMin–zMax */
 export type FreeHoop = { id: string; x: number; y: number; size: number; yaw: number; zMin: number; zMax: number; points: number };
-/** จุดผ่าน: โดรนต้องบินผ่านวงรัศมี r ซม. ที่ความสูง zMin–zMax · มี order = ต้องผ่านตามลำดับ */
+/** จุดผ่าน: โดรนต้องบินผ่านวงรัศมี r ซม. ที่ความสูง zMin–zMax · order ใช้แสดงหมายเลขเท่านั้น */
 export type Waypoint = { id: string; x: number; y: number; r: number; zMin: number; zMax: number; points: number; order?: number };
 
 export type FlightConfig = {
@@ -107,12 +111,10 @@ export type Result = {
 
 export type FlightConditions = {
     seed: number;
-    windX: number;
-    windY: number;
+    /** ระยะคลาดสะสมของเที่ยวบิน แยกตามแกนสนาม (ซม.) */
+    driftX: number;
+    driftY: number;
     batteryPercent: number;
-    distanceScale: number;
-    yawScale: number;
-    calibrationOffsetDeg: number;
 };
 
 /** Repeatable conditions for debriefs. Omitting a seed always uses the nominal run. */
@@ -125,18 +127,14 @@ export function conditionsFor(seed = 0): FlightConditions {
         t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
-    const batteryPercent = seed === 0 ? 100 : Math.round(58 + rand() * 42);
-    const distanceScale = seed === 0 ? 1 : 0.94 + rand() * 0.12;
-    const yawScale = seed === 0 ? 1 : 0.97 + rand() * 0.06;
-    const calibrationOffsetDeg = seed === 0 ? 0 : -2.5 + rand() * 5;
+    const batteryPercent = seed === 0 ? 100 : Math.round(85 + rand() * 15);
+    const angle = rand() * Math.PI * 2;
+    const driftCm = seed === 0 ? 0 : Math.min(3, 1 + (100 - batteryPercent) / 15 + rand());
     return {
         seed: seed >>> 0,
-        windX: seed === 0 ? 0 : -5 + rand() * 10,
-        windY: seed === 0 ? 0 : -5 + rand() * 10,
+        driftX: Math.cos(angle) * driftCm,
+        driftY: Math.sin(angle) * driftCm,
         batteryPercent,
-        distanceScale,
-        yawScale,
-        calibrationOffsetDeg,
     };
 }
 
@@ -155,8 +153,6 @@ function evalExtras(frames: Frame[], cfg: FlightConfig): { visits: Result["visit
     const hoops = cfg.hoops ?? [];
     if (!wps.length && !hoops.length) return { visits, breakdown: [] };
     const done = new Set<string>();
-    const orders = [...new Set(wps.filter(w => w.order !== undefined).map(w => w.order as number))].sort((a, b) => a - b);
-    let nextIdx = 0;
 
     for (let i = 1; i < frames.length; i++) {
         const a = frames[i - 1], b = frames[i];
@@ -168,11 +164,9 @@ function evalExtras(frames: Frame[], cfg: FlightConfig): { visits: Result["visit
             const px = a.x + (b.x - a.x) * u, py = a.y + (b.y - a.y) * u, pz = a.z + (b.z - a.z) * u, pt = a.t + (b.t - a.t) * u;
             for (const w of wps) {
                 if (done.has(w.id)) continue;
-                if (w.order !== undefined && w.order !== orders[nextIdx]) continue;
                 if (Math.hypot(px - w.x, py - w.y) <= w.r && pz >= w.zMin && pz <= w.zMax) {
                     done.add(w.id);
                     visits.push({ id: w.id, kind: "waypoint", t: pt, points: w.points });
-                    if (w.order !== undefined && !wps.some(o => !done.has(o.id) && o.order === w.order)) nextIdx++;
                 }
             }
         }
@@ -209,7 +203,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
     let x = cfg.start.x,
         y = cfg.start.y,
         z = onPadAt(cfg.start.x, cfg.start.y) ? REST_CM : LEG_CM, // เริ่มบนแท่น (สูง 20 ซม.) หรือบนพื้น
-        yaw = (cfg.startYaw ?? 0) + conditions.calibrationOffsetDeg,
+        yaw = cfg.startYaw ?? 0,
         t = 0;
     const mag = { L: cfg.initialPayload?.L ?? 0, R: cfg.initialPayload?.R ?? 0 }; // เติมจากแผงเตรียมโดรน
     const frames: Frame[] = [{ t, x, y, z, yaw }];
@@ -225,6 +219,8 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
     const platformLanded = new Set<string>();
     const bestRing = new Map<string, number>(); // เป้า → วงที่น้อยที่สุดที่ยิงถูก (กติกา: นับลูกคะแนนน้อยสุด)
     let shotsMade = 0;
+    // ความคลาดค่อย ๆ เพิ่มใน 1 เมตรแรก แล้วคงที่ ไม่ทบเพิ่มทุกคำสั่งหรือทุกวินาที
+    let driftProgressCm = 0;
 
     /** ตั้งศูนย์/สตาร์ทมอเตอร์ในโค้ดจริงเป็นแค่ "ส่งคำสั่ง" ไม่รอให้เสร็จ: ผู้เขียนต้อง delay เอง */
     const CALIB_MS = 3000, SPINUP_MS = 3000;
@@ -368,11 +364,15 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
         const k = ms > remain ? Math.max(0, remain / ms) : 1;
         const sx = x,
             sy = y;
-        const batteryScale = 0.94 + conditions.batteryPercent * 0.0006;
-        const actualDx = dx * conditions.distanceScale * batteryScale + (flying && !holdPosition ? conditions.windX * ms / 1000 : 0);
-        const actualDy = dy * conditions.distanceScale * batteryScale + (flying && !holdPosition ? conditions.windY * ms / 1000 : 0);
-        const actualDz = dz * batteryScale;
-        const actualDyaw = dyaw * conditions.yawScale;
+        const horizontalCm = flying && !holdPosition ? Math.hypot(dx, dy) * k : 0;
+        const before = Math.min(1, driftProgressCm / 100);
+        driftProgressCm += horizontalCm;
+        const after = Math.min(1, driftProgressCm / 100);
+        const driftShare = k > 0 ? (after - before) / k : 0;
+        const actualDx = dx + conditions.driftX * driftShare;
+        const actualDy = dy + conditions.driftY * driftShare;
+        const actualDz = dz;
+        const actualDyaw = dyaw;
         if (flying && !leftHoop && (dx !== 0 || dy !== 0)) {
             // หาจุดที่ออกจากกรอบห่วงบนเส้นทางนี้ (ตรวจแบบละเอียดทุก 1 ซม.)
             const steps = Math.max(1, Math.ceil(Math.hypot(actualDx, actualDy) * k));
@@ -635,8 +635,6 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                 if (!needFly(`${c.name}()`)) break;
                 const d = dirOf(yaw);
                 const tip = { x: x + d.x * NEEDLE_REACH_CM, y: y + d.y * NEEDLE_REACH_CM, z };
-                const alreadyBurst = cfg.balloons.find(b => popped.has(b.id) && Math.hypot(b.x - tip.x, b.y - tip.y, b.z - tip.z) <= NEEDLE_TOLERANCE_CM);
-                if (alreadyBurst) { info(`เข็มแตะลูกโป่ง "${alreadyBurst.id}" ซึ่งแตกแล้ว`); break; }
                 t += 300;
                 push();
                 let best: { b: Balloon; dist: number } | null = null;
@@ -657,6 +655,8 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                         ok: true,
                     });
                 } else {
+                    const alreadyBurst = cfg.balloons.find(b => popped.has(b.id) && Math.hypot(b.x - tip.x, b.y - tip.y, b.z - tip.z) <= NEEDLE_TOLERANCE_CM);
+                    if (alreadyBurst) { info(`ลูกโป่ง "${alreadyBurst.id}" แตกไปแล้ว`); break; }
                     ev({
                         kind: "pop",
                         line: c.line,
@@ -730,6 +730,8 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                         points: hit.ring as number,
                     });
                 }
+                t += SHOT_PRESENT_MS;
+                push();
                 break;
             }
             default: {
