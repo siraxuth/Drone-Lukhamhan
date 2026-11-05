@@ -7,6 +7,7 @@ import { expandedMissions } from '@/lib/mission-expansion';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { RowMenu } from '../client';
 import { Notice, PageHead, StatusBadge } from '../ui';
 import { importMissingChallenges } from '../actions';
@@ -32,6 +33,16 @@ export default async function ChallengesPage({ searchParams }: { searchParams: P
   const missingCount = builtIn.filter((seed) => !savedSlugs.has(seed.slug)).length;
   const playableCount = catalog.filter((row) => row.published).length;
   const pageHref = (n: number) => `/admin/challenges?${new URLSearchParams({ ...(q ? { q } : {}), ...(level ? { level } : {}), page: String(n) })}`;
+  const numberedPages = [...new Set([1, currentPage - 1, currentPage, currentPage + 1, totalPages])]
+    .filter((n) => n >= 1 && n <= totalPages)
+    .sort((a, b) => a - b);
+  const pageItems: Array<number | 'ellipsis'> = [];
+  for (const n of numberedPages) {
+    const previous = pageItems.at(-1);
+    if (typeof previous === 'number' && n - previous === 2) pageItems.push(previous + 1);
+    else if (typeof previous === 'number' && n - previous > 2) pageItems.push('ellipsis');
+    pageItems.push(n);
+  }
 
   return (
     <>
@@ -77,11 +88,17 @@ export default async function ChallengesPage({ searchParams }: { searchParams: P
         </li>)}
         {rows.length === 0 && <li className="squircle-3xl border border-line bg-surface p-8 text-center text-lg text-muted-foreground">ไม่พบโจทย์ที่ตรงกับคำค้น</li>}
       </ul>
-      {totalPages > 1 && <nav aria-label="หน้าโจทย์" className="flex flex-wrap items-center justify-center gap-3 text-sm">
-        {currentPage > 1 && <Link className="squircle-xl border border-line px-4 py-2 hover:bg-surface-2" href={pageHref(currentPage - 1)}>← ก่อนหน้า</Link>}
-        <span>หน้า {currentPage} จาก {totalPages}</span>
-        {currentPage < totalPages && <Link className="squircle-xl border border-line px-4 py-2 hover:bg-surface-2" href={pageHref(currentPage + 1)}>ถัดไป →</Link>}
-      </nav>}
+      {totalPages > 1 && <Pagination aria-label="หน้าโจทย์">
+        <PaginationContent>
+          {currentPage > 1 && <PaginationItem><PaginationPrevious href={pageHref(currentPage - 1)} text="ก่อนหน้า" aria-label="หน้าก่อนหน้า" /></PaginationItem>}
+          {pageItems.map((item, index) => item === 'ellipsis'
+            ? <PaginationItem key={`ellipsis-${index}`} className="hidden sm:block"><PaginationEllipsis /></PaginationItem>
+            : <PaginationItem key={item} className={item === 1 || item === currentPage || item === totalPages ? undefined : 'hidden sm:block'}>
+                <PaginationLink href={pageHref(item)} isActive={item === currentPage} aria-label={`หน้า ${item}`}>{item}</PaginationLink>
+              </PaginationItem>)}
+          {currentPage < totalPages && <PaginationItem><PaginationNext href={pageHref(currentPage + 1)} text="ถัดไป" aria-label="หน้าถัดไป" /></PaginationItem>}
+        </PaginationContent>
+      </Pagination>}
     </>
   );
 }
