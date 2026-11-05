@@ -527,7 +527,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
           <summary className="cursor-pointer px-3 py-2 text-sm font-semibold hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-brand-blue">
             {done && flightError ? 'ดูข้อผิดพลาดของเที่ยวบิน' : done && result ? `ดูผลเที่ยวบิน · ${result.score} คะแนน` : 'ดูบันทึกการบิน'}
           </summary>
-          <div className="grid max-h-[30svh] gap-3 overflow-y-auto border-t border-line p-3">
+          <div className="grid min-w-0 gap-3 border-t border-line p-3">
       {!previewKey && done && result && plannedResult && (() => {
         const sample = (frames: Frame[]) => {
           const stride = Math.max(1, Math.ceil(frames.length / 120));

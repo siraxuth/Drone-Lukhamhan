@@ -1,5 +1,7 @@
 'use client';
 
+import { DRONE_MODEL } from '@/lib/drone-assets';
+
 import { useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Environment, Lightformer, Line, useGLTF } from '@react-three/drei';
@@ -24,7 +26,7 @@ type Props = {
 };
 
 function Drone({ steps, states, clock, onStep, hasBall, dark }: Pick<Props, 'steps' | 'states' | 'clock' | 'onStep' | 'dark'> & { hasBall: boolean }) {
-  const { scene } = useGLTF('/models/drone-lite.glb');
+  const { scene } = useGLTF(DRONE_MODEL.low);
   const pos = useRef<THREE.Group>(null);
   const tilt = useRef<THREE.Group>(null);
   const ball = useRef<THREE.Mesh>(null);
@@ -207,4 +209,4 @@ export default function DemoScene(props: Props) {
   );
 }
 
-useGLTF.preload('/models/drone-lite.glb');
+useGLTF.preload(DRONE_MODEL.low);

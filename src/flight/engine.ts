@@ -35,7 +35,7 @@ export const LEG_CM = 7.02;
 export const REST_CM = PAD_TOP_CM + LEG_CM;
 
 export type Gate = "ch1_ch4" | "ch2_ch3" | "any";
-export type Platform = { id: string; x: number; y: number; r: number; gates: Gate };
+export type Platform = { id: string; x: number; y: number; r: number; gates: Gate; requiredBalls?: number };
 export type Balloon = { id: string; x: number; y: number; z: number };
 export type Board = { id: string; x: number; y: number; cz: number; r: number };
 /** ห่วงอิสระ: ระนาบตั้งฉากกับทิศ yaw (0° = หันไปเหนือ) โดรนต้องผ่านช่องกว้าง size ซม. ที่ความสูงกึ่งกลางโดรน zMin–zMax */
@@ -781,6 +781,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                             ok: false,
                         });
                     else {
+                        const cap = near.requiredBalls ?? cfg.ballCap;
                         const total = (balls.get(near.id) ?? 0) + n;
                         balls.set(near.id, total);
                         mk({
@@ -792,13 +793,13 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                                 L: sides.includes("L") ? per[sides.indexOf("L")] : 0,
                                 R: sides.includes("R") ? per[sides.indexOf("R")] : 0,
                             },
-                            text: `บอล ${n} ลูกลงแท่น "${near.id}" (รวม ${total} ลูก)${total > cfg.ballCap ? ` · เกิน ${cfg.ballCap} ลูก จะถูกหักคะแนน` : ""}`,
+                            text: `บอล ${n} ลูกลงแท่น "${near.id}" (รวม ${total}/${cap} ลูก)${total > cap ? ` · เกิน ${cap} ลูก จะถูกหักคะแนน` : ""}`,
                             at: here,
                             id: near.id,
                             ok: true,
                             points:
-                                Math.min(total, cfg.ballCap) * cfg.points.ball -
-                                Math.min(total - n, cfg.ballCap) * cfg.points.ball,
+                                Math.min(total, cap) * cfg.points.ball -
+                                Math.min(total - n, cap) * cfg.points.ball,
                         });
                     }
                 } else {
@@ -818,14 +819,15 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
     let ballPts = 0,
         over = 0,
         total = 0;
-    balls.forEach(n => {
+    balls.forEach((n, id) => {
+        const cap = cfg.platforms.find(p => p.id === id)?.requiredBalls ?? cfg.ballCap;
         total += n;
-        ballPts += Math.min(n, cfg.ballCap) * cfg.points.ball;
-        over += Math.max(0, n - cfg.ballCap);
+        ballPts += Math.min(n, cap) * cfg.points.ball;
+        over += Math.max(0, n - cap);
     });
     if (total) breakdown.push({ label: `สัมภาระลงแท่น ${total - over} ลูก`, points: ballPts });
     if (over)
-        breakdown.push({ label: `สัมภาระเกิน ${cfg.ballCap} ลูกต่อแท่น ${over} ลูก`, points: -over * cfg.points.ball });
+        breakdown.push({ label: `สัมภาระเกินจำนวนที่กำหนด ${over} ลูก`, points: -over * cfg.points.ball });
     if (popped.size)
         breakdown.push({ label: `ทำลายลูกโป่ง ${popped.size} ลูก`, points: popped.size * cfg.points.balloon });
     if (platformLanded.size)

@@ -1,5 +1,7 @@
 'use client';
 
+import { DRONE_MODEL } from '@/lib/drone-assets';
+
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, useGLTF, useTexture } from '@react-three/drei';
 import { baseAt } from '@/lib/scenarios';
@@ -60,7 +62,7 @@ const C = {
   steel: '#2a2f3a',
 };
 
-function Mat({ low }: { low: boolean }) {
+export function Mat({ low }: { low: boolean }) {
   const tex = useTexture(low ? '/field/mat-1024.webp' : '/field/mat-2048.webp');
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = low ? 2 : 8;
@@ -81,7 +83,7 @@ function Surround() {
   );
 }
 
-function Takeoff({ color, hoop = true }: { color: 'green' | 'red'; hoop?: boolean }) {
+export function Takeoff({ color, hoop = true }: { color: 'green' | 'red'; hoop?: boolean }) {
   const s = FIELD.takeoff.size, h = FIELD.takeoff.height;
   const { size: hs, bottom, top } = FIELD.hoop;
   const t = 0.065;
@@ -116,7 +118,7 @@ function Takeoff({ color, hoop = true }: { color: 'green' | 'red'; hoop?: boolea
   );
 }
 
-function Platforms() {
+export function Platforms() {
   const { radius, height, approx } = FIELD.platform;
   return (
     <>
@@ -140,7 +142,7 @@ function Platforms() {
   );
 }
 
-function Balloons({ popped }: { popped: string[] }) {
+export function Balloons({ popped }: { popped: string[] }) {
   const { pillar, totalHeight, spacing, groups } = FIELD.balloons;
   const items: Array<[number, number, string]> = [];
   groups.forEach((g, gi) => {
@@ -245,7 +247,7 @@ function useTargetTexture() {
   }, []);
 }
 
-function Targets() {
+export function Targets() {
   const tex = useTargetTexture();
   const { diameter, centerHeight, positions } = FIELD.target;
   return (
@@ -327,10 +329,31 @@ function Surroundings() {
   );
 }
 
-function DroneModel({ low, propsRef }: { low: boolean; propsRef: React.MutableRefObject<THREE.Object3D[]> }) {
-  const { scene } = useGLTF(low ? '/models/drone-lite.glb' : '/models/drone.glb');
-  const model = useMemo(() => scene.clone(true), [scene]);
+export function DroneModel({ low, propsRef, admin = false }: { low: boolean; propsRef?: React.MutableRefObject<THREE.Object3D[]>; admin?: boolean }) {
+  const { scene } = useGLTF(low ? DRONE_MODEL.low : DRONE_MODEL.high);
+  const model = useMemo(() => {
+    const copy = scene.clone(true);
+    if (admin) copy.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const recolor = (source: THREE.Material) => {
+        const material = source.clone();
+        const standard = material as THREE.MeshStandardMaterial;
+        if (standard.color) {
+          if (material.name === 'Black') standard.color.set('#15171b'); // ตัวถังดำ
+          else if (material.name === 'White battery wrap') standard.color.set('#292c32'); // แบตสีเข้มเข้าชุด
+          else if (material.name === 'White motor index') standard.color.set('#d9dce1'); // จุดบอกทิศยังมองเห็น
+          else standard.color.set('#24272d'); // คาน มอเตอร์ และใบพัดสีดำ
+        }
+        if ('metalness' in standard) standard.metalness = 0.04;
+        return material;
+      };
+      mesh.material = Array.isArray(mesh.material) ? mesh.material.map(recolor) : recolor(mesh.material);
+    });
+    return copy;
+  }, [scene, admin]);
   useEffect(() => {
+    if (!propsRef) return;
     propsRef.current = [1, 2, 3, 4].map((n) => model.getObjectByName(`Prop_${n}`)).filter(Boolean) as THREE.Object3D[];
   }, [model, propsRef]);
   // 1 หน่วยโมเดล = 160 มม.

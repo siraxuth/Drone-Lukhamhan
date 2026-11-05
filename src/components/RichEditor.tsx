@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import type { Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { MediaPickerDialog } from '@/components/image/MediaPickerDialog';
 import { useCropFlow } from '@/components/image/useCropFlow';
+import { useChallengeDraft } from '@/app/admin/challenges/ChallengeDraftContext';
 
 /** รูปในเนื้อหา: เก็บขนาด (% ความกว้าง) และการจัดวางเป็น data-attribute (CSS ใน globals.css เป็นคนกำหนดค่าจริง) */
 const RichImage = Image.extend({
@@ -33,6 +34,7 @@ const imgFile = (f?: File | null) => (f && /^image\/(png|jpe?g|webp|avif|gif)$/.
 /** ตัวแก้ข้อความแบบเห็นผลทันที (WYSIWYG) · รูป ตาราง จัดชิด ไฮไลต์ · ส่งค่าเป็น HTML ใน input ชื่อ `name` */
 export function RichEditor({ name, initial = '', placeholder = 'พิมพ์เนื้อหาที่นี่…', minHeight = '14rem', id }: { name: string; initial?: string; placeholder?: string; minHeight?: string; id?: string }) {
   const [html, setHtml] = useState(initial);
+  const draft = useChallengeDraft();
   const [lib, setLib] = useState(false);
   const [status, setStatus] = useState('');
   const mode = useRef<'insert' | 'replace'>('insert');
@@ -71,6 +73,7 @@ export function RichEditor({ name, initial = '', placeholder = 'พิมพ์�
     onCreate: ({ editor: e }) => { ed.current = e; },
     onUpdate: ({ editor: e }) => setHtml(e.isEmpty ? '' : e.getHTML()),
   });
+  useEffect(() => { if (draft.restoreNonce && draft.fields[name] !== undefined) { const value = draft.fields[name]; setHtml(value); editor?.commands.setContent(value); } }, [draft.restoreNonce, draft.fields, editor, name]);
   if (editor) ed.current = editor;
 
   return (

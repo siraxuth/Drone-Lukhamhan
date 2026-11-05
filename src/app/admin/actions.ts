@@ -7,6 +7,7 @@ import { db } from '@/lib/db';
 import { getSession, requireRole } from '@/lib/auth';
 import { clean } from '@/lib/rich';
 import { parseConfigStrict } from '@/lib/scenarios';
+import { challengeSlug } from '@/lib/challenge-slug';
 
 type Role = 'ADMIN' | 'TEACHER' | 'MEMBER';
 
@@ -104,29 +105,47 @@ export async function saveSection(id: string, f: FormData) {
 
 // ---------- โจทย์ฝึกของตัวจำลอง ----------
 const challengeSchema = z.object({
-  title: z.string().min(1, 'ใส่ชื่อโจทย์'),
+  title: z.string().min(1, 'ใส่ชื่อภารกิจก่อนบันทึก').max(200, 'ชื่อภารกิจยาวเกิน 200 ตัวอักษร'),
   brief: z.string(),
   starter: z.string(),
-  seasonId: z.string(),
   level: z.enum(['เริ่มต้น', 'กลาง', 'ยาก', 'โหดมาก']),
-  order: z.coerce.number().int().min(0).max(999),
-  slug: z.string().regex(/^[a-z0-9-]{0,60}$/, 'slug ใช้ได้เฉพาะ a-z 0-9 และขีดกลาง'),
+  order: z.coerce.number().int().min(0, 'ลำดับต้องไม่น้อยกว่า 0').max(999, 'ลำดับต้องไม่เกิน 999'),
 });
 
-export async function saveChallenge(id: string, f: FormData) {
-  await guard();
-  const here = `/admin/challenges/${id}`;
-  const d = check(challengeSchema.safeParse({ title: text(f, 'title'), brief: clean(String(f.get('brief') ?? '')), starter: String(f.get('starter') ?? ''), seasonId: text(f, 'seasonId'), level: text(f, 'level') || 'เริ่มต้น', order: text(f, 'order') || '0', slug: text(f, 'slug').toLowerCase() }), here);
+export async function saveChallenge(id: string, f: FormData): Promise<
+  { ok: true; id: string; slug: string; published: boolean } | { ok: false; error: string; field?: string }
+> {
+  const session = await requireRole('ADMIN', 'TEACHER');
+  if (!session) return { ok: false, error: 'ไม่มีสิทธิ์บันทึก กรุณาเข้าสู่ระบบด้วยบัญชีผู้ดูแลหรือครู' };
+  const parsed = challengeSchema.safeParse({ title: text(f, 'title'), brief: clean(String(f.get('brief') ?? '')), starter: String(f.get('starter') ?? ''), level: text(f, 'level'), order: text(f, 'order') || '0' });
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const field = String(issue?.path[0] ?? 'title');
+    const labels: Record<string, string> = { title: 'ชื่อโจทย์', level: 'ระดับความยาก', order: 'ลำดับในรายการ' };
+    return { ok: false, field, error: `${labels[field] ?? 'ข้อมูลโจทย์'}: ${issue?.message ?? 'ตรวจข้อมูลอีกครั้ง'}` };
+  }
   const cfg = parseConfigStrict(text(f, 'config') || '{}');
-  if (!cfg.ok) return back(here, cfg.error);
-  const slug = d.slug || `c-${Date.now().toString(36)}`;
-  const clash = await db.challenge.findFirst({ where: { slug, ...(id === 'new' ? {} : { NOT: { id } }) } });
-  if (clash) return back(here, `slug "${slug}" ซ้ำกับโจทย์ "${clash.title}"`);
-  const data = { title: d.title, brief: d.brief, starter: d.starter, seasonId: d.seasonId || null, config: cfg.config as object, level: d.level, order: d.order, slug, published: on(f, 'published') };
-  if (id === 'new') await db.challenge.create({ data });
-  else await db.challenge.update({ where: { id }, data });
-  refresh('/admin', '/admin/challenges', '/simulator');
-  done('/admin/challenges');
+  if (!cfg.ok) return { ok: false, field: 'config', error: `ตั้งค่าสนาม: ${cfg.error}` };
+  try {
+    const d = parsed.data;
+    const existing = id === 'new' ? null : await db.challenge.findUnique({ where: { id }, select: { slug: true } });
+    if (id !== 'new' && !existing) return { ok: false, error: 'ไม่พบภารกิจนี้ อาจถูกลบไปแล้ว' };
+    const base = existing?.slug || challengeSlug(d.title);
+    let slug = base;
+    if (!existing?.slug) {
+      const siblings = await db.challenge.findMany({ where: { slug: { startsWith: base } }, select: { slug: true } });
+      const used = new Set(siblings.map(row => row.slug));
+      let suffix = 2;
+      while (used.has(slug)) slug = `${base}-${suffix++}`;
+    }
+    const data = { ...d, config: { ...cfg.config, requiresPayload: cfg.config.event === 'mission' || cfg.config.objects.some(o => o.type === 'platform') }, slug, published: on(f, 'published') };
+    const saved = id === 'new' ? await db.challenge.create({ data }) : await db.challenge.update({ where: { id }, data });
+    refresh('/admin', '/admin/challenges', '/simulator', `/admin/challenges/${saved.id}`);
+    return { ok: true, id: saved.id, slug, published: saved.published };
+  } catch (error) {
+    console.error('saveChallenge failed', error);
+    return { ok: false, error: 'บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง ข้อมูลที่กรอกยังอยู่ครบ' };
+  }
 }
 
 // ---------- ใช้ร่วมกัน ----------

@@ -5,7 +5,7 @@
   "scripts": {
     "studio": "remotion studio",
     "audio": "python3 scripts/make-audio.py",
-    "capture": "bun scripts/capture.ts",
+    "capture": "bun scripts/capture-landing.ts",
     "qr": "bun scripts/qr.ts",
     "render": "remotion render Intro16x9 out/raw-intro-16x9.mp4 --crf=18 && remotion render Intro9x16 out/raw-intro-9x16.mp4 --crf=18 && bash scripts/finish.sh",
     "typecheck": "tsc --noEmit"
