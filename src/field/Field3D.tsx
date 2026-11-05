@@ -329,29 +329,28 @@ function Surroundings() {
   );
 }
 
-export function DroneModel({ low, propsRef, admin = false }: { low: boolean; propsRef?: React.MutableRefObject<THREE.Object3D[]>; admin?: boolean }) {
+export function DroneModel({ low, propsRef }: { low: boolean; propsRef?: React.MutableRefObject<THREE.Object3D[]> }) {
   const { scene } = useGLTF(low ? DRONE_MODEL.low : DRONE_MODEL.high);
   const model = useMemo(() => {
     const copy = scene.clone(true);
-    if (admin) copy.traverse((object) => {
+    copy.traverse((object) => {
       const mesh = object as THREE.Mesh;
       if (!mesh.isMesh) return;
       const recolor = (source: THREE.Material) => {
         const material = source.clone();
         const standard = material as THREE.MeshStandardMaterial;
         if (standard.color) {
-          if (material.name === 'Black') standard.color.set('#15171b'); // ตัวถังดำ
-          else if (material.name === 'White battery wrap') standard.color.set('#292c32'); // แบตสีเข้มเข้าชุด
-          else if (material.name === 'White motor index') standard.color.set('#d9dce1'); // จุดบอกทิศยังมองเห็น
-          else standard.color.set('#24272d'); // คาน มอเตอร์ และใบพัดสีดำ
+          if (material.name === 'Black' || material.name === 'White battery wrap') standard.color.set('#111317');
+          else if (material.name === 'White motor index') standard.color.set('#262a30');
+          else standard.color.set('#1b1e23');
         }
-        if ('metalness' in standard) standard.metalness = 0.04;
+        if ('metalness' in standard) { standard.metalness = 0.04; standard.roughness = 0.62; }
         return material;
       };
       mesh.material = Array.isArray(mesh.material) ? mesh.material.map(recolor) : recolor(mesh.material);
     });
     return copy;
-  }, [scene, admin]);
+  }, [scene]);
   useEffect(() => {
     if (!propsRef) return;
     propsRef.current = [1, 2, 3, 4].map((n) => model.getObjectByName(`Prop_${n}`)).filter(Boolean) as THREE.Object3D[];

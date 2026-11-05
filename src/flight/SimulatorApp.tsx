@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { BookOpen, ChevronDown, CircleHelp, Plus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { CodeEditor, highlightCode } from '@/components/CodeEditor';
 import { ScenePreview } from '@/field/ScenePlan';
 import { currentSeason as season } from '@/rules';
@@ -71,6 +72,34 @@ const firstFlightCommands = [
 ];
 
 const practiceCommands = commandsFor('full');
+
+function KeyExamplePopover() {
+  return (
+    <Popover>
+      <PopoverTrigger render={<Button variant="outline" className="min-h-10" />}>ตัวอย่าง KEY 1–2</PopoverTrigger>
+      <PopoverContent align="end" className="max-h-[min(70svh,32rem)] w-[min(32rem,calc(100vw-2rem))] overflow-y-auto p-3">
+        <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5">{KEY_FUNCTION_EXAMPLE}</pre>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function CommandReferencePopover() {
+  return (
+    <Popover>
+      <PopoverTrigger render={<Button variant="outline" className="min-h-10" />}>ชื่อคำสั่ง</PopoverTrigger>
+      <PopoverContent align="end" className="max-h-[min(70svh,32rem)] w-[min(38rem,calc(100vw-2rem))] overflow-y-auto p-3 text-xs">
+        <p className="mb-2">ใช้ <code>move_forward(100);</code>, <code>set_height(120);</code> และคำสั่งเต็มที่อ่านง่าย</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left"><thead><tr><th className="p-1">ย่อ</th><th className="p-1">เต็ม</th><th className="p-1">drone.</th><th className="p-1">pArduino-&gt;</th></tr></thead>
+            <tbody>{PAIRS.map(([a, b, c, d]) => <tr key={a} className="border-t border-line"><td className="p-1 font-mono">{a}</td><td className="p-1 font-mono">{b}</td><td className="p-1 font-mono">{c}</td><td className="p-1 font-mono">{d}</td></tr>)}</tbody>
+          </table>
+        </div>
+        <details className="mt-2"><summary className="cursor-pointer font-semibold">คีย์ลัดในตัวแก้โค้ด</summary><ul className="mt-1 grid gap-1 sm:grid-cols-2">{KEYS.map(([key, description]) => <li key={key}><kbd className="font-mono">{key}</kbd> · {description}</li>)}</ul></details>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 function FirstFlightExercise({ onComplete }: { onComplete: (complete: boolean) => void }) {
   const [body, setBody] = useState('');
@@ -320,13 +349,13 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
 
   return (
     <main className="flex h-svh w-full min-w-0 flex-col overflow-hidden pt-[4.75rem]">
-      <header className="flex flex-wrap items-center gap-3 border-b border-line bg-surface px-4 py-3 sm:px-6">
+      <header className="flex flex-wrap items-center gap-3  px-4 py-3 sm:px-6">
         <div className="min-w-0 flex-1"><h1 className="text-xl font-extrabold sm:text-2xl">สนามฝึกการบินโดรน</h1><p className="text-sm text-muted-foreground">วางแผนคำสั่ง ดูเส้นทางจริง แล้วเรียนรู้จากสิ่งที่คลาดเคลื่อน</p></div>
         {qs.get('lesson') !== '1' && <Button variant="outline" className="min-h-10" data-sim-guide><CircleHelp className="size-4" /> วิธีใช้</Button>}
         <Button className="min-h-10" data-tour="sim-pick" onClick={() => setPanel('pick')}><BookOpen className="size-4" /> เลือกภารกิจ</Button>
       </header>
       <div className="grid w-full min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 sm:p-4 xl:overflow-hidden xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <section data-tour="sim-stage" aria-label="สนามจำลอง" className="order-1 grid min-h-0 min-w-0 content-start gap-2 xl:order-2 xl:grid-rows-[auto_minmax(25rem,1fr)_auto] xl:overflow-y-auto">
+        <section data-tour="sim-stage" aria-label="สนามจำลอง" className="order-1 grid min-h-0 min-w-0 content-start gap-2 xl:order-2 xl:grid-rows-[auto_auto_auto] xl:overflow-y-auto">
           <div className="min-w-0 squircle-2xl border border-line bg-surface">
             <div className="flex min-w-0 items-center gap-2 px-3 py-2">
             <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-extrabold sm:text-base">{sc.title}</h2><p className="truncate text-xs text-muted-foreground">{sc.level} · {pat?.label}</p></div>
@@ -341,8 +370,8 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
               </div>
             </div>
           </div>
-          <div data-tour="sim-stage-canvas" className="min-h-0 min-w-0 squircle-3xl border border-line bg-surface p-2 sm:p-3 xl:flex xl:flex-1 xl:flex-col">
-            <FlightRunner event={ev} code={code} config={config} scene={scene} maxPoints={max} bigPlay={false} onResult={onFlightResult} onStart={() => setCanReload(false)} onFinish={onFinish} />
+          <div data-tour="sim-stage-canvas" className="min-w-0 squircle-3xl border border-line bg-surface p-2 sm:p-3">
+            <FlightRunner event={ev} code={code} config={config} scene={scene} maxPoints={max} bigPlay={false} fullHeightField onResult={onFlightResult} onStart={() => setCanReload(false)} onFinish={onFinish} />
           </div>
           {sc.config.requiresPayload && <section className="grid gap-2 squircle-2xl border border-line bg-surface p-3" aria-label="เตรียมโดรน">
             <div className="flex flex-wrap items-center gap-2"><h2 className="mr-auto text-sm font-bold">เตรียมโดรน</h2>{sc.config.requiresPayload && <span className="text-xs text-muted-foreground">บอล ซ้าย {payload.L}/20 · ขวา {payload.R}/20</span>}{sc.config.requiresPayload && <Button size="sm" variant="outline" onClick={reloadPayload} disabled={!canReload || (payload.L === loadCount.L && payload.R === loadCount.R)} title={!canReload ? 'ต้องกลับมาลงบนฐานก่อน' : undefined}>{`ใส่บอล ${loadCount.L + loadCount.R} ลูก`}</Button>}</div>
@@ -357,7 +386,12 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
         </section>
         <aside className="order-2 grid min-h-0 min-w-0 content-start gap-2 xl:order-1 xl:grid-rows-[minmax(0,1fr)] xl:overflow-hidden xl:pr-1">
           <section className="grid min-h-[20rem] min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden squircle-3xl border border-line bg-surface xl:min-h-0" data-tour="sim-code" aria-label="โค้ดภารกิจ">
-            <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2"><div className="min-w-0 flex-1"><h2 className="font-bold">เขียนโค้ดภารกิจ</h2><p className="text-xs text-muted-foreground">เขียนฟังก์ชัน → ผูก KEY → กดปุ่มใต้สนาม</p></div><Button className="min-h-10" data-sim-course>ฝึกเขียนโค้ด</Button><details className="relative"><summary className="cursor-pointer list-none squircle-xl border border-line bg-surface-2 px-2.5 py-2 text-xs font-semibold hover:bg-surface focus-visible:ring-2 focus-visible:ring-brand-blue">ตัวอย่าง KEY 1–2</summary><pre className="absolute right-0 top-full z-20 mt-2 max-h-64 w-[min(32rem,80vw)] overflow-auto squircle-2xl border border-line bg-surface p-3 font-mono text-xs leading-5 shadow-xl">{KEY_FUNCTION_EXAMPLE}</pre></details><details className="relative"><summary className="cursor-pointer list-none squircle-xl border border-line bg-surface-2 px-2.5 py-2 text-xs font-semibold hover:bg-surface focus-visible:ring-2 focus-visible:ring-brand-blue">ชื่อคำสั่ง</summary><div className="absolute right-0 top-full z-20 mt-2 max-h-64 w-[min(36rem,85vw)] overflow-auto squircle-2xl border border-line bg-surface p-3 text-xs shadow-xl"><p className="mb-2">ใช้ <code>move_forward(100);</code>, <code>set_height(120);</code> และคำสั่งเต็มที่อ่านง่าย</p><div className="overflow-x-auto"><table className="w-full text-left"><thead><tr><th className="p-1">ย่อ</th><th className="p-1">เต็ม</th><th className="p-1">drone.</th><th className="p-1">pArduino-&gt;</th></tr></thead><tbody>{PAIRS.map(([a,b,c,d]) => <tr key={a} className="border-t border-line"><td className="p-1 font-mono">{a}</td><td className="p-1 font-mono">{b}</td><td className="p-1 font-mono">{c}</td><td className="p-1 font-mono">{d}</td></tr>)}</tbody></table></div><details className="mt-2"><summary className="cursor-pointer font-semibold">คีย์ลัดในตัวแก้โค้ด</summary><ul className="mt-1 grid gap-1 sm:grid-cols-2">{KEYS.map(([k,d]) => <li key={k}><kbd className="font-mono">{k}</kbd> · {d}</li>)}</ul></details></div></details></div>
+            <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
+              <div className="min-w-0 flex-1"><h2 className="font-bold">เขียนโค้ดภารกิจ</h2><p className="text-xs text-muted-foreground">เขียนฟังก์ชัน → ผูก KEY → กดปุ่มใต้สนาม</p></div>
+              <Button className="min-h-10" data-sim-course>ฝึกเขียนโค้ด</Button>
+              <KeyExamplePopover />
+              <CommandReferencePopover />
+            </div>
             <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
               <span className="text-xs font-medium text-muted-foreground">รูปแบบคำสั่ง</span>
         <div role="group" aria-label="แบบการเขียนโค้ด" data-tour="sim-style" className="flex items-center gap-1 squircle-xl border border-line bg-surface p-1">

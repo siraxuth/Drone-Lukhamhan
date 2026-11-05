@@ -6,7 +6,7 @@ import { NO_MARKS, type CompetitorAct, type LivePose, type Marks, type ShotHighl
 import { FieldPlan2D } from '@/field/FieldPlan2D';
 import type { RuleEvent } from '@/rules/types';
 import { detectQuality } from '@/scene/quality';
-import { Eye, Layers, Pause, Play, RotateCcw, Video, Volume2, VolumeX } from 'lucide-react';
+import { Eye, Layers, Maximize2, Minimize2, Pause, Play, RotateCcw, Video, Volume2, VolumeX } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildConfig, toField } from './config';
@@ -53,13 +53,15 @@ type Props = {
   scene?: Pick<SceneSpec, 'pattern' | 'objects' | 'start' | 'base'>;
   /** คะแนนเต็มที่โชว์ (undefined = ตามกติกาของประเภท, null = ไม่โชว์คะแนนเต็ม) */
   maxPoints?: number | null;
+  /** ขยายสนามจริงให้สูงประมาณครึ่งจอในหน้า Simulator */
+  fullHeightField?: boolean;
 };
 
 /**
  * เครื่องเล่นการบินจำลอง: รันโค้ดผ่าน engine แล้วเล่นบนสนาม 3 มิติ พร้อมเสียง
  * ใช้ทั้งหน้า /field (เดโมโค้ดตัวอย่าง) และ /simulator (โค้ดที่ผู้ใช้เขียนเอง)
  */
-export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, onFinish, playLabel = 'เริ่มจำลองการบิน', config, scene, maxPoints, previewKey, remoteKeys, initialView, focusPlay }: Props) {
+export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, onFinish, playLabel = 'เริ่มจำลองการบิน', config, scene, maxPoints, previewKey, remoteKeys, initialView, focusPlay, fullHeightField = false }: Props) {
   const cfg = useMemo(() => config ?? buildConfig(event.id), [config, event.id]);
   const initialPayload = cfg.initialPayload;
   const payloadL = initialPayload?.L ?? 0;
@@ -93,6 +95,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
   const [muted, setMuted] = useState(false);
   const [supports3d, setSupports3d] = useState(false);
   const [mode, setMode] = useState<'pending' | '2d' | '3d'>('pending');
+  const [expanded, setExpanded] = useState(false);
   const [low, setLow] = useState(true);
   const [pose2d, setPose2d] = useState(HOME);
   const [holdKey, setHoldKey] = useState(0);
@@ -132,6 +135,22 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
       audio.current?.dispose();
     };
   }, []);
+
+  useEffect(() => {
+    if (previewKey !== undefined) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setExpanded(false);
+        return;
+      }
+      if (event.code === 'KeyX' && event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey) {
+        event.preventDefault();
+        setExpanded((current) => !current);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [previewKey]);
 
   const snd = () => (audio.current ??= new FlightAudio());
 
@@ -405,8 +424,10 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
   const events = log.filter((e) => e.kind !== 'info' || e.line);
 
   return (
-    <div className={previewKey ? "grid gap-2" : "grid gap-3 xl:h-full xl:min-h-0 xl:grid-rows-[minmax(12rem,1fr)_auto_auto_auto] xl:gap-2"}>
-      <div className={`relative aspect-[4/3] w-full overflow-hidden squircle-2xl border border-line bg-[#0b0d12] sm:aspect-video ${previewKey ? "max-h-[55dvh]" : "xl:aspect-auto xl:h-full xl:min-h-0"}`}>
+    <div className={previewKey ? "grid min-w-0 gap-2" : fullHeightField ? "grid min-w-0 gap-3" : "grid gap-3 xl:h-full xl:min-h-0 xl:grid-rows-[minmax(12rem,1fr)_auto_auto_auto] xl:gap-2"}>
+      <div className={expanded
+        ? 'fixed inset-0 z-[70] h-dvh w-screen overflow-hidden bg-[#0b0d12]'
+        : `relative w-full overflow-hidden squircle-2xl border border-line bg-[#0b0d12] ${previewKey ? "aspect-[4/3] max-h-[55dvh] sm:aspect-video" : fullHeightField ? "h-[min(50svh,36rem)] min-h-[18rem]" : "aspect-[4/3] sm:aspect-video xl:aspect-auto xl:h-full xl:min-h-0"}`}>
         {mode === '3d' ? (
           <Field3D event={event} drone={{ ...pose2d }} onDrone={() => { }} view={view} shot={null} low={low} live={live} simPlaying={playing} poseRef={poseRef} playheadRef={playheadRef} marks={marks} highlight={highlight} dartInventory={{ front: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'front').length), back: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'back').length) }} holdKey={holdKey} loaded={loaded} actRef={actRef} scene={spec3d} />
         ) : (
@@ -420,6 +441,19 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
           {manualActive && <span className="squircle-sm bg-black/65 px-2.5 py-1 text-sm font-semibold">พร้อมรอคำสั่ง KEY</span>}
           {holding && <span className="squircle-sm bg-brand-red px-2.5 py-1 text-sm font-semibold motion-safe:animate-pulse">◎ POSHOLD · หยุดนิ่ง</span>}
         </div>
+
+        {!previewKey && mode === '3d' && (
+          <Button
+            type="button"
+            variant="outline"
+            className="absolute right-3 top-3 z-20 h-9 w-9 p-0"
+            aria-label={expanded ? 'ย่อสนาม 3 มิติ' : 'ขยายสนาม 3 มิติ'}
+            title="Ctrl+Shift+X · Esc เพื่อย่อ"
+            onClick={() => setExpanded((current) => !current)}
+          >
+            {expanded ? <Minimize2 className="size-4" aria-hidden /> : <Maximize2 className="size-4" aria-hidden />}
+          </Button>
+        )}
 
         <div className="pointer-events-none absolute inset-x-0 top-[12%] z-10 flex justify-center px-4" aria-live="polite">
           {shotCallout && (
@@ -523,8 +557,8 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
       )}
 
       {!previewKey && (done || events.length > 0) && (
-        <details className="min-w-0 squircle-xl border border-line bg-surface">
-          <summary className="cursor-pointer px-3 py-2 text-sm font-semibold hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-brand-blue">
+        <details className="min-w-0 max-h-[min(48svh,32rem)] overflow-y-auto overscroll-contain squircle-xl border border-line bg-surface">
+          <summary className="sticky top-0 z-10 cursor-pointer border-b border-line bg-surface px-3 py-2 text-sm font-semibold hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-brand-blue">
             {done && flightError ? 'ดูข้อผิดพลาดของเที่ยวบิน' : done && result ? `ดูผลเที่ยวบิน · ${result.score} คะแนน` : 'ดูบันทึกการบิน'}
           </summary>
           <div className="grid min-w-0 gap-3 border-t border-line p-3">
