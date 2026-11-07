@@ -238,13 +238,11 @@ const CODE_COURSE: TourStep[] = [
     text: 'คำสั่งอย่าง `delay(3000);` มีชื่อคำสั่ง ค่าที่ส่งในวงเล็บ และเครื่องหมาย ; ปิดท้าย ในตัวอย่างนี้ 3000 คือมิลลิวินาที หรือ 3 วินาที อ่านคำสั่งจากบนลงล่าง ส่วนปีกกา { } ใช้บอกว่าบรรทัดไหนอยู่ในฟังก์ชันเดียวกัน',
   },
   {
-    target: '[data-tour="sim-starter-example"]',
     title: 'เริ่มต้น · ผูกปุ่มกับฟังก์ชัน',
     text: 'พิมพ์ `drone.onKey1(fly);` ใน `setup()` เพื่อบอกว่า KEY 1 ต้องเรียกฟังก์ชันชื่อ fly แล้วเขียน `void fly() { ... }` แยกไว้นอก setup ชื่อทั้งสองที่ต้องสะกดเหมือนกัน ตอนเปิดเครื่องโดรนอาจยังอยู่ในมือ ให้วางบนฐานนิ่ง ๆ ก่อนกด KEY 1 ฟังก์ชัน fly จึงค่อยเริ่มตั้งศูนย์',
-    content: <pre data-tour="sim-starter-example" className="max-h-48 overflow-auto whitespace-pre-wrap break-words squircle-xl border border-line bg-canvas p-3 font-mono text-xs leading-relaxed sm:text-sm">{starter}</pre>,
+    content: <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words squircle-xl border border-line bg-canvas p-3 font-mono text-xs leading-relaxed sm:text-sm">{starter}</pre>,
   },
   {
-    target: '#first-flight-body',
     title: 'เริ่มต้น · ขึ้นบิน ลอยตัว แล้วลงจอด',
     wide: true,
     text: 'วางโดรนบนฐานให้หยุดนิ่งก่อนกด KEY 1 ขั้นนี้ให้พิมพ์คำสั่งในช่องใต้ void fly() ทีละบรรทัด เริ่มจากตั้งศูนย์และรอ 3 วินาที จากนั้นขึ้นบิน รอให้ยกตัว ตั้งความสูง ใช้ `poshold();` ค้างตำแหน่งและความสูง ตามด้วย `delay(1000);` เพื่อรอ 1 วินาทีก่อนลงจอด เขียนครบแล้วปุ่มทดลองบินจะเปิดให้กด',
@@ -252,21 +250,18 @@ const CODE_COURSE: TourStep[] = [
     exercise: (setComplete) => <FirstFlightExercise onComplete={setComplete} />,
   },
   {
-    target: '#sim-exercise-code',
     title: 'เริ่มต้น · ทิศทางอิงจากหัวโดรน',
     wide: true,
     text: 'กด KEY 1 ให้บินจนจบ แล้วกด KEY 2 ทั้งสองเที่ยวเริ่มจากฐานเดียวกันและใช้คำสั่งเดินหน้า 100 ซม. เหมือนกัน\n\nKEY 1 เรียก `flyForward()` โดรนบินไปตรงหน้าจากทิศหัวเดิม\nKEY 2 เรียก `turnThenForward()` โดรนหมุนขวา 90° ด้วย `set_yaw(1, 90);` อยู่กับที่ แล้วค้างด้วย `poshold();` รอ 1 วินาทีด้วย `delay(1000);` ก่อนใช้ `move_forward(100);` จึงบินไปทางขวาเมื่อมองจากด้านบน\n\nลองแก้ระยะในฟังก์ชันของ KEY 2 เป็น 50 ซม. แล้วกดเฉพาะ KEY 2 อีกครั้ง ดูว่าทิศเดิมแต่จุดลงจอดใกล้ฐานขึ้นไหม',
     content: <FlightExercise initialCode={KEY_FUNCTION_EXAMPLE} compareKeys />,
   },
   {
-    target: '#sim-exercise-code',
     title: 'ภารกิจแรก · ผ่านจุดตรวจแล้วกลับฐาน',
     wide: true,
     text: 'จุด 1 อยู่ตรงหน้า 100 ซม. ที่ระดับ 80–120 ซม. เริ่มด้วยการตั้งศูนย์ รอ ขึ้นบิน แล้วรอให้ยกตัว จากนั้นตั้งความสูง 100 ซม. เดินหน้าไปจุดตรวจ หยุดนิ่งด้วย `poshold();` ตามด้วย `delay(1000);` แล้วถอยกลับระยะเท่ากันก่อนลงจอด กด KEY 1 แล้วดูว่าผ่านจุดตรวจและกลับลงฐานได้ครบไหม',
     content: <FlightExercise initialCode={starter} objects={firstRoute} />,
   },
   {
-    target: '#sim-exercise-code',
     title: 'ระดับกลาง · ผ่านสองจุดที่คนละความสูง',
     wide: true,
     text: 'ใช้ขั้นตั้งศูนย์และขึ้นบินจากบทก่อน สนามนี้มีจุด 1 ตรงหน้า 100 ซม. และจุด 2 อยู่ทางขวาอีก 100 ซม. ที่ระดับ 125–175 ซม. เลือกผ่านจุดไหนก่อนก็ได้ ลองวางแผนว่าจะตั้งความสูง 150 ซม. ตอนไหน แล้วหาทางกลับฐานเอง เปิดมองจากบนเพื่อเช็กว่าผ่านครบทั้งสองจุดหรือยัง',

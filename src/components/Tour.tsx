@@ -26,6 +26,9 @@ const CARD_W = 360;
 function findVisible(sel?: string): HTMLElement | null {
   if (!sel || typeof document === 'undefined') return null;
   for (const el of document.querySelectorAll<HTMLElement>(sel)) {
+    // Content rendered inside the tour cannot be its own highlight target:
+    // measuring it would move the card, which moves the target again.
+    if (el.closest('[data-tour-overlay]')) continue;
     const r = el.getBoundingClientRect();
     if (r.width > 0 && r.height > 0) return el;
   }
