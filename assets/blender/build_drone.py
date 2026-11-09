@@ -314,9 +314,9 @@ for i,(sx,sy) in enumerate([(1,-1),(-1,-1),(-1,1),(1,1)],1):
     for j,(radius,head_z) in enumerate([(shoe_r-16,beam_z-3.7),(shoe_r+16,beam_z-3.7)]):
         px,py=d.x*radius,d.y*radius
         before=set(bpy.context.scene.objects)
-        head=cyl(f'Motor screw {i}-{j}',(px,py,head_z),2.65,1.8,steel,verts=24)
+        head=cyl(f'Motor screw {i}-{j}',(px,py,head_z),2.65,1.8,white,verts=24)
         subtract(head,cyl('Hex key recess',(px,py,head_z-.8),1.3,1.6,seam,verts=6))
-        cyl('Motor screw shank',(px,py,head_z+4.9),1.4,8,steel,verts=16)
+        cyl('Motor screw shank',(px,py,head_z+4.9),1.4,8,white,verts=16)
         tag(new_since(before),f'mscrew-{i}-{j}',(px,py,head_z))
     # Prop object origin is at motor centre, required by runtime spin animation.
     parts=[]
