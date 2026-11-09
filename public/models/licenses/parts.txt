@@ -1,0 +1,6 @@
+Adafruit Industries: BNO055 STEMMA 4646, pressure breakout 2652 and VL53L4CD 5396. Source STL models: https://github.com/adafruit/Adafruit_CAD_Parts/tree/9f2a89f3d5c3491886d58cb7fe83385417563cf4
+Scaled, coloured and converted to glTF for this educational model. MIT license: Adafruit-MIT.txt in this directory.
+KiCad Libraries 8.0.0, kicad StepUp (2017, 2018): TSSOP-28_4.4x9.7mm_P0.65mm and Bosch_LGA-14_3x2.5mm_P0.5mm. Converted from VRML and positioned on illustrative flight controller.
+https://gitlab.com/kicad/libraries/kicad-packages3D/-/tree/8.0.0
+KiCad package geometry and adaptations: CC BY-SA 4.0 with KiCad library exception, https://www.kicad.org/libraries/license/ and https://creativecommons.org/licenses/by-sa/4.0/
+\nWhole flight-controller PCB shape: IoT-App-Development-Company/DroneControllerUsing-STM32, CAD/DroneController-PCB.step, MIT license. Converted to STL then glTF. https://github.com/IoT-App-Development-Company/DroneControllerUsing-STM32\nNano-style development board model: Innerscene, 18 x 45 mm Nano-style development board, CC0. https://www.innerscene.com/tools/library/3d-parts/18-x-45-mm-nano-style-development-board-face2631\nThe servo and motor connector locations are adapted to the described RCSA frame; those positions are not represented as manufacturer CAD.\n

@@ -133,7 +133,22 @@ function Drone({ url, onReady }: { url: string; onReady?: () => void }) {
       model.add(arrow.g);
       return { node, cw, blades, blurMat, arrow, level: 0.7 };
     });
-    return { model, byName, home, props };
+    // Exported mount IDs also cover the wires, fasteners and ribs of each arm.
+    const exploded = model.children.flatMap(node => {
+      const id = String(node.userData.mount ?? '');
+      if (!id || id.startsWith('prop-')) return [];
+      const arm = Number(id.split('-')[1]);
+      const sx = arm === 1 || arm === 4 ? 1 : -1;
+      const sz = arm <= 2 ? 1 : -1;
+      let offset: [number,number,number] = [sx*.1,-.12,sz*.1];
+      if (id==='battery' || id==='plug') offset=[0,.6,0];
+      else if (/^Guard|^Cage/.test(node.name)) offset=[sx*.16,0,sz*.16];
+      else if (/^MotorCap|^Motor_bell/.test(node.name)) offset=[0,.26,0];
+      else if (/^Motor/.test(node.name)) offset=[0,.1,0];
+      else if (/^Leg/.test(node.name)) offset=[sx*.1,-.4,sz*.1];
+      return [{name:node.name,offset}];
+    });
+    return { model, byName, home, props, exploded };
   }, [scene]);
 
   useEffect(() => { paintForTheme(rig.model, dark); }, [rig, dark]);
@@ -240,11 +255,10 @@ function Drone({ url, onReady }: { url: string; onReady?: () => void }) {
     for (let n = 1; n <= 4; n++) {
       const sx = n === 1 || n === 4 ? 1 : -1, sz = n <= 2 ? 1 : -1;
       place(`Prop_${n}`, sx * 0.08, 0.42, sz * 0.08);
-      place(`MotorCap_${n}`, 0, 0.26, 0); place(`Motor_${n}`, 0, 0.1, 0);
-      place(`Guard_${n}`, sx * 0.16, 0, sz * 0.16); place(`Arm_${n}`, sx * 0.1, -0.12, sz * 0.1);
-      place(`Leg_${n}`, sx * 0.1, -0.4, sz * 0.1);
+
     }
-    place('Battery', 0, 0.6, 0); place('BatteryLabel', 0, 0.6, 0); place('Pods', 0, -0.2, 0);
+    for (const {name,offset} of rig.exploded) place(name,...offset);
+    place('Pods', 0, -0.2, 0);
     place('Camera', 0, 0, 0.35); place('Lens', 0, 0, 0.42);
     place('LED_Front', 0, 0, 0.28); place('LED_Back', 0, 0, -0.28);
 

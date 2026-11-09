@@ -94,6 +94,8 @@ export type Breakdown = { label: string; points: number };
 export type Result = {
     frames: Frame[];
     events: SimEvent[];
+    /** Time span and source line for highlighting the command currently running. */
+    commandTimeline: Array<{ start: number; end: number; line: number }>;
     duration: number;
     score: number;
     breakdown: Breakdown[];
@@ -198,6 +200,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
     const conditions = conditionsFor(seed);
     const { calls, errors } = parse(code, cfg.style ?? "any", selectedKey);
     const events: SimEvent[] = [...errors];
+    const commandTimeline: Result["commandTimeline"] = [];
     const padC = cfg.padAt === undefined ? cfg.start : cfg.padAt; // null = ไม่มีฐาน
     const onPadAt = (px: number, py: number) => padC !== null && Math.abs(px - padC.x) <= cfg.pad.half && Math.abs(py - padC.y) <= cfg.pad.half;
     let x = cfg.start.x,
@@ -424,6 +427,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
     for (let ci = 0; ci < calls.length; ci++) {
         const c = calls[ci];
         if (crashed || timedOut) break;
+        const commandStart = t;
         const a = c.args[0];
         const name = canon(c.name);
         const info = (text: string) => ev({ kind: "info", line: c.line, text });
@@ -809,6 +813,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                 }
             }
         }
+        commandTimeline.push({ start: commandStart, end: t, line: c.line });
     }
 
     if (!crashed && !timedOut && armedAt !== null) ev({ kind: "warn", text: "สั่ง takeOff แล้วแต่โปรแกรมจบก่อนโดรนจะยกตัว (ต้อง delay อย่างน้อย 3000 ms หลัง takeOff)" });
@@ -859,6 +864,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
     return {
         frames,
         events: full ? events.map((e) => (errors.includes(e) ? e : { ...e, text: say(e.text) })) : events,
+        commandTimeline,
         duration: t,
         score,
         breakdown,

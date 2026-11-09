@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { BookOpen, ChevronDown, CircleHelp, Plus, RotateCcw } from 'lucide-react';
+import { Blocks, BookOpen, Braces, ChevronDown, CircleHelp, Plus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -18,6 +18,9 @@ import { programs } from './programs';
 import { convertStyle, STYLES, type Style } from './style';
 import type { Result } from './engine';
 import { bindStarterToKey, KEY_FUNCTION_EXAMPLE } from './key-program';
+import { BlockProgramEditor } from './BlockProgramEditor';
+import { generateBlockProgram } from './block-program';
+import { parseBlockProgram, type BlockProgram } from './parser';
 
 const LEVEL_TONE: Record<string, string> = { เริ่มต้น: 'bg-surface-2 text-foreground', กลาง: 'bg-brand-blue/10 text-brand-blue', ยาก: 'bg-emphasis text-emphasis-foreground', 'โหดมาก': 'bg-destructive/10 text-destructive' };
 const LEGACY: Record<string, string> = { mission: 'mission-start', aviation: 'aviation-start', innovation: 'innovation-start' };
@@ -289,6 +292,13 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
   const [briefOpen, setBriefOpen] = useState(false);
   const [panel, setPanel] = useState<null | 'pick'>(null);
   const [styleSel, setStyleSel] = useState<Style>('full');
+  const [editorMode, setEditorMode] = useState<'cpp' | 'blocks'>('cpp');
+  const [blockProgram, setBlockProgram] = useState<BlockProgram | null>(null);
+  const [blockProgramSlug, setBlockProgramSlug] = useState(initial.slug);
+  const [blockSkipped, setBlockSkipped] = useState(0);
+  const [blockRevision, setBlockRevision] = useState(0);
+  const [activeBlockCommand, setActiveBlockCommand] = useState<{ key: number; line: number } | null>(null);
+  const [pendingBlockImport, setPendingBlockImport] = useState<{ slug: string; program: BlockProgram; skipped: number } | null>(null);
   const [missionSearch, setMissionSearch] = useState('');
   const [missionLevel, setMissionLevel] = useState('ทุกระดับ');
   const [missionType, setMissionType] = useState('ทุกประเภท');
@@ -319,7 +329,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
   }, [sc.slug]);
   const onFlightResult = useCallback((result: Result | null) => { if (!result) setCanReload(true); }, []);
 
-  const pick = (s: string) => {
+  const commitPick = (s: string) => {
     setSlug(s); setPanel(null);
     setCanReload(true);
     const u = new URL(window.location.href);
@@ -327,7 +337,50 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
     window.history.replaceState(null, '', u);
   };
   const setCode = (v: string) => setDrafts((d) => ({ ...d, [sc.slug]: v }));
-  const resetCode = () => setDrafts((d) => { const n = { ...d }; delete n[sc.slug]; return n; });
+  const useBlockProgram = (targetSlug: string, program: BlockProgram, skipped: number) => {
+    setBlockProgram(program);
+    setBlockProgramSlug(targetSlug);
+    setBlockSkipped(skipped);
+    setDrafts((current) => ({ ...current, [targetSlug]: convertStyle(generateBlockProgram(program), style) }));
+    setEditorMode('blocks');
+    setPendingBlockImport(null);
+    if (targetSlug !== slug) commitPick(targetSlug);
+  };
+  const pick = (s: string) => {
+    if (editorMode === 'blocks') {
+      const target = scenarios.find((scenario) => scenario.slug === s);
+      if (target) {
+        const imported = parseBlockProgram(drafts[s] ?? target.starter);
+        if (imported.skipped) {
+          setPendingBlockImport({ slug: s, ...imported });
+          setPanel(null);
+          return;
+        }
+        useBlockProgram(s, imported.program, 0);
+        return;
+      }
+    }
+    commitPick(s);
+  };
+  const enterBlocks = () => {
+    const imported = parseBlockProgram(code);
+    if (imported.skipped) setPendingBlockImport({ slug: sc.slug, ...imported });
+    else useBlockProgram(sc.slug, imported.program, 0);
+  };
+  const resetCode = () => {
+    setDrafts((d) => { const n = { ...d }; delete n[sc.slug]; return n; });
+    if (editorMode === 'blocks') {
+      const imported = parseBlockProgram(sc.starter);
+      setBlockProgram(imported.program);
+      setBlockProgramSlug(sc.slug);
+      setBlockSkipped(imported.skipped);
+      setBlockRevision((revision) => revision + 1);
+    }
+  };
+  const onBlockProgramChange = (program: BlockProgram) => {
+    setBlockProgram(program);
+    setDrafts((current) => ({ ...current, [blockProgramSlug]: convertStyle(generateBlockProgram(program), style) }));
+  };
 
   const categories = [...new Set(scenarios.flatMap((s) => s.config.tags?.length ? s.config.tags : [s.config.event]))];
   const typeLabel: Record<string, string> = { route: 'วางเส้นทาง', checkpoint: 'Checkpoint', altitude: 'ความสูง', hoop: 'ลอดห่วง', cargo: 'ปล่อยบอล', landing: 'ลงจอด', target: 'ยิงเป้า', mixed: 'ภารกิจผสม', mission: 'ปล่อยบอล', aviation: 'แตะลูกโป่ง', innovation: 'ยิงเป้า' };
@@ -367,7 +420,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
             </div>
           </div>
           <div data-tour="sim-stage-canvas" className="min-w-0 squircle-3xl border border-line bg-surface p-2 sm:p-3">
-            <FlightRunner event={ev} code={code} config={config} scene={scene} maxPoints={max} bigPlay={false} fullHeightField onResult={onFlightResult} onStart={() => setCanReload(false)} onFinish={onFinish} />
+            <FlightRunner event={ev} code={code} config={config} scene={scene} maxPoints={max} bigPlay={false} fullHeightField onResult={onFlightResult} onCommandProgress={setActiveBlockCommand} onStart={() => setCanReload(false)} onFinish={onFinish} />
           </div>
           {sc.config.requiresPayload && <section className="grid gap-2 squircle-2xl border border-line bg-surface p-3" aria-label="เตรียมโดรน">
             <div className="flex flex-wrap items-center gap-2"><h2 className="mr-auto text-sm font-bold">เตรียมโดรน</h2>{sc.config.requiresPayload && <span className="text-xs text-muted-foreground">บอล ซ้าย {payload.L}/20 · ขวา {payload.R}/20</span>}{sc.config.requiresPayload && <Button size="sm" variant="outline" onClick={reloadPayload} disabled={!canReload || (payload.L === loadCount.L && payload.R === loadCount.R)} title={!canReload ? 'ต้องกลับมาลงบนฐานก่อน' : undefined}>{`ใส่บอล ${loadCount.L + loadCount.R} ลูก`}</Button>}</div>
@@ -389,20 +442,50 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
               <CommandReferencePopover />
             </div>
             <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
-              <span className="text-xs font-medium text-muted-foreground">รูปแบบคำสั่ง</span>
+        <div role="tablist" aria-label="รูปแบบการเขียนโปรแกรม" className="flex items-center gap-1 squircle-xl border border-line bg-surface p-1">
+          <button type="button" role="tab" aria-selected={editorMode === 'blocks'} onClick={enterBlocks} className={`inline-flex h-8 items-center gap-1.5 squircle-lg px-3 text-sm font-semibold transition-colors ${editorMode === 'blocks' ? 'bg-brand-blue text-background' : 'hover:bg-surface-2'}`}><Blocks className="size-4" /> บล็อก</button>
+          <button type="button" role="tab" aria-selected={editorMode === 'cpp'} onClick={() => setEditorMode('cpp')} className={`inline-flex h-8 items-center gap-1.5 squircle-lg px-3 text-sm font-semibold transition-colors ${editorMode === 'cpp' ? 'bg-brand-blue text-background' : 'hover:bg-surface-2'}`}><Braces className="size-4" /> C++</button>
+        </div>
+        {editorMode === 'cpp' && <span className="text-xs font-medium text-muted-foreground">รูปแบบคำสั่ง</span>}
+        {editorMode === 'cpp' && <>
         <div role="group" aria-label="แบบการเขียนโค้ด" data-tour="sim-style" className="flex items-center gap-1 squircle-xl border border-line bg-surface p-1">
           {STYLES.map((x) => <button key={x.id} type="button" aria-pressed={style === x.id} onClick={() => chooseStyle(x.id)} title={x.hint} className={"h-8 squircle-xl px-2.5 font-mono text-sm font-semibold transition-colors disabled:opacity-60 " + (style === x.id ? "bg-brand-blue text-background" : "hover:bg-surface-2")}>{x.label}</button>)}
         </div>
         {style !== 'any' && converted !== code && <Button variant="outline" onClick={() => setCode(converted)}>แปลงชื่อคำสั่ง</Button>}
+        </>}
         {edited && <Button variant="outline" onClick={resetCode}><RotateCcw className="size-4" /> คืนโค้ดตั้งต้น</Button>}
             </div>
-            <div data-sim-editor className="grid min-h-0 min-w-0"><CodeEditor value={code} onChange={setCode} label="โค้ดภารกิจ" fill commands={commands} showQuick={false} /></div>
+            {editorMode === 'cpp'
+              ? <div data-sim-editor className="grid min-h-0 min-w-0"><CodeEditor value={code} onChange={setCode} label="โค้ดภารกิจ" fill commands={commands} showQuick={false} /></div>
+              : blockProgram && blockProgramSlug === sc.slug
+                ? <div className={`grid min-h-0 min-w-0 ${blockSkipped > 0 ? 'grid-rows-[auto_minmax(0,1fr)]' : 'grid-rows-[minmax(0,1fr)]'}`}>
+                    {blockSkipped > 0 && <p role="status" className="border-b border-line bg-emphasis px-3 py-2 text-xs text-emphasis-foreground">นำเข้าเป็นบล็อกแล้ว ข้าม {blockSkipped} ส่วนที่ไม่มีบล็อกรองรับ โค้ด C++ ส่วนนั้นไม่ได้อยู่ในโปรแกรมบล็อก</p>}
+                    <BlockProgramEditor key={`${sc.slug}-${blockRevision}`} program={blockProgram} activeCommand={activeBlockCommand} onChange={onBlockProgramChange} />
+                  </div>
+                : <div className="grid min-h-[26rem] place-items-center text-sm text-muted-foreground">กำลังเตรียมโปรแกรมบล็อก…</div>}
           </section>
 
         </aside>
       </div>
       {qs.get('lesson') !== '1' && <Tour id="simulator-guide-v2" steps={SIM_TOUR} autoOpenImmediately trigger="[data-sim-guide]" allowTargetInteraction />}
       <Tour id="sim-code-course" steps={CODE_COURSE} forceQuery="lesson" autoOpenImmediately startOnFocus="[data-sim-editor] textarea" trigger="[data-sim-course]" allowTargetInteraction />
+      <Dialog open={!!pendingBlockImport} onOpenChange={(open) => { if (!open) setPendingBlockImport(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>มีโค้ดบางส่วนที่แปลงเป็นบล็อกไม่ได้</DialogTitle>
+            <DialogDescription>
+              พบ {pendingBlockImport?.skipped ?? 0} ส่วนที่ยังไม่มีบล็อกตรงกัน หากไปต่อ ส่วนเหล่านี้จะไม่อยู่ใน workspace และโค้ดจะถูกสร้างใหม่จากบล็อก
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => setPendingBlockImport(null)}>กลับไปใช้ C++</Button>
+            <Button onClick={() => {
+              if (!pendingBlockImport) return;
+              useBlockProgram(pendingBlockImport.slug, pendingBlockImport.program, pendingBlockImport.skipped);
+            }}>ข้ามส่วนที่แปลงไม่ได้</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={panel === 'pick'} onOpenChange={(open) => setPanel(open ? 'pick' : null)}>
         <DialogContent className="max-h-[90svh] w-[96vw] gap-4 overflow-y-auto p-4 sm:max-w-5xl sm:p-6">
           <DialogHeader><DialogTitle className="font-display text-2xl font-extrabold">เลือกภารกิจ</DialogTitle><DialogDescription>เลือกโจทย์ตามระดับและประเภท กดชื่อภารกิจหนึ่งครั้งเพื่อเลือกได้เลย</DialogDescription></DialogHeader>

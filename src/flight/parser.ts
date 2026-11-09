@@ -1,5 +1,5 @@
 import type { SimEvent } from './engine';
-import { styleError, type Style } from './style';
+import { convertStyle, styleError, type Style } from './style';
 
 /** คำสั่งหนึ่งครั้งที่เอนจินต้องทำ (หลังคลี่ฟังก์ชัน/ลูปแล้ว) · line = บรรทัดในโค้ดของผู้ใช้ */
 export type Call = { name: string; args: number[]; line: number };
@@ -137,6 +137,126 @@ function tokenize(code: string, errors: SimEvent[]): Tok[] {
 type Node =
     | { kind: "stmt"; text: string; line: number }
     | { kind: "block"; header: string; body: Node[]; line: number };
+
+export type BlockCommand =
+    | "calibration" | "delay" | "take_off" | "auto_land" | "stop_motor"
+    | "set_height" | "move_forward" | "move_backward" | "move_left" | "move_right"
+    | "set_yaw" | "poshold" | "turnByHand" | "drop" | "pop" | "shoot" | "shot_b";
+export type BlockStatement = { kind: "command"; command: BlockCommand; args: number[] };
+export type BlockProgram = { selectedKey: number; scripts: Partial<Record<number, BlockStatement[]>> };
+type ParsedBlockStatement =
+    | BlockStatement
+    | { kind: "key"; key: number; functionName: string }
+    | { kind: "call"; functionName: string };
+
+/** Convert only the simulator's supported C++ subset to a visual-program model. */
+export function parseBlockProgram(code: string): { program: BlockProgram; skipped: number } {
+    const errors: SimEvent[] = [];
+    const tree = buildTree(tokenize(convertStyle(code, "full"), errors), errors);
+    const program: BlockProgram = { selectedKey: 1, scripts: {} };
+    const functions = new Map<string, Extract<Node, { kind: "block" }>>();
+    let skipped = errors.length;
+
+    for (const node of tree) {
+        if (node.kind !== "block") { skipped++; continue; }
+        const fn = FUNC.exec(node.header);
+        if (!fn || fn[2].trim() !== "" && fn[2].trim() !== "void") { skipped++; continue; }
+        if (functions.has(fn[1])) { skipped++; continue; }
+        functions.set(fn[1], node);
+    }
+
+    const commandNames: Record<string, BlockCommand> = {
+        calibration: "calibration", calibrate: "calibration", calibrate_and_delay: "calibration", calibrateanddelay: "calibration", delay: "delay", settle: "delay", wait: "delay",
+        takeoff: "take_off", take_off: "take_off", autoland: "auto_land", auto_land: "auto_land",
+        stopmotor: "stop_motor", stop_motor: "stop_motor",
+        setheight: "set_height", set_height: "set_height", setheights: "set_height", smoothsetheight: "set_height", smooth_set_height: "set_height", poshold_heights: "set_height",
+        moveforward: "move_forward", move_forward: "move_forward", move_forward_cm: "move_forward", move_forward_fast: "move_forward",
+        movebackward: "move_backward", move_backward: "move_backward", move_backward_cm: "move_backward", move_backward_fast: "move_backward",
+        moveleft: "move_left", move_left: "move_left", move_left_cm: "move_left", move_left_fast: "move_left",
+        moveright: "move_right", move_right: "move_right", move_right_cm: "move_right", move_right_fast: "move_right",
+        setyaw: "set_yaw", set_yaw: "set_yaw", poshold: "poshold", hold: "poshold",
+        turnbyhand: "turnByHand", turn_by_hand: "turnByHand", drop: "drop", pop: "pop", shoot: "shoot", shot_b: "shot_b",
+    };
+    const argsOf = (text: string) => splitArgs(text).map((arg) => {
+        const value = evalExpr(arg, new Map());
+        return Number.isFinite(value) ? value : NaN;
+    });
+    const parseBody = (body: Node[], inSetup: boolean): ParsedBlockStatement[] => {
+        const out: ParsedBlockStatement[] = [];
+        for (const node of body) {
+            if (node.kind !== "stmt") { skipped++; continue; }
+            const call = /^(?:(drone)\s*\.\s*|(pArduino)\s*(?:->|\.)\s*)?([A-Za-z_]\w*)\s*\(([\s\S]*)\)$/.exec(node.text);
+            if (!call) { skipped++; continue; }
+            const prefix = call[1] ? "drone" : call[2] ? "parduino" : null;
+            const name = call[3];
+            const rawArgs = call[4].trim() === "" ? [] : splitArgs(call[4]).map((x) => x.trim());
+            const keyMatch = prefix && /^onKey(1[01]|[1-9])$/.exec(name);
+            if (keyMatch) {
+                if (!inSetup || rawArgs.length !== 1 || !/^[A-Za-z_]\w*$/.test(rawArgs[0]) || !functions.has(rawArgs[0])) { skipped++; continue; }
+                out.push({ kind: "key", key: Number(keyMatch[1]), functionName: rawArgs[0] });
+                continue;
+            }
+            const canonicalName = name.toLowerCase().replace(/_/g, "");
+            const command = commandNames[name] ?? commandNames[canonicalName];
+            if (command) {
+                const args = argsOf(call[4]);
+                const expected = command === "set_yaw" ? 2 : ["delay", "stop_motor", "set_height", "move_forward", "move_backward", "move_left", "move_right", "turnByHand"].includes(command) ? 1 : 0;
+                if (args.length !== expected || args.some((value) => !Number.isFinite(value))) { skipped++; continue; }
+                out.push({ kind: "command", command, args });
+                continue;
+            }
+            if (prefix === null && rawArgs.length === 0 && functions.has(name) && name !== "setup" && name !== "loop") {
+                out.push({ kind: "call", functionName: name });
+                continue;
+            }
+            skipped++;
+        }
+        return out;
+    };
+
+    const setup = functions.get("setup");
+    const loop = functions.get("loop");
+    const setupBody = setup ? parseBody(setup.body, true) : [];
+    const loopBody = loop ? parseBody(loop.body, false) : [];
+    const handlers = new Map<number, string>();
+    const setupActions: ParsedBlockStatement[] = [];
+    for (const statement of setupBody) {
+        if (statement.kind === "key") handlers.set(statement.key, statement.functionName);
+        else setupActions.push(statement);
+    }
+
+    const functionBodies = new Map<string, ParsedBlockStatement[]>();
+    for (const [name, node] of functions) if (name !== "setup" && name !== "loop") functionBodies.set(name, parseBody(node.body, false));
+    const usedFunctions = new Set<string>();
+    const expand = (body: ParsedBlockStatement[], stack: Set<string>): BlockStatement[] => {
+        const out: BlockStatement[] = [];
+        for (const statement of body) {
+            if (statement.kind === "command") out.push(statement);
+            else if (statement.kind === "call") {
+                const nested = functionBodies.get(statement.functionName);
+                if (!nested || stack.has(statement.functionName)) { skipped++; continue; }
+                usedFunctions.add(statement.functionName);
+                const nextStack = new Set(stack);
+                nextStack.add(statement.functionName);
+                out.push(...expand(nested, nextStack));
+            }
+        }
+        return out;
+    };
+    const setupCommands = expand(setupActions, new Set());
+    for (const [key, functionName] of handlers) {
+        const body = functionBodies.get(functionName);
+        if (!body) { skipped++; continue; }
+        usedFunctions.add(functionName);
+        program.scripts[key] = [...(key === 1 ? setupCommands : []), ...expand(body, new Set([functionName]))];
+    }
+    if (setupCommands.length && !handlers.has(1)) program.scripts[1] = setupCommands;
+    for (const [name, body] of functionBodies) if (!usedFunctions.has(name)) skipped += Math.max(1, body.length);
+    if (loopBody.length) skipped += loopBody.length;
+    const keys = Object.keys(program.scripts).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+    program.selectedKey = keys[0] ?? 1;
+    return { program, skipped };
+}
 
 /** สร้างต้นไม้จากโทเคน */
 function buildTree(toks: Tok[], errors: SimEvent[]): Node[] {

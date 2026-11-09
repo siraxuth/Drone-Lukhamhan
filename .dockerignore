@@ -1,0 +1,21 @@
+# ตัดของใหญ่ที่ build เว็บไม่ต้องใช้ (video/ อย่างเดียวก็ 1 GB)
+.git
+.github
+.claude
+.agents
+.vscode
+node_modules
+.next
+.source
+src/generated
+*.tsbuildinfo
+video
+slides
+assets
+tests
+docs-images.md
+
+# ห้ามเอาความลับเข้า image เด็ดขาด (ค่าจริงใส่ที่ Komodo ตอนรัน)
+.env
+.env.*
+!.env.example

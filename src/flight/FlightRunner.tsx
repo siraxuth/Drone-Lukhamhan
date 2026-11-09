@@ -43,6 +43,8 @@ type Props = {
   /** ปุ่มเล่นใหญ่ตรงกลางสนามเมื่อยังไม่เคยเล่น */
   bigPlay?: boolean;
   onResult?: (r: Result | null) => void;
+  /** Active source command while the flight animation is playing. */
+  onCommandProgress?: (focus: { key: number; line: number } | null) => void;
   /** เรียกเมื่อโดรนบินเริ่ม/จบ */
   onStart?: () => void;
   onFinish?: (r: Result) => void;
@@ -65,7 +67,7 @@ type Props = {
  * เครื่องเล่นการบินจำลอง: รันโค้ดผ่าน engine แล้วเล่นบนสนาม 3 มิติ พร้อมเสียง
  * ใช้ทั้งหน้า /field (เดโมโค้ดตัวอย่าง) และ /simulator (โค้ดที่ผู้ใช้เขียนเอง)
  */
-export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, onFinish, playLabel = 'เริ่มจำลองการบิน', config, scene, maxPoints, previewKey, remoteKeys, initialView, focusPlay, fullHeightField = false }: Props) {
+export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandProgress, onStart, onFinish, playLabel = 'เริ่มจำลองการบิน', config, scene, maxPoints, previewKey, remoteKeys, initialView, focusPlay, fullHeightField = false }: Props) {
   const cfg = useMemo(() => config ?? buildConfig(event.id), [config, event.id]);
   const initialPayload = cfg.initialPayload;
   const payloadL = initialPayload?.L ?? 0;
@@ -113,6 +115,8 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
   const [holding, setHolding] = useState(false);
   const [manualActive, setManualActive] = useState(true);
   const [activeKey, setActiveKey] = useState<number | null>(null);
+  const activeKeyRef = useRef<number | null>(null);
+  const commandFocusRef = useRef<{ key: number; line: number } | null>(null);
 
   const poseRef = useRef<LivePose>({ ...IDLE });
   const playheadRef = useRef(0);
@@ -176,8 +180,11 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
     popSequence.current = 0;
     landingSequence.current = 0;
     setPose2d(HOME); setResult(null); setPlannedResult(null); setPlaying(false); setDone(false); setNow(0); setMarks(NO_MARKS); setHighlight(null); setShotCallout(null); setPopCallout(null); setDropCallout(null); setLandingCallout(null); setLog([]); setHolding(false); setLoaded(payloadRef.current ?? { L: 0, R: 0 }); setManualActive(true); setActiveKey(null);
+    activeKeyRef.current = null;
+    commandFocusRef.current = null;
+    onCommandProgress?.(null);
     onResult?.(null);
-  }, [onResult]);
+  }, [onCommandProgress, onResult]);
 
   // เปลี่ยนประเภทหรือโค้ดแล้วผลเก่าไม่ใช้ต่อ
   useEffect(() => {
@@ -331,14 +338,23 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
       const e = r.events[c.fired++];
       if (e.kind !== 'info' || e.t > 0) fire(e, r);
     }
-    if (ts - c.uiAt > 100) { c.uiAt = ts; setNow(c.t); }
+    if (ts - c.uiAt > 100) {
+      c.uiAt = ts;
+      setNow(c.t);
+      const command = r.commandTimeline.find((item) => item.start <= c.t && item.end > c.t);
+      const focus = command && activeKeyRef.current ? { key: activeKeyRef.current, line: command.line } : null;
+      if (focus?.key !== commandFocusRef.current?.key || focus?.line !== commandFocusRef.current?.line) {
+        commandFocusRef.current = focus;
+        onCommandProgress?.(focus);
+      }
+    }
     if (c.t >= r.duration) {
       setNow(c.t); setDone(true); setPlaying(false);
       audio.current?.motor(0, 0);
       return;
     }
     c.raf = requestAnimationFrame(tick);
-  }, [fire, onFinish]);
+  }, [fire, onCommandProgress, onFinish]);
 
   const play = useCallback((key?: number) => {
     cancelAnimationFrame(run.current.raf);
@@ -361,6 +377,9 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
     popSequence.current = 0;
     landingSequence.current = 0;
     setResult(r); setPlannedResult(planned); setMarks(NO_MARKS); setHighlight(null); setShotCallout(null); setPopCallout(null); setLandingCallout(null); setLog(first); setDone(false); setActiveKey(key ?? null);
+    activeKeyRef.current = key ?? keyBindings[0]?.key ?? null;
+    commandFocusRef.current = null;
+    onCommandProgress?.(null);
     Object.assign(run.current, { t: 0, fired: 0, spin: 0, speed: 0, uiAt: 0, airborne: false });
     audio.current?.resetTing();
     poseRef.current = { ...IDLE };
@@ -384,7 +403,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onStart, o
     }, 600);
     run.current.count = iv;
     if (r.frames.length < 2) { clearInterval(iv); setPlaying(false); setDone(true); }
-  }, [cfg, code, HOME, muted, onFinish, onResult, onStart, tick]);
+  }, [cfg, code, HOME, keyBindings, muted, onCommandProgress, onFinish, onResult, onStart, tick]);
 
   const randomizeConditions = () => {
     seedRef.current = Math.max(1, Math.floor(Math.random() * 2_147_483_647));
