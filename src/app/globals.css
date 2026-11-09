@@ -5,6 +5,35 @@
 @import "fumadocs-ui/css/preset.css";
 @source "../../node_modules/fumadocs-ui/dist/**/*.js";
 
+.flight-blockly .blocklyToolboxDiv {
+	background: var(--surface-2);
+	border-inline-end: 1px solid var(--line);
+}
+.flight-blockly .blocklyFlyoutBackground {
+	fill: var(--surface);
+}
+.flight-blockly .blocklyMainBackground {
+	fill: var(--canvas);
+	stroke: var(--line);
+}
+.flight-blockly .blocklyText,
+.flight-blockly .blocklyHtmlInput {
+	font-family: var(--font-sans), sans-serif !important;
+}
+.flight-blockly .blocklyText {
+	font-size: 13px;
+}
+.flight-blockly .blocklyToolboxCategoryLabel {
+	font-size: 13px;
+	font-weight: 650;
+}
+.flight-blockly .blocklyFlyout .blocklyText {
+	font-size: 12px;
+}
+.flight-blockly .blocklyScrollbarHandle {
+	fill: var(--muted-foreground);
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
