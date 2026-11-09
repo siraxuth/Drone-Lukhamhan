@@ -21,7 +21,7 @@ DEPLOY.md เดิมยังใช้ได้ทุกอย่างที�
 
 | ไฟล์ | ทำอะไร |
 | --- | --- |
-| `Dockerfile` | build เว็บเป็น image (หลาย stage: ติดตั้ง → build → รัน ด้วย Node 22 ผู้ใช้ไม่ใช่ root) |
+| `Dockerfile` | build เว็บเป็น image (หลาย stage, Next standalone, Alpine และ Node 22; ผู้ใช้ไม่ใช่ root) |
 | `.dockerignore` | ตัด `video/` (1 GB), `assets/`, `.git`, `.env*` ออกจากตอน build |
 | `compose.yaml` | Stack ที่ Komodo ใช้: เว็บ + cloudflared บนเครือข่าย `46554454` |
 | `next.config.mjs` | เพิ่มบรรทัดเดียว: ถ้ามี `BUILD_STANDALONE=1` ให้ออกไฟล์รันเดี่ยว (บน Vercel ไม่ตั้งค่านี้ ไม่มีผล) |
@@ -72,9 +72,10 @@ docker network inspect 46554454 --format '{{.Name}} {{.Driver}}'
    - Git Provider `github.com` · Repo `siraxuth/Drone-Lukhamhan` · Branch **`release`**
    - ถ้า repo เป็น private ต้องเพิ่ม Git Provider Account (GitHub personal access token สิทธิ์อ่าน repo) ในการตั้งค่า Komodo ก่อน แล้วเลือกบัญชีนั้น
 4. **Run Directory** `.` · **File Paths** `compose.yaml`
-5. เปิดตัวเลือก build ก่อน deploy (ชื่อประมาณ *Run Build* หรือ *Build before deploy*) เพราะ `compose.yaml` ใช้ `build:` ไม่ได้ดึง image สำเร็จรูป ถ้าไม่เปิด การ deploy ครั้งแรกจะล้มด้วยหา image ไม่เจอ
-6. ช่อง **Environment** ใส่ค่าตามตารางด้านล่าง (Komodo เขียนลงไฟล์ `.env` ข้าง `compose.yaml` ให้) ค่าลับให้เก็บเป็น Komodo **Secret / Variable** แล้วอ้างด้วย `[[ชื่อ]]` จะไม่โชว์ในหน้าเว็บ
-7. กด Save → **Deploy** แล้วดู log ของ Stack ครั้งแรกใช้เวลา build ราว 5–10 นาที
+5. ปิด **Auto Pull** เพราะเว็บนี้สร้าง image เองจาก `build:` ไม่ได้ดึง `drone-lukhamhan:latest` จาก registry
+6. เปิดตัวเลือก build ก่อน deploy (ชื่อประมาณ *Run Build* หรือ *Build before deploy*) เพื่อให้ Komodo สร้าง image ก่อนเริ่มเว็บ
+7. ช่อง **Environment** ใส่ค่าตามตารางด้านล่าง (Komodo เขียนลงไฟล์ `.env` ข้าง `compose.yaml` ให้) ค่าลับให้เก็บเป็น Komodo **Secret / Variable** แล้วอ้างด้วย `[[ชื่อ]]` จะไม่โชว์ในหน้าเว็บ
+8. กด Save → **Deploy** แล้วดู log ของ Stack ครั้งแรกใช้เวลา build ราว 5–10 นาที
 
 ### ตัวแปรของ Stack
 

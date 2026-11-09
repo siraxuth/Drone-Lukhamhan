@@ -2,9 +2,14 @@
 # เว็บชมรมโดรน ลือคำหาญฯ สำหรับรันเองบนเซิร์ฟเวอร์ (Komodo) · ขั้นตอนเต็มดู DEPLOY-KOMODO.md
 # build บน Vercel ไม่ได้ใช้ไฟล์นี้
 
-# Node รันเว็บ ส่วน bun ใช้ติดตั้งแพ็กเกจและเรียกสคริปต์ build (เวอร์ชันตรงกับ packageManager ใน package.json)
-FROM node:22-slim AS base
-COPY --from=oven/bun:1.3.14 /usr/local/bin/bun /usr/local/bin/bun
+# Bun ใช้เฉพาะตอนติดตั้งแพ็กเกจและ build ส่วนเว็บ production รันด้วย Node.js
+FROM oven/bun:1.3.14-alpine AS bun
+
+# Alpine ลดขนาด image ฐานทั้งขั้น build และ runtime; ใช้ Node จริงเพราะ Next.js 16
+# ต้องพึ่ง Node ตอน build และไม่ควรใช้ Bun shim แทน Node
+FROM node:22-alpine AS base
+RUN apk add --no-cache libc6-compat libstdc++
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /app
 
 FROM base AS deps
@@ -29,7 +34,7 @@ ENV DATABASE_URL=postgresql://ci:ci@localhost/ci \
     BETTER_AUTH_URL=http://localhost:3000
 RUN bun run build
 
-FROM node:22-slim AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
