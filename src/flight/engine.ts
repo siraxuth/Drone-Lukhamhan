@@ -509,22 +509,28 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
             case "fw":
             case "bw":
             case "ml":
-            case "mr": {
+            case "mr":
+            case "fwt":
+            case "bwt":
+            case "mlt":
+            case "mrt": {
                 if (!needFly(`${c.name}()`)) break;
-                const cm = Math.abs(a ?? 0);
+                // fwt/bwt/mlt/mrt: ระบุเป็นเวลา (ms) บินด้วยความเร็วเดียวกับแบบซม. ระยะ = เวลา ÷ มิลลิวินาทีต่อซม.
+                const base = name.slice(0, 2) as "fw" | "bw" | "ml" | "mr";
+                const cm = name.length === 3 ? Math.abs(a ?? 0) / MS_PER_CM[base] : Math.abs(a ?? 0);
                 if (cm > SPEED_LIMIT_CM)
                     ev({ kind: "warn", line: c.line, text: `ระยะ ${cm} ซม. ไกลมากในคำสั่งเดียว ลองแบ่งเป็นหลายช่วง` });
                 const d = dirOf(yaw),
                     right = { x: Math.cos(rad(yaw)), y: Math.sin(rad(yaw)) };
                 const v =
-                    name === "fw"
+                    base === "fw"
                         ? d
-                        : name === "bw"
+                        : base === "bw"
                           ? { x: -d.x, y: -d.y }
-                          : name === "mr"
+                          : base === "mr"
                             ? right
                             : { x: -right.x, y: -right.y };
-                if (!travel(v.x * cm, v.y * cm, 0, 0, cm * MS_PER_CM[name as "fw" | "bw" | "ml" | "mr"], c.line, { shape: true })) break;
+                if (!travel(v.x * cm, v.y * cm, 0, 0, cm * MS_PER_CM[base], c.line, { shape: true })) break;
                 brake(c.line);
                 if (x < 0 || x > FIELD_CM || y < 0 || y > FIELD_CM) {
                     ev({

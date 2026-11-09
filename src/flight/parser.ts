@@ -23,6 +23,9 @@ const ALIAS: Record<string, { to: string; pick?: (a: number[]) => number[] }> = 
     // set_yaw(1, 90) = ขวา 90° · set_yaw(2, 90) = ซ้าย 90°
     set_yaw: { to: "yaw", pick: (a) => [(a[0] === 2 ? -1 : 1) * (a[1] ?? 0)] },
     setyaw: { to: "yaw", pick: (a) => [(a[0] === 2 ? -1 : 1) * (a[1] ?? 0)] },
+    // ตามเวลา: ใส่เป็นมิลลิวินาที เอนจินแปลงเป็นระยะด้วยความเร็วเดียวกับคำสั่งแบบซม.
+    move_forward_time: { to: "fwt" }, move_backward_time: { to: "bwt" }, move_left_time: { to: "mlt" }, move_right_time: { to: "mrt" },
+    moveforwardtime: { to: "fwt" }, movebackwardtime: { to: "bwt" }, movelefttime: { to: "mlt" }, moverighttime: { to: "mrt" },
     calibrate_and_delay: { to: "calibration" },
 };
 
@@ -141,6 +144,7 @@ type Node =
 export type BlockCommand =
     | "calibration" | "delay" | "take_off" | "auto_land" | "stop_motor"
     | "set_height" | "move_forward" | "move_backward" | "move_left" | "move_right"
+    | "move_forward_time" | "move_backward_time" | "move_left_time" | "move_right_time"
     | "set_yaw" | "poshold" | "turnByHand" | "drop" | "pop" | "shoot" | "shot_b";
 export type BlockStatement = { kind: "command"; command: BlockCommand; args: number[] };
 export type BlockProgram = { selectedKey: number; scripts: Partial<Record<number, BlockStatement[]>> };
@@ -174,6 +178,9 @@ export function parseBlockProgram(code: string): { program: BlockProgram; skippe
         movebackward: "move_backward", move_backward: "move_backward", move_backward_cm: "move_backward", move_backward_fast: "move_backward",
         moveleft: "move_left", move_left: "move_left", move_left_cm: "move_left", move_left_fast: "move_left",
         moveright: "move_right", move_right: "move_right", move_right_cm: "move_right", move_right_fast: "move_right",
+        moveforwardtime: "move_forward_time", move_forward_time: "move_forward_time", movebackwardtime: "move_backward_time", move_backward_time: "move_backward_time",
+        movelefttime: "move_left_time", move_left_time: "move_left_time", moverighttime: "move_right_time", move_right_time: "move_right_time",
+        fwt: "move_forward_time", bwt: "move_backward_time", mlt: "move_left_time", mrt: "move_right_time",
         setyaw: "set_yaw", set_yaw: "set_yaw", poshold: "poshold", hold: "poshold",
         turnbyhand: "turnByHand", turn_by_hand: "turnByHand", drop: "drop", pop: "pop", shoot: "shoot", shot_b: "shot_b",
     };
@@ -200,7 +207,7 @@ export function parseBlockProgram(code: string): { program: BlockProgram; skippe
             const command = commandNames[name] ?? commandNames[canonicalName];
             if (command) {
                 const args = argsOf(call[4]);
-                const expected = command === "set_yaw" ? 2 : ["delay", "stop_motor", "set_height", "move_forward", "move_backward", "move_left", "move_right", "turnByHand"].includes(command) ? 1 : 0;
+                const expected = command === "set_yaw" ? 2 : ["delay", "stop_motor", "set_height", "move_forward", "move_backward", "move_left", "move_right", "move_forward_time", "move_backward_time", "move_left_time", "move_right_time", "turnByHand"].includes(command) ? 1 : 0;
                 if (args.length !== expected || args.some((value) => !Number.isFinite(value))) { skipped++; continue; }
                 out.push({ kind: "command", command, args });
                 continue;

@@ -548,11 +548,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
           <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-3">
             {codeErrors.length > 0 ? (
               <p role="status" className="pointer-events-auto max-w-full squircle-xl bg-black/80 px-3 py-2 text-sm font-semibold text-rose-200">แก้โค้ดก่อนบิน: {codeErrors[0].text}</p>
-            ) : readyKey ? (
-              <Button type="button" size="lg" className="pointer-events-auto h-12 gap-2 bg-brand-blue px-6 text-base text-white shadow-lg hover:bg-brand-blue/90" onClick={() => play(readyKey)}>
-                <Play className="size-5 fill-current" aria-hidden /> {done ? 'บินอีกครั้ง' : 'เริ่มบิน'} · KEY {readyKey}
-              </Button>
-            ) : (
+            ) : readyKey ? null : (
               <p role="status" className="pointer-events-auto max-w-full squircle-xl bg-black/80 px-3 py-2 text-sm text-white">{remoteStatus}</p>
             )}
           </div>

@@ -53,6 +53,8 @@ const PAIRS: Array<[string, string, string, string]> = [
   ['bw(100)', 'move_backward(100)', 'drone.bw(100)', 'pArduino->move_backward_cm(100)'],
   ['ml(100)', 'move_left(100)', 'drone.ml(100)', 'pArduino->move_left_cm(100)'],
   ['mr(100)', 'move_right(100)', 'drone.mr(100)', 'pArduino->move_right_cm(100)'],
+  ['fwt(1500)', 'move_forward_time(1500)', 'drone.moveForwardTime(1500)', 'pArduino->move_forward_time(1500)'],
+  ['bwt / mlt / mrt', 'move_backward_time / move_left_time / move_right_time', 'drone.moveBackwardTime ...', 'pArduino->move_backward_time ...'],
   ['yaw(90) / yaw(-90)', 'set_yaw(1, 90) / set_yaw(2, 90)', 'drone.setYaw(1, 90)', 'pArduino->set_yaw(1, 90)'],
   ['poshold()', 'poshold()', 'drone.posHold()', 'pArduino->poshold()'],
   ['settle(500)', 'delay(500)', 'drone.settle(500)', 'delay(500)'],
@@ -344,7 +346,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
       if (!hasLink && last && last !== initial.slug && scenarios.some((s) => s.slug === last)) setSlug(last);
     } catch { /* ไม่มี storage ก็เริ่มที่ด่านง่าย */ }
   }, []);
-  const chooseStyle = (v: Style) => { setStyleSel(v); try { localStorage.setItem(STYLE_KEY, v); } catch { /* ไม่เป็นไร */ } };
+  const chooseStyle = (v: Style) => { setStyleSel(v); if (v !== 'any') setCode(convertStyle(code, v)); try { localStorage.setItem(STYLE_KEY, v); } catch { /* ไม่เป็นไร */ } };
 
   useEffect(() => { document.title = 'ตัวจำลองการบิน · ชมรมโดรน ลือคำหาญฯ'; }, []);
 
@@ -484,7 +486,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
             <PopoverTrigger render={<Button variant="outline" className="min-h-9" data-tour="sim-style" />}>ชื่อคำสั่ง: {STYLES.find((x) => x.id === style)?.label}</PopoverTrigger>
             <PopoverContent align="start" className="w-[min(24rem,calc(100vw-2rem))] p-3">
               <p className="text-sm font-semibold">รูปแบบชื่อคำสั่ง</p>
-              <p className="mb-2 mt-1 text-xs leading-5 text-muted-foreground">ตัวอย่างโจทย์ใช้ชื่อเต็ม (`take_off()`) ไม่ต้องเปลี่ยนถ้าเขียนตามโจทย์ ที่เหลือเป็นชื่อสั้นหรือรูปแบบของ Arduino ใช้เมื่อโค้ดจากที่อื่นเขียนไว้อีกแบบ</p>
+              <p className="mb-2 mt-1 text-xs leading-5 text-muted-foreground">ตัวอย่างโจทย์ใช้ชื่อเต็ม (`take_off()`) ไม่ต้องเปลี่ยนถ้าเขียนตามโจทย์ ที่เหลือเป็นชื่อสั้นหรือรูปแบบของ Arduino ใช้เมื่อโค้ดจากที่อื่นเขียนไว้อีกแบบ พอเลือกรูปแบบใหม่ โค้ดที่เขียนไว้จะถูกแปลงชื่อคำสั่งให้ทันที</p>
               <div role="group" aria-label="แบบการเขียนโค้ด" className="flex flex-wrap items-center gap-1 squircle-xl border border-line bg-surface p-1">
                 {STYLES.map((x) => <button key={x.id} type="button" aria-pressed={style === x.id} onClick={() => chooseStyle(x.id)} title={x.hint} className={"h-9 squircle-xl px-2.5 font-mono text-sm font-semibold transition-colors " + (style === x.id ? "bg-brand-blue text-background" : "hover:bg-surface-2")}>{x.label}</button>)}
               </div>

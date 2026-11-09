@@ -33,7 +33,7 @@
 .flight-blockly .blocklyScrollbarHandle {
 	fill: var(--muted-foreground);
 }
-.flight-blockly .sim-block-active .blocklyPath {
+.flight-blockly .sim-block-active > .blocklyPath {  /* บล็อกถัดไปซ้อนอยู่ใน SVG ของบล็อกก่อนหน้า ใช้ > เพื่อไฮไลต์เฉพาะบล็อกที่รันอยู่ */
 	stroke: var(--brand-red);
 	stroke-width: 4px;
 	filter: drop-shadow(0 0 6px color-mix(in srgb, var(--brand-red) 72%, transparent));

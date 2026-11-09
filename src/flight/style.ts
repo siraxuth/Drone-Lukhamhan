@@ -17,12 +17,14 @@ export const STYLES: Array<{ id: Style; label: string; hint: string }> = [
 /** เมธอดของ DroneEasy.hpp (ชื่อตรงตัวอักษร) ที่ตัวจำลองรู้จัก */
 export const DRONE_NAMES = new Set([
   'calibration', 'calibrateAndDelay', 'takeOff', 'autoLand', 'stopMotor', 'settle', 'wait', 'fw', 'bw', 'ml', 'mr', 'sh',
+  'fwt', 'bwt', 'mlt', 'mrt', 'moveForwardTime', 'moveBackwardTime', 'moveLeftTime', 'moveRightTime',
   'moveForward', 'moveBackward', 'moveLeft', 'moveRight', 'moveFastForward', 'moveFastBackward', 'moveFastLeft', 'moveFastRight',
   'setHeight', 'holdHeight', 'smoothSetHeight', 'posHold', 'setYaw',
 ]);
 /** เมธอดของ class Arduino ใน protocol.hpp ที่ตัวจำลองรู้จัก */
 export const PARDUINO_NAMES = new Set([
   'calibration', 'calibrateAndDelay', 'take_off', 'auto_land', 'stop_motor', 'set_height', 'set_heights', 'smooth_set_height', 'poshold', 'poshold_heights',
+  'move_forward_time', 'move_backward_time', 'move_left_time', 'move_right_time',
   'move_forward_cm', 'move_backward_cm', 'move_left_cm', 'move_right_cm', 'move_forward_fast', 'move_backward_fast', 'move_left_fast', 'move_right_fast', 'set_yaw',
 ]);
 /** ชื่อเต็มของโหมด full = ชื่อแบบ pArduino-> บวกชื่อที่ไม่มี _cm (move_left แทน move_left_cm) */
@@ -68,6 +70,7 @@ const TO_DRONE: Map1 = {
   moveforward: 'moveForward', movebackward: 'moveBackward', moveleft: 'moveLeft', moveright: 'moveRight',
   moveforwardfast: 'moveFastForward', movebackwardfast: 'moveFastBackward', moveleftfast: 'moveFastLeft', moverightfast: 'moveFastRight',
   movefastforward: 'moveFastForward', movefastbackward: 'moveFastBackward', movefastleft: 'moveFastLeft', movefastright: 'moveFastRight',
+  fwt: 'fwt', bwt: 'bwt', mlt: 'mlt', mrt: 'mrt', moveforwardtime: 'moveForwardTime', movebackwardtime: 'moveBackwardTime', movelefttime: 'moveLeftTime', moverighttime: 'moveRightTime',
   poshold: 'posHold', hold: 'posHold', setyaw: 'setYaw',
 };
 const TO_PARDUINO: Map1 = {
@@ -77,6 +80,7 @@ const TO_PARDUINO: Map1 = {
   moveforward: 'move_forward_cm', movebackward: 'move_backward_cm', moveleft: 'move_left_cm', moveright: 'move_right_cm',
   moveforwardfast: 'move_forward_fast', movebackwardfast: 'move_backward_fast', moveleftfast: 'move_left_fast', moverightfast: 'move_right_fast',
   movefastforward: 'move_forward_fast', movefastbackward: 'move_backward_fast', movefastleft: 'move_left_fast', movefastright: 'move_right_fast',
+  fwt: 'move_forward_time', bwt: 'move_backward_time', mlt: 'move_left_time', mrt: 'move_right_time', moveforwardtime: 'move_forward_time', movebackwardtime: 'move_backward_time', movelefttime: 'move_left_time', moverighttime: 'move_right_time',
   poshold: 'poshold', hold: 'poshold', setyaw: 'set_yaw',
 };
 
@@ -89,10 +93,11 @@ const TO_FULL: Map1 = {
   moveforward: 'move_forward', movebackward: 'move_backward', moveleft: 'move_left', moveright: 'move_right',
   moveforwardfast: 'move_forward_fast', movebackwardfast: 'move_backward_fast', moveleftfast: 'move_left_fast', moverightfast: 'move_right_fast',
   movefastforward: 'move_forward_fast', movefastbackward: 'move_backward_fast', movefastleft: 'move_left_fast', movefastright: 'move_right_fast',
+  fwt: 'move_forward_time', bwt: 'move_backward_time', mlt: 'move_left_time', mrt: 'move_right_time', moveforwardtime: 'move_forward_time', movebackwardtime: 'move_backward_time', movelefttime: 'move_left_time', moverighttime: 'move_right_time',
   poshold: 'poshold', hold: 'poshold', setyaw: 'set_yaw',
 };
 /** ใช้ในข้อความ error: ตัวย่อที่นักเรียนพิมพ์ → ชื่อเต็มที่ควรใช้ */
-const SHORT_TO_FULL: Map1 = { sh: 'set_height', fw: 'move_forward', bw: 'move_backward', ml: 'move_left', mr: 'move_right', yaw: 'set_yaw', settle: 'delay', takeoff: 'take_off', autoland: 'auto_land', poshold: 'poshold', setheight: 'set_height', stopmotor: 'stop_motor', turn: 'set_yaw' };
+const SHORT_TO_FULL: Map1 = { fwt: 'move_forward_time', bwt: 'move_backward_time', mlt: 'move_left_time', mrt: 'move_right_time', sh: 'set_height', fw: 'move_forward', bw: 'move_backward', ml: 'move_left', mr: 'move_right', yaw: 'set_yaw', settle: 'delay', takeoff: 'take_off', autoland: 'auto_land', poshold: 'poshold', setheight: 'set_height', stopmotor: 'stop_motor', turn: 'set_yaw' };
 
 /** แปลงโค้ดทั้งไฟล์ให้เป็นโหมดที่ต้องการ (ใช้ปุ่ม "แปลงโค้ดให้" และตอนแทรกคำสั่ง) */
 export function convertStyle(code: string, style: Style): string {

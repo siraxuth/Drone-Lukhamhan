@@ -23,6 +23,7 @@ frame=material('Soft graphite polymer', (.36,.38,.42), 0, .42)
 seam=material('Graphite recesses', (.25,.27,.30), 0, .7)
 steel=material('Graphite hardware', (.44,.46,.50), .18, .32)
 white=material('White motor index',(1,1,1))
+pin_dark=material('Pin 32054 polymer',(.07,.08,.095),0,.5)
 black=material('Black motor index',(.008,.01,.012),0,.42)
 red=material('Graphite connectors', (.34,.36,.40))
 glass=material('Dark grey optical glass',(.18,.20,.23),.02,.2)
@@ -251,23 +252,34 @@ for i,(sx,sy) in enumerate([(1,-1),(-1,-1),(-1,1),(1,1)],1):
     tag(new_since(before),f'beam-{i}',(d.x*beam_radius,d.y*beam_radius,beam_z))
     # Section1: the 3-hole beam hangs under holes 1-3, its pin rises into hole 2
     # and the cross axle drops from its middle hole as the landing leg.
-    lx,ly=x,y
+    # The 3-hole beam covers holes 2-4 so the outermost motor screw (hole 1) seats directly on the 11-hole beam.
+    lx,ly=x-d.x*8,y-d.y*8
     before=set(bpy.context.scene.objects)
     bracket=liftarm('3-hole-beam_'+str(i),3,frame)
     bracket['part']='3-hole-beam'
     bracket.location=Vector((lx,ly,beam_z-7.2))*U; bracket.rotation_euler.z=ang
     tag(new_since(before),f'bracket-{i}',(lx,ly,beam_z-7.2))
     before=set(bpy.context.scene.objects)
-    # Round pin passes through both beams; the bush locks under the 3-hole beam.
-    cyl('Pin with bush '+str(i),(lx,ly,beam_z-3.6),2.35,15.4,steel,verts=24)
-    ring('Pin bush '+str(i),(lx,ly,beam_z-11.65),3.1,.85,1.7,frame,24)
-    ring('Pin head '+str(i),(lx,ly,beam_z+4.35),3.1,.85,1.5,frame,24)
-    tag(new_since(before),f'pin-{i}',(lx,ly,beam_z-3.6))
+    # Pin 2780 (white) locks the 3-hole beam in its inboard hole 3; the leg's cross axle keeps the middle hole for pin 32054.
+    px,py=lx-d.x*8,ly-d.y*8
+    cyl('Pin with bush '+str(i),(px,py,beam_z-3.6),2.35,15.4,white,verts=24)
+    ring('Pin bush '+str(i),(px,py,beam_z-11.65),3.1,.85,1.7,white,24)
+    ring('Pin head '+str(i),(px,py,beam_z+4.35),3.1,.85,1.5,white,24)
+    tag(new_since(before),f'pin-{i}',(px,py,beam_z-3.6))
     before=set(bpy.context.scene.objects)
     axle=[(-1,-2.4),(1,-2.4),(1,-1),(2.4,-1),(2.4,1),(1,1),(1,2.4),(-1,2.4),(-1,1),(-2.4,1),(-2.4,-1),(-1,-1)]
     leg=prism('Leg_'+str(i),axle,-59,beam_z-7.2,frame)
     leg.location=Vector((lx,ly,0))*U; leg.rotation_euler.z=ang
     tag(new_since(before),f'leg-{i}',(lx,ly,beam_z-14))
+    # Pin 32054 crosses the axle just under the 3-hole beam so the leg cannot slide out; stop bush on the outer end.
+    before=set(bpy.context.scene.objects)
+    tangent=Vector((-d.y,d.x,0))
+    pin_z=beam_z-14
+    cyl('Leg lock pin '+str(i),(lx,ly,pin_z),2.0,14.4,pin_dark,axis=tangent,verts=24)
+    for k in (-4.4,-2.2,2.2,4.4):
+        cyl('Leg lock rib '+str(i),Vector((lx,ly,pin_z))+tangent*k,2.45,.7,pin_dark,axis=tangent,verts=24)
+    cyl('Leg lock bush '+str(i),Vector((lx,ly,pin_z))+tangent*7.6,3.1,1.8,pin_dark,axis=tangent,verts=24)
+    tag(new_since(before),f'leglock-{i}',(lx,ly,pin_z))
     # Motor set: motor, shoe and cage. The shoe sits on the beam over holes 1-5.
     before=set(bpy.context.scene.objects)
     shoe_r=beam_radius+24
@@ -298,8 +310,8 @@ for i,(sx,sy) in enumerate([(1,-1),(-1,-1),(-1,1),(1,1)],1):
     motor_parts=new_since(before)
     for o in motor_parts: o['spin']='ccw' if ccw else 'cw'
     tag(motor_parts,f'motor-{i}',(x,y,18))
-    # Two M3 screws come up from below; hole 1 lies under the 3-hole beam, so that screw passes both beams.
-    for j,(radius,head_z) in enumerate([(shoe_r-16,beam_z-3.7),(shoe_r+16,beam_z-10.9)]):
+    # Two M3 screws come up from below and seat on the 11-hole beam (hole 1 is outboard of the 3-hole beam).
+    for j,(radius,head_z) in enumerate([(shoe_r-16,beam_z-3.7),(shoe_r+16,beam_z-3.7)]):
         px,py=d.x*radius,d.y*radius
         before=set(bpy.context.scene.objects)
         head=cyl(f'Motor screw {i}-{j}',(px,py,head_z),2.65,1.8,steel,verts=24)
@@ -429,7 +441,7 @@ for x,y in lower_outline:screw('Enclosure screw',x*.88,y*.88,-20.5)
 mounts={}
 for o in bpy.context.scene.objects:
     if 'mount' in o: mounts.setdefault(o['mount'],[]).append(o.name)
-expected={f'{k}-{i}' for i in range(1,5) for k in ['beam','bracket','pin','leg','motor','mplug','prop']}
+expected={f'{k}-{i}' for i in range(1,5) for k in ['beam','bracket','pin','leg','leglock','motor','mplug','prop']}
 expected|={f'{k}-{i}-{j}' for i in range(1,5) for j in (0,1) for k in ['bolt','mscrew']}|{'battery','plug'}
 assert set(mounts)==expected,(sorted(set(mounts)^expected))
 assert not [n for names in mounts.values() for n in names if n.startswith(('Motor socket','White motor','Black motor','Body'))]

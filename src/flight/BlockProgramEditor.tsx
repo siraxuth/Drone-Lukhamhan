@@ -12,7 +12,7 @@ let blocksDefined = false;
 const TOOLBOX = `<xml xmlns="https://developers.google.com/blockly/xml">
   <category name="FLIGHT" colour="#2878D0">
     <block type="flight_calibration"/><block type="flight_delay"/><block type="flight_take_off"/><block type="flight_auto_land"/><block type="flight_stop_motor"/>
-    <block type="flight_set_height"/><block type="flight_move_forward"/><block type="flight_move_backward"/><block type="flight_move_left"/><block type="flight_move_right"/><block type="flight_set_yaw"/><block type="flight_poshold"/>
+    <block type="flight_set_height"/><block type="flight_move_forward"/><block type="flight_move_backward"/><block type="flight_move_left"/><block type="flight_move_right"/><block type="flight_move_forward_time"/><block type="flight_move_backward_time"/><block type="flight_move_left_time"/><block type="flight_move_right_time"/><block type="flight_set_yaw"/><block type="flight_poshold"/>
   </category>
   <category name="MISSION" colour="#D78320">
     <block type="flight_turn_by_hand"/><block type="flight_drop"/><block type="flight_pop"/><block type="flight_shoot"/><block type="flight_shot_b"/>
@@ -30,6 +30,10 @@ const COMMAND_BLOCKS: Array<{ type: string; command: BlockCommand; message: stri
   { type: 'flight_move_backward', command: 'move_backward', message: 'move_backward(%1 cm)', fields: [{ name: 'VALUE', value: 100, min: 1, max: 2000 }] },
   { type: 'flight_move_left', command: 'move_left', message: 'move_left(%1 cm)', fields: [{ name: 'VALUE', value: 100, min: 1, max: 2000 }] },
   { type: 'flight_move_right', command: 'move_right', message: 'move_right(%1 cm)', fields: [{ name: 'VALUE', value: 100, min: 1, max: 2000 }] },
+  { type: 'flight_move_forward_time', command: 'move_forward_time', message: 'move_forward_time(%1 ms)', fields: [{ name: 'VALUE', value: 1500, min: 100, max: 30000 }] },
+  { type: 'flight_move_backward_time', command: 'move_backward_time', message: 'move_backward_time(%1 ms)', fields: [{ name: 'VALUE', value: 1500, min: 100, max: 30000 }] },
+  { type: 'flight_move_left_time', command: 'move_left_time', message: 'move_left_time(%1 ms)', fields: [{ name: 'VALUE', value: 1500, min: 100, max: 30000 }] },
+  { type: 'flight_move_right_time', command: 'move_right_time', message: 'move_right_time(%1 ms)', fields: [{ name: 'VALUE', value: 1500, min: 100, max: 30000 }] },
   { type: 'flight_set_yaw', command: 'set_yaw', message: 'set_yaw(%1, %2°)' },
   { type: 'flight_poshold', command: 'poshold', message: 'poshold()' },
   { type: 'flight_turn_by_hand', command: 'turnByHand', message: 'turnByHand(%1°)', fields: [{ name: 'VALUE', value: 180, min: 1, max: 360 }] },
@@ -317,8 +321,10 @@ function playConnectSound(audioRef: MutableRefObject<AudioContext | null>) {
       oscillator.start(startAt + delay);
       oscillator.stop(startAt + delay + duration + 0.01);
     };
-    playTone(520, 0, 0.11, 0.045, 'triangle');
-    playTone(780, 0.035, 0.16, 0.028, 'sine');
+    // เสียงคลิกสั้นๆ ตอนบล็อกล็อกเข้าที่ (ดังพอได้ยินแต่ไม่แหลม)
+    playTone(330, 0, 0.07, 0.16, 'square');
+    playTone(660, 0.02, 0.12, 0.12, 'triangle');
+    playTone(990, 0.05, 0.16, 0.07, 'sine');
   } catch {
     // Browser audio can be unavailable or blocked; block editing still works.
   }

@@ -255,32 +255,6 @@ function useWorkshopModel() {
         node.userData.home = node.position.clone();
         continue;
       }
-      if (id.startsWith('pin-')) {
-        if (!groups.has(id)) {
-          const arm = id.split('-')[1];
-          const motorAnchor = scene.children.find((item) => item.userData.mount === `motor-${arm}`)?.userData.anchor as number[];
-          const unit = new THREE.Vector2(motorAnchor[0], motorAnchor[1]).normalize();
-          const sourceAnchor = original.userData.anchor as number[];
-          const pinGroup = new THREE.Group();
-          // Put 2780 in the third hole from the motor-side end; the center hole remains for 32054.
-          pinGroup.position.set(motorAnchor[0] + unit.x * 0.008, motorAnchor[1] + unit.y * 0.008, sourceAnchor[2]);
-          pinGroup.userData.home = pinGroup.position.clone();
-          groups.set(id, pinGroup);
-          root.add(pinGroup);
-          const plastic = new THREE.MeshStandardMaterial({ color: '#25282d', roughness: 0.52, metalness: 0.04 });
-          const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, 0.0145, 20), plastic);
-          shaft.rotation.x = Math.PI / 2;
-          pinGroup.add(shaft);
-          for (const z of [-0.0054, -0.0036, -0.0018, 0.0018, 0.0036, 0.0054]) {
-            const rib = new THREE.Mesh(new THREE.CylinderGeometry(0.00255, 0.00255, 0.00065, 20), plastic);
-            rib.rotation.x = Math.PI / 2;
-            rib.position.z = z;
-            pinGroup.add(rib);
-          }
-          pinGroup.traverse((child) => { child.userData.mount = id; });
-        }
-        continue;
-      }
       node.traverse((child) => {
         if (child.userData.mount) child.userData.mount = id;
       });
@@ -295,31 +269,6 @@ function useWorkshopModel() {
       }
       node.position.sub(group.position);
       group.add(node);
-    }
-    const legPinMaterial = new THREE.MeshStandardMaterial({ color: '#25282d', roughness: 0.52, metalness: 0.04 });
-    for (const arm of [1, 2, 3, 4]) {
-      const sourceAnchor = scene.children.find((item) => item.userData.mount === `leg-${arm}`)?.userData.anchor as number[] | undefined;
-      if (!sourceAnchor) continue;
-      const id = `leglock-${arm}`;
-      const group = new THREE.Group();
-      group.position.set(sourceAnchor[0], sourceAnchor[1], sourceAnchor[2] + 0.006);
-      group.userData.home = group.position.clone();
-      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, 0.0145, 20), legPinMaterial);
-      shaft.rotation.x = Math.PI / 2;
-      group.add(shaft);
-      for (const z of [-0.0054, -0.0036, -0.0018, 0.0018, 0.0036, 0.0054]) {
-        const rib = new THREE.Mesh(new THREE.CylinderGeometry(0.00255, 0.00255, 0.00075, 20), legPinMaterial);
-        rib.rotation.x = Math.PI / 2;
-        rib.position.z = z;
-        group.add(rib);
-      }
-      const bush = new THREE.Mesh(new THREE.CylinderGeometry(0.0033, 0.0033, 0.0018, 24), legPinMaterial);
-      bush.rotation.x = Math.PI / 2;
-      bush.position.z = -0.0062;
-      group.add(bush);
-      group.traverse((child) => { child.userData.mount = id; });
-      groups.set(id, group);
-      root.add(group);
     }
     const portHitMaterial = new THREE.MeshBasicMaterial({
       transparent: true,
