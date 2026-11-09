@@ -50,7 +50,20 @@ export function Header({ frame = false, autoHide = false }: { frame?: boolean; a
   const [pinned, setPinned] = useState(false);
   const [revealed, setRevealed] = useState(!autoHide);
   const [hovered, setHovered] = useState(false);
+  // ซ่อนเมนูอัตโนมัติได้เฉพาะจอกว้างที่มีเมาส์ (เอาเมาส์ชี้ขอบบนเพื่อเปิด) · มือถือ/แท็บเล็ตแสดงเมนูตลอด
+  // null = ยังไม่รู้ (ตอน SSR) ให้เริ่มแบบซ่อนไว้ก่อนเหมือนเดิม จะได้ไม่กะพริบบนจอคอม
+  const [hideable, setHideable] = useState<boolean | null>(null);
+  const hides = autoHide && hideable !== false;
   const list = useRef<HTMLUListElement>(null);
+
+  useEffect(() => {
+    if (!autoHide) return;
+    const query = window.matchMedia('(min-width: 1024px) and (hover: hover)');
+    const sync = () => { setHideable(query.matches); if (!query.matches) setRevealed(true); };
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, [autoHide]);
 
   useEffect(() => {
     let raf = 0;
@@ -71,10 +84,10 @@ export function Header({ frame = false, autoHide = false }: { frame?: boolean; a
 
   const [menu, setMenu] = useState<string | null>(null);
   useEffect(() => {
-    if (!autoHide || pinned || hovered || open || menu || !revealed) return;
+    if (!hides || pinned || hovered || open || menu || !revealed) return;
     const timer = window.setTimeout(() => setRevealed(false), 800);
     return () => window.clearTimeout(timer);
-  }, [autoHide, pinned, hovered, open, menu, revealed]);
+  }, [hides, pinned, hovered, open, menu, revealed]);
   useEffect(() => { setMenu(null); }, [pathname]);
   useEffect(() => {
     if (!menu) return;
@@ -90,8 +103,8 @@ export function Header({ frame = false, autoHide = false }: { frame?: boolean; a
   return (
     <>
     <Hud landing={frame} />
-    {autoHide && !revealed && !pinned && <><div aria-hidden onMouseEnter={() => setRevealed(true)} className="fixed inset-x-0 top-0 z-40 h-3" /><button type="button" onMouseEnter={() => setRevealed(true)} onFocus={() => setRevealed(true)} onClick={() => setRevealed(true)} className="fixed inset-x-0 top-0 z-50 mx-auto h-8 w-32 squircle-b-notch border border-t-0 border-line bg-canvas text-xs font-bold text-foreground shadow-md focus-visible:outline-2 focus-visible:outline-brand-blue">เมนู ↓</button></>}
-    <header onMouseEnter={() => { setHovered(true); setRevealed(true); }} onMouseLeave={() => setHovered(false)} onFocusCapture={() => setRevealed(true)} className={`pointer-events-none fixed inset-x-0 top-0 transition-transform duration-300 ${frame ? 'z-[310]' : 'z-40'} ${autoHide && !revealed && !pinned && !open ? '-translate-y-[120%]' : 'translate-y-0'}`}>
+    {hides && !revealed && !pinned && <><div aria-hidden onMouseEnter={() => setRevealed(true)} className="fixed inset-x-0 top-0 z-40 h-3" /><button type="button" onMouseEnter={() => setRevealed(true)} onFocus={() => setRevealed(true)} onClick={() => setRevealed(true)} className="fixed inset-x-0 top-0 z-50 mx-auto h-8 w-32 squircle-b-notch border border-t-0 border-line bg-canvas text-xs font-bold text-foreground shadow-md focus-visible:outline-2 focus-visible:outline-brand-blue">เมนู ↓</button></>}
+    <header onMouseEnter={() => { setHovered(true); setRevealed(true); }} onMouseLeave={() => setHovered(false)} onFocusCapture={() => setRevealed(true)} className={`pointer-events-none fixed inset-x-0 top-0 transition-transform duration-300 ${frame ? 'z-[310]' : 'z-40'} ${hides && !revealed && !pinned && !open ? '-translate-y-[120%]' : 'translate-y-0'}`}>
       <nav
         data-tour="menu"
         aria-label="เมนูหลัก"
@@ -152,7 +165,7 @@ export function Header({ frame = false, autoHide = false }: { frame?: boolean; a
         </ul>
 
         <div className="flex items-center gap-2">
-          {autoHide && <button type="button" onClick={() => { setPinned((value) => !value); setRevealed(true); }} aria-pressed={pinned} title={pinned ? 'กลับไปซ่อนเมนูอัตโนมัติ' : 'ตรึงเมนูให้แสดงตลอด'} className={`grid size-10 place-items-center squircle-xl border border-line focus-visible:outline-2 focus-visible:outline-brand-blue ${pinned ? 'bg-brand-blue/10 text-brand-blue' : 'text-muted-foreground hover:bg-surface-2'}`}><Pin className="size-4" aria-hidden /><span className="sr-only">{pinned ? 'เปิดซ่อนเมนูอัตโนมัติ' : 'ปิดซ่อนเมนูอัตโนมัติ'}</span></button>}
+          {autoHide && hideable && <button type="button" onClick={() => { setPinned((value) => !value); setRevealed(true); }} aria-pressed={pinned} title={pinned ? 'กลับไปซ่อนเมนูอัตโนมัติ' : 'ตรึงเมนูให้แสดงตลอด'} className={`grid size-10 place-items-center squircle-xl border border-line focus-visible:outline-2 focus-visible:outline-brand-blue ${pinned ? 'bg-brand-blue/10 text-brand-blue' : 'text-muted-foreground hover:bg-surface-2'}`}><Pin className="size-4" aria-hidden /><span className="sr-only">{pinned ? 'เปิดซ่อนเมนูอัตโนมัติ' : 'ปิดซ่อนเมนูอัตโนมัติ'}</span></button>}
           <ThemeToggle />
           <div className="hidden lg:block"><UserMenu /></div>
           <Button size="sm" className="group/cta hidden h-10.5 px-4 text-base sm:inline-flex lg:hidden xl:inline-flex squircle-3xl" render={<Link href="/docs" />} nativeButton={false}>
