@@ -10,6 +10,7 @@ const COLUMNS = [
     links: [
       { href: '/#how', label: 'โดรนบินยังไง' },
       { href: '/docs', label: 'บทเรียนทั้งหมด' },
+      { href: '/parts', label: 'ชิ้นส่วนและลองประกอบ' },
       { href: '/docs/start/safety', label: 'ความปลอดภัยก่อนบิน' },
       { href: '/docs/code/parduino-api', label: 'คำสั่งสั่งโดรน' },
     ],

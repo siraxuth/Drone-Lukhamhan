@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowRight, ChevronDown, Plane, Sparkles, X } from 'lucide-react';
+import { ArrowRight, ChevronDown, Pin, Plane, Sparkles, Wrench, X } from 'lucide-react';
 import { Logo } from '@/components/brand/Logo';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { UserMenu, UserMenuMobile } from '@/components/UserMenu';
@@ -19,6 +19,7 @@ type NavLink = { href: string; label: string; spy?: 'how' | 'showcase'; children
 const lessonSets: readonly Sub[] = [
   { href: '/docs', label: 'โดรนมิชชั่น', hint: 'เขียนโค้ดสั่งโดรนบินภารกิจในสนามแข่ง', icon: Plane, on: (p) => p.startsWith('/docs') && !p.startsWith('/docs/lettering') },
   { href: '/docs/lettering', label: 'โดรนแปรอักษร', hint: 'ออกแบบโชว์โดรนเป็นตัวอักษรและรูปทรงด้วย Blender', icon: Sparkles, on: (p) => p.startsWith('/docs/lettering') },
+  { href: '/parts', label: 'ชิ้นส่วนและลองประกอบ', hint: 'หมุนดูโดรน 3 มิติ แล้วฝึกติดมอเตอร์ น็อต และแบต', icon: Wrench, on: (p) => p.startsWith('/parts') },
 ];
 
 /** คอร์สเรียน (/learn) แยกเป็นสายภารกิจกับสายแปรอักษร */
@@ -41,11 +42,14 @@ const links: readonly NavLink[] = [
  * มือถือ: ปุ่มสามขีดเปิด Drawer (shadcn) จากขวา เมนูไล่ขึ้นทีละรายการ
  */
 /** frame ยก Navbar หน้าแรกขึ้นเหนือกรอบ Hud */
-export function Header({ frame = false }: { frame?: boolean } = {}) {
+export function Header({ frame = false, autoHide = false }: { frame?: boolean; autoHide?: boolean } = {}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [spy, setSpy] = useState<'how' | 'showcase' | null>(null);
   const [hl, setHl] = useState<{ left: number; width: number } | null>(null);
+  const [pinned, setPinned] = useState(false);
+  const [revealed, setRevealed] = useState(!autoHide);
+  const [hovered, setHovered] = useState(false);
   const list = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
@@ -63,9 +67,14 @@ export function Header({ frame = false }: { frame?: boolean } = {}) {
     return () => { removeEventListener('scroll', on); cancelAnimationFrame(raf); };
   }, [pathname]);
 
-  const isActive = useCallback((l: NavLink) => (l.spy ? pathname === '/' && spy === l.spy : pathname.startsWith(l.href)), [pathname, spy]);
+  const isActive = useCallback((l: NavLink) => (l.spy ? pathname === '/' && spy === l.spy : pathname.startsWith(l.href) || !!l.children?.some((child) => child.on(pathname))), [pathname, spy]);
 
   const [menu, setMenu] = useState<string | null>(null);
+  useEffect(() => {
+    if (!autoHide || pinned || hovered || open || menu || !revealed) return;
+    const timer = window.setTimeout(() => setRevealed(false), 800);
+    return () => window.clearTimeout(timer);
+  }, [autoHide, pinned, hovered, open, menu, revealed]);
   useEffect(() => { setMenu(null); }, [pathname]);
   useEffect(() => {
     if (!menu) return;
@@ -81,7 +90,8 @@ export function Header({ frame = false }: { frame?: boolean } = {}) {
   return (
     <>
     <Hud landing={frame} />
-    <header className={`pointer-events-none fixed inset-x-0 top-0 ${frame ? 'z-[310]' : 'z-40'}`}>
+    {autoHide && !revealed && !pinned && <><div aria-hidden onMouseEnter={() => setRevealed(true)} className="fixed inset-x-0 top-0 z-40 h-3" /><button type="button" onMouseEnter={() => setRevealed(true)} onFocus={() => setRevealed(true)} onClick={() => setRevealed(true)} className="fixed inset-x-0 top-0 z-50 mx-auto h-8 w-32 squircle-b-notch border border-t-0 border-line bg-canvas text-xs font-bold text-foreground shadow-md focus-visible:outline-2 focus-visible:outline-brand-blue">เมนู ↓</button></>}
+    <header onMouseEnter={() => { setHovered(true); setRevealed(true); }} onMouseLeave={() => setHovered(false)} onFocusCapture={() => setRevealed(true)} className={`pointer-events-none fixed inset-x-0 top-0 transition-transform duration-300 ${frame ? 'z-[310]' : 'z-40'} ${autoHide && !revealed && !pinned && !open ? '-translate-y-[120%]' : 'translate-y-0'}`}>
       <nav
         data-tour="menu"
         aria-label="เมนูหลัก"
@@ -142,6 +152,7 @@ export function Header({ frame = false }: { frame?: boolean } = {}) {
         </ul>
 
         <div className="flex items-center gap-2">
+          {autoHide && <button type="button" onClick={() => { setPinned((value) => !value); setRevealed(true); }} aria-pressed={pinned} title={pinned ? 'กลับไปซ่อนเมนูอัตโนมัติ' : 'ตรึงเมนูให้แสดงตลอด'} className={`grid size-10 place-items-center squircle-xl border border-line focus-visible:outline-2 focus-visible:outline-brand-blue ${pinned ? 'bg-brand-blue/10 text-brand-blue' : 'text-muted-foreground hover:bg-surface-2'}`}><Pin className="size-4" aria-hidden /><span className="sr-only">{pinned ? 'เปิดซ่อนเมนูอัตโนมัติ' : 'ปิดซ่อนเมนูอัตโนมัติ'}</span></button>}
           <ThemeToggle />
           <div className="hidden lg:block"><UserMenu /></div>
           <Button size="sm" className="group/cta hidden h-10.5 px-4 text-base sm:inline-flex lg:hidden xl:inline-flex squircle-3xl" render={<Link href="/docs" />} nativeButton={false}>

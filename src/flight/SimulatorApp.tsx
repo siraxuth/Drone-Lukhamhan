@@ -297,6 +297,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
   const [blockProgramSlug, setBlockProgramSlug] = useState(initial.slug);
   const [blockSkipped, setBlockSkipped] = useState(0);
   const [blockRevision, setBlockRevision] = useState(0);
+  const [activeBlockCommand, setActiveBlockCommand] = useState<{ key: number; line: number } | null>(null);
   const [pendingBlockImport, setPendingBlockImport] = useState<{ slug: string; program: BlockProgram; skipped: number } | null>(null);
   const [missionSearch, setMissionSearch] = useState('');
   const [missionLevel, setMissionLevel] = useState('ทุกระดับ');
@@ -419,7 +420,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
             </div>
           </div>
           <div data-tour="sim-stage-canvas" className="min-w-0 squircle-3xl border border-line bg-surface p-2 sm:p-3">
-            <FlightRunner event={ev} code={code} config={config} scene={scene} maxPoints={max} bigPlay={false} fullHeightField onResult={onFlightResult} onStart={() => setCanReload(false)} onFinish={onFinish} />
+            <FlightRunner event={ev} code={code} config={config} scene={scene} maxPoints={max} bigPlay={false} fullHeightField onResult={onFlightResult} onCommandProgress={setActiveBlockCommand} onStart={() => setCanReload(false)} onFinish={onFinish} />
           </div>
           {sc.config.requiresPayload && <section className="grid gap-2 squircle-2xl border border-line bg-surface p-3" aria-label="เตรียมโดรน">
             <div className="flex flex-wrap items-center gap-2"><h2 className="mr-auto text-sm font-bold">เตรียมโดรน</h2>{sc.config.requiresPayload && <span className="text-xs text-muted-foreground">บอล ซ้าย {payload.L}/20 · ขวา {payload.R}/20</span>}{sc.config.requiresPayload && <Button size="sm" variant="outline" onClick={reloadPayload} disabled={!canReload || (payload.L === loadCount.L && payload.R === loadCount.R)} title={!canReload ? 'ต้องกลับมาลงบนฐานก่อน' : undefined}>{`ใส่บอล ${loadCount.L + loadCount.R} ลูก`}</Button>}</div>
@@ -459,7 +460,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
               : blockProgram && blockProgramSlug === sc.slug
                 ? <div className={`grid min-h-0 min-w-0 ${blockSkipped > 0 ? 'grid-rows-[auto_minmax(0,1fr)]' : 'grid-rows-[minmax(0,1fr)]'}`}>
                     {blockSkipped > 0 && <p role="status" className="border-b border-line bg-emphasis px-3 py-2 text-xs text-emphasis-foreground">นำเข้าเป็นบล็อกแล้ว ข้าม {blockSkipped} ส่วนที่ไม่มีบล็อกรองรับ โค้ด C++ ส่วนนั้นไม่ได้อยู่ในโปรแกรมบล็อก</p>}
-                    <BlockProgramEditor key={`${sc.slug}-${blockRevision}`} program={blockProgram} onChange={onBlockProgramChange} />
+                    <BlockProgramEditor key={`${sc.slug}-${blockRevision}`} program={blockProgram} activeCommand={activeBlockCommand} onChange={onBlockProgramChange} />
                   </div>
                 : <div className="grid min-h-[26rem] place-items-center text-sm text-muted-foreground">กำลังเตรียมโปรแกรมบล็อก…</div>}
           </section>

@@ -33,6 +33,11 @@
 .flight-blockly .blocklyScrollbarHandle {
 	fill: var(--muted-foreground);
 }
+.flight-blockly .sim-block-active .blocklyPath {
+	stroke: var(--brand-red);
+	stroke-width: 4px;
+	filter: drop-shadow(0 0 6px color-mix(in srgb, var(--brand-red) 72%, transparent));
+}
 
 @custom-variant dark (&:is(.dark *));
 
@@ -284,6 +289,7 @@
 	--canvas: oklch(0.985 0.002 247);
 	--surface: oklch(1 0 0);
 	--surface-2: oklch(0.965 0.003 247);
+	--parts-workbench: oklch(0.88 0.009 247);
 	--line: oklch(0.9 0.004 247);
 	--brand-blue: oklch(0.54 0.19 250);
 	--brand-red: oklch(0.57 0.23 18);
@@ -337,6 +343,7 @@ html { min-width: 320px; scroll-behavior: smooth; }
 body { margin: 0; background: var(--canvas); color: var(--foreground); }
 ::selection { background: var(--line); color: var(--foreground); }
 body { line-height: 1.7; }
+.parts-workbench { background: var(--parts-workbench); }
 @layer base { a { color: inherit; text-decoration: none; } }
 button, a { -webkit-tap-highlight-color: transparent; }
 :focus-visible { outline: 2px solid var(--emphasis); outline-offset: 4px; }
@@ -392,6 +399,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 	--canvas: oklch(0.274 0.006 286);
 	--surface: oklch(0.31 0.006 286);
 	--surface-2: oklch(0.35 0.006 286);
+	--parts-workbench: oklch(0.32 0.008 260);
 	--line: oklch(0.42 0.008 286);
 	--brand-blue: oklch(0.76 0.14 235);
 	--brand-red: oklch(0.72 0.19 15);

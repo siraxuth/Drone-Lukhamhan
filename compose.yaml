@@ -1,0 +1,69 @@
+# Komodo Stack ของ drone.dekgp.com · ขั้นตอนเต็มดู DEPLOY-KOMODO.md
+# ตัวแปร ${...} ทั้งหมดมาจากช่อง Environment ของ Stack ใน Komodo (ถูกเขียนเป็นไฟล์ .env ข้างไฟล์นี้)
+#
+# กันชนกับเว็บอื่นบนเซิร์ฟเวอร์เดียวกัน:
+#  - ไม่เปิดพอร์ตออกเครื่อง (ไม่มี ports:) พอร์ต 3000 อยู่ในเครือข่าย 46554454 เท่านั้น
+#  - ชื่อ service และ container ขึ้นต้นด้วย drone-lukhamhan- ไม่ใช้ชื่อกลางอย่าง web หรือ app
+#    เพราะทุกเว็บที่อยู่เครือข่ายเดียวกันจะเห็นชื่อกันผ่าน DNS ภายใน ถ้าซ้ำจะถูกสุ่มไปหาเว็บอื่น
+#  - ชื่อโปรเจกต์ compose เป็น drone-lukhamhan แยกจาก stack อื่น
+name: drone-lukhamhan
+
+services:
+  drone-lukhamhan-web:
+    container_name: drone-lukhamhan-web
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://drone.dekgp.com}
+        R2_PUBLIC_URL: ${R2_PUBLIC_URL:?ต้องตั้ง R2_PUBLIC_URL ที่ Environment ของ Stack}
+    image: drone-lukhamhan:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    # ระบุทีละตัว ไม่ใช้ env_file เพื่อไม่ให้ TUNNEL_TOKEN หลุดเข้าไปในแอป
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://drone.dekgp.com}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-https://drone.dekgp.com}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?ต้องตั้ง BETTER_AUTH_SECRET}
+      DATABASE_URL: ${DATABASE_URL:?ต้องตั้ง DATABASE_URL}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:?ต้องตั้ง ADMIN_EMAILS}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?ต้องตั้ง GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?ต้องตั้ง GOOGLE_CLIENT_SECRET}
+      ALLOWED_EMAIL_DOMAIN: ${ALLOWED_EMAIL_DOMAIN:-lukhamhan.ac.th}
+      R2_ENDPOINT: ${R2_ENDPOINT:?ต้องตั้ง R2_ENDPOINT}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?ต้องตั้ง R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?ต้องตั้ง R2_SECRET_ACCESS_KEY}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:?ต้องตั้ง R2_BUCKET_NAME}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL}
+      GOOGLE_SITE_VERIFICATION: ${GOOGLE_SITE_VERIFICATION:-}
+      BING_SITE_VERIFICATION: ${BING_SITE_VERIFICATION:-}
+    expose:
+      - "3000"
+    networks:
+      - web
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/robots.txt').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # อุโมงค์ Cloudflare: ต่อออกไปหา Cloudflare เอง ไม่ต้องเปิดพอร์ตเข้าเซิร์ฟเวอร์
+  # เส้นทางตั้งที่หน้า Cloudflare (Public Hostname) ไม่ได้ตั้งในไฟล์นี้
+  drone-lukhamhan-tunnel:
+    container_name: drone-lukhamhan-tunnel
+    image: cloudflare/cloudflared:latest # ใช้งานจริงควรปักเลขเวอร์ชันล่าสุดที่ลงแล้วไม่มีปัญหา
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?ต้องตั้ง TUNNEL_TOKEN}
+    depends_on:
+      drone-lukhamhan-web:
+        condition: service_healthy
+    networks:
+      - web
+
+networks:
+  web:
+    # ชื่อจริงของเครือข่ายคือ 46554454 (ตัวย่อ web ใช้เฉพาะในไฟล์นี้)
+    name: "46554454"
+    external: true

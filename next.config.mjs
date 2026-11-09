@@ -6,6 +6,8 @@ const withMDX = createMDX();
 const config = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Docker (Dockerfile) ตั้ง BUILD_STANDALONE=1 เพื่อได้โฟลเดอร์รันเดี่ยว · บน Vercel ไม่ตั้ง ไม่มีผล
+  output: process.env.BUILD_STANDALONE ? 'standalone' : undefined,
   // ใส่ CSS ลงใน HTML เลย ไม่ต้องรอโหลดไฟล์ .css ก่อนวาดหน้า (ตัด render-blocking 60 KB)
   experimental: { inlineCss: true },
   // ไฟล์ที่อ่านด้วย fs ตอนรัน ต้องบอกให้ Vercel แพ็กไปกับฟังก์ชันด้วย
@@ -30,7 +32,7 @@ const config = {
       { source: '/api/:path*', headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }] },
       { source: '/login', headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }] },
       // ไฟล์โมเดล/ภาพ/ไฟล์โหลดเปลี่ยนไม่บ่อย: แคชที่เบราว์เซอร์ 7 วัน ตรวจใหม่ในพื้นหลัง
-      { source: '/models/:path*', headers: [{ key: 'Cache-Control', value: 'public, max-age=604800, stale-while-revalidate=86400' }] },
+      { source: '/models/:path*', headers: [{ key: 'Cache-Control', value: process.env.NODE_ENV === 'development' ? 'no-store' : 'public, max-age=604800, stale-while-revalidate=86400' }] },
       { source: '/docs/:file(.+\\.webp)', headers: [{ key: 'Cache-Control', value: 'public, max-age=604800, stale-while-revalidate=86400' }] },
       { source: '/field/:file(.+\\.webp)', headers: [{ key: 'Cache-Control', value: 'public, max-age=604800, stale-while-revalidate=86400' }] },
     ];

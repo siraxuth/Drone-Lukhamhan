@@ -12,15 +12,24 @@ const COMMAND_TEXT: Record<BlockCommand, { name: string; args: number }> = {
 export const BLOCK_COMMANDS = COMMAND_TEXT;
 
 export function generateBlockProgram(program: BlockProgram): string {
-  const indent = (body: BlockStatement[]) => body.map((statement) => `  ${generateStatement(statement)}`).join('\n');
-  const bodyOf = (body: BlockStatement[]) => body.length ? `\n${indent(body)}\n` : '\n';
-  const functions = program.functions.map((fn) => `void ${fn.name}() {${bodyOf(fn.body)}}`).join('\n\n');
-  return `void setup() {${bodyOf(program.setup)}}\n\nvoid loop() {${bodyOf(program.loop)}}${functions ? `\n\n${functions}` : ''}\n`;
+  const keys = [...new Set([...Object.keys(program.scripts).map(Number), program.selectedKey])].filter((key) => Number.isInteger(key) && key >= 1 && key <= 11).sort((a, b) => a - b);
+  const handlers = keys.map((key) => `  drone.onKey${key}(runKey${key});`).join('\n');
+  const functions = keys.map((key) => {
+    const body = (program.scripts[key] ?? []).map((statement) => `  ${generateStatement(statement)}`).join('\n');
+    return `void runKey${key}() {${body ? `\n${body}\n` : '\n'}}`;
+  }).join('\n\n');
+  return `void setup() {\n${handlers}\n}\n\nvoid loop() {\n}\n\n${functions}\n`;
+}
+
+/** 1-based generated C++ line for every command in the selected KEY stack. */
+export function blockCommandLineMap(program: BlockProgram, key: number): number[] {
+  const lines = generateBlockProgram(program).split('\n');
+  const functionLine = lines.findIndex((line) => line.trim() === `void runKey${key}() {`);
+  if (functionLine < 0) return [];
+  return (program.scripts[key] ?? []).map((_, index) => functionLine + index + 2);
 }
 
 function generateStatement(statement: BlockStatement): string {
-  if (statement.kind === 'key') return `drone.onKey${statement.key}(${statement.functionName});`;
-  if (statement.kind === 'call') return `${statement.functionName}();`;
   const { name, args } = COMMAND_TEXT[statement.command];
   return `${name}(${statement.args.slice(0, args).join(', ')});`;
 }

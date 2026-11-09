@@ -142,18 +142,18 @@ export type BlockCommand =
     | "calibration" | "delay" | "take_off" | "auto_land" | "stop_motor"
     | "set_height" | "move_forward" | "move_backward" | "move_left" | "move_right"
     | "set_yaw" | "poshold" | "turnByHand" | "drop" | "pop" | "shoot" | "shot_b";
-export type BlockStatement =
-    | { kind: "command"; command: BlockCommand; args: number[] }
+export type BlockStatement = { kind: "command"; command: BlockCommand; args: number[] };
+export type BlockProgram = { selectedKey: number; scripts: Partial<Record<number, BlockStatement[]>> };
+type ParsedBlockStatement =
+    | BlockStatement
     | { kind: "key"; key: number; functionName: string }
     | { kind: "call"; functionName: string };
-export type BlockFunction = { name: string; body: BlockStatement[] };
-export type BlockProgram = { setup: BlockStatement[]; loop: BlockStatement[]; functions: BlockFunction[] };
 
 /** Convert only the simulator's supported C++ subset to a visual-program model. */
 export function parseBlockProgram(code: string): { program: BlockProgram; skipped: number } {
     const errors: SimEvent[] = [];
     const tree = buildTree(tokenize(convertStyle(code, "full"), errors), errors);
-    const program: BlockProgram = { setup: [], loop: [], functions: [] };
+    const program: BlockProgram = { selectedKey: 1, scripts: {} };
     const functions = new Map<string, Extract<Node, { kind: "block" }>>();
     let skipped = errors.length;
 
@@ -181,8 +181,8 @@ export function parseBlockProgram(code: string): { program: BlockProgram; skippe
         const value = evalExpr(arg, new Map());
         return Number.isFinite(value) ? value : NaN;
     });
-    const parseBody = (body: Node[], inSetup: boolean): BlockStatement[] => {
-        const out: BlockStatement[] = [];
+    const parseBody = (body: Node[], inSetup: boolean): ParsedBlockStatement[] => {
+        const out: ParsedBlockStatement[] = [];
         for (const node of body) {
             if (node.kind !== "stmt") { skipped++; continue; }
             const call = /^(?:(drone)\s*\.\s*|(pArduino)\s*(?:->|\.)\s*)?([A-Za-z_]\w*)\s*\(([\s\S]*)\)$/.exec(node.text);
@@ -214,12 +214,47 @@ export function parseBlockProgram(code: string): { program: BlockProgram; skippe
         return out;
     };
 
-    for (const [name, node] of functions) {
-        const statements = parseBody(node.body, name === "setup");
-        if (name === "setup") program.setup = statements;
-        else if (name === "loop") program.loop = statements;
-        else program.functions.push({ name, body: statements });
+    const setup = functions.get("setup");
+    const loop = functions.get("loop");
+    const setupBody = setup ? parseBody(setup.body, true) : [];
+    const loopBody = loop ? parseBody(loop.body, false) : [];
+    const handlers = new Map<number, string>();
+    const setupActions: ParsedBlockStatement[] = [];
+    for (const statement of setupBody) {
+        if (statement.kind === "key") handlers.set(statement.key, statement.functionName);
+        else setupActions.push(statement);
     }
+
+    const functionBodies = new Map<string, ParsedBlockStatement[]>();
+    for (const [name, node] of functions) if (name !== "setup" && name !== "loop") functionBodies.set(name, parseBody(node.body, false));
+    const usedFunctions = new Set<string>();
+    const expand = (body: ParsedBlockStatement[], stack: Set<string>): BlockStatement[] => {
+        const out: BlockStatement[] = [];
+        for (const statement of body) {
+            if (statement.kind === "command") out.push(statement);
+            else if (statement.kind === "call") {
+                const nested = functionBodies.get(statement.functionName);
+                if (!nested || stack.has(statement.functionName)) { skipped++; continue; }
+                usedFunctions.add(statement.functionName);
+                const nextStack = new Set(stack);
+                nextStack.add(statement.functionName);
+                out.push(...expand(nested, nextStack));
+            }
+        }
+        return out;
+    };
+    const setupCommands = expand(setupActions, new Set());
+    for (const [key, functionName] of handlers) {
+        const body = functionBodies.get(functionName);
+        if (!body) { skipped++; continue; }
+        usedFunctions.add(functionName);
+        program.scripts[key] = [...(key === 1 ? setupCommands : []), ...expand(body, new Set([functionName]))];
+    }
+    if (setupCommands.length && !handlers.has(1)) program.scripts[1] = setupCommands;
+    for (const [name, body] of functionBodies) if (!usedFunctions.has(name)) skipped += Math.max(1, body.length);
+    if (loopBody.length) skipped += loopBody.length;
+    const keys = Object.keys(program.scripts).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+    program.selectedKey = keys[0] ?? 1;
     return { program, skipped };
 }
 

@@ -1,5 +1,7 @@
 # ขึ้นเว็บและออกเวอร์ชัน (drone.dekgp.com บน Vercel)
 
+> ช่วงที่โควตา Vercel เต็ม ใช้ [DEPLOY-KOMODO.md](DEPLOY-KOMODO.md) แทนส่วน Vercel (รันเป็น Docker บน Komodo ผ่าน Cloudflare Tunnel) หัวข้อสาขา ตัวแปร Google OAuth และการออกเวอร์ชันในไฟล์นี้ยังใช้ร่วมกัน
+
 ## แนวคิดสองสาขา
 
 | สาขา | หน้าที่ | เกิดอะไรขึ้นเมื่อ push |
