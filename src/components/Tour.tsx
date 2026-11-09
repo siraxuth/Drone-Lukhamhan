@@ -16,6 +16,8 @@ export type TourStep = {
   exercise?: (setComplete: (complete: boolean) => void) => React.ReactNode;
   /** ใช้แทนเมื่อ target หลักมองไม่เห็น (เช่น เมนูที่ซ่อนอยู่หลังปุ่มบนมือถือ) */
   alt?: { target: string; title?: string; text: string };
+  /** ผู้ใช้กดตามที่ข้อความบอก (กด target) แล้วไปขั้นถัดไปเอง ไม่ต้องกด "ถัดไป" ซ้ำ */
+  advanceOnClick?: boolean;
 };
 
 const KEY = (id: string) => `tour-v1:${id}`;
@@ -55,7 +57,7 @@ function TourText({ text }: { text: string }) {
  * ทัวร์แนะนำการใช้งานหน้านั้น: ขึ้นเองครั้งแรกที่เข้า มีกรอบไฮไลต์ + ข้อความ + ปุ่มถัดไป
  * จำใน localStorage ว่าดูแล้ว · ปุ่ม "วิธีใช้" มุมขวาล่างเปิดดูซ้ำได้ทุกเมื่อ
  */
-export function Tour({ id, steps, waitForLoader = false, forceQuery, autoOpenImmediately = false, startOnFocus, trigger, allowTargetInteraction = false }: { id: string; steps: TourStep[]; waitForLoader?: boolean; forceQuery?: string; autoOpenImmediately?: boolean; startOnFocus?: string; trigger?: string; allowTargetInteraction?: boolean }) {
+export function Tour({ id, steps, waitForLoader = false, forceQuery, autoOpenImmediately = false, startOnFocus, trigger, allowTargetInteraction = false, paused = false }: { id: string; steps: TourStep[]; waitForLoader?: boolean; forceQuery?: string; autoOpenImmediately?: boolean; startOnFocus?: string; trigger?: string; allowTargetInteraction?: boolean; /** ซ่อนการ์ดชั่วคราวระหว่างที่มีหน้าต่างอื่นเปิดทับ (เช่น หน้าต่างเลือกภารกิจ) */ paused?: boolean }) {
   const [open, setOpen] = useState(false);
   const [i, setI] = useState(0);
   const [complete, setComplete] = useState(false);
@@ -189,7 +191,17 @@ export function Tour({ id, steps, waitForLoader = false, forceQuery, autoOpenImm
   }, [i]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || paused || !step?.advanceOnClick) return;
+    const onClick = (event: MouseEvent) => {
+      const { el } = resolve(step);
+      if (el && event.target instanceof Node && el.contains(event.target)) setI((n) => Math.min(n + 1, steps.length - 1));
+    };
+    window.addEventListener('click', onClick, true);
+    return () => window.removeEventListener('click', onClick, true);
+  }, [open, paused, step, steps.length]);
+
+  useEffect(() => {
+    if (!open || paused) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.preventDefault(); finish(); }
       else if (e.target instanceof HTMLElement && e.target.closest('textarea, input, select, [contenteditable=true]')) return;
@@ -198,7 +210,7 @@ export function Tour({ id, steps, waitForLoader = false, forceQuery, autoOpenImm
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, next, prev, finish]);
+  }, [open, paused, next, prev, finish]);
 
   // ตำแหน่งการ์ด: มือถือเป็นแผงล่าง · จอเตี้ย (มือถือแนวนอน) อยู่คอลัมน์ขวา · จอใหญ่อยู่ใต้/เหนือ/ข้างกรอบ ไม่มีกรอบ = กลางจอ
   const cw = Math.min(CARD_W, vp.w - 24);
@@ -230,7 +242,7 @@ export function Tour({ id, steps, waitForLoader = false, forceQuery, autoOpenImm
           <CircleHelp className="size-5 text-brand-blue" aria-hidden /> วิธีใช้
         </button>
       )}
-      {mounted && open && step && createPortal(
+      {mounted && open && !paused && step && createPortal(
         <div className={`${allowTargetInteraction ? 'pointer-events-none' : ''} fixed inset-0 z-[200]`} data-tour-overlay role="presentation">
           {!allowTargetInteraction && <div className="absolute inset-0" onClick={(e) => e.stopPropagation()} aria-hidden />}
           {box ? (

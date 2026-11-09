@@ -451,6 +451,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     : codeErrors.length ? codeErrors[0].text
     : keyBindings.length ? 'กดปุ่มที่ขึ้นว่า “พร้อมกด” เพื่อเริ่มบิน'
     : 'ยังไม่มีปุ่มพร้อมใช้ ผูกฟังก์ชันใน setup() เช่น drone.onKey1(fly);';
+  const readyKey = (done && activeKey) || keyBindings.map((entry) => entry.key).sort((a, b) => a - b)[0];
   const live = started || manualActive;
   const events = log.filter((e) => e.kind !== 'info' || e.line);
 
@@ -501,7 +502,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
               </Select>
             </label>
           </div>
-          {dimensionTo && <span className="font-mono text-[11px] text-cyan-200">Δx {(dimensionTo.x - dimensionFrom.x).toFixed(2)} ม. · Δy {(dimensionTo.y - dimensionFrom.y).toFixed(2)} ม.</span>}
+          {dimensionTo && <span className="font-mono text-xs text-cyan-200">Δx {(dimensionTo.x - dimensionFrom.x).toFixed(2)} ม. · Δy {(dimensionTo.y - dimensionFrom.y).toFixed(2)} ม.</span>}
         </div>}
 
         <div className="pointer-events-none absolute inset-x-0 top-[12%] z-10 flex justify-center px-4" aria-live="polite">
@@ -516,7 +517,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
         <div className="pointer-events-none absolute inset-x-0 top-[25%] z-10 flex justify-center px-4" aria-live="polite">
           {popCallout && (
             <div key={popCallout.id} className="flight-shot-pop border border-rose-300/70 bg-[#29151c]/90 px-5 py-2 text-center text-white squircle-2xl shadow-[0_14px_50px_rgba(244,63,94,.35)] backdrop-blur-xl">
-              <div className="text-[10px] font-black  text-rose-200">BALLOON POP!</div>
+              <div className="text-xs font-black text-rose-200">BALLOON POP!</div>
               <div className="text-2xl font-black text-amber-200 sm:text-3xl">+{popCallout.points} คะแนน</div>
               <div className="text-xs font-semibold text-rose-100">{popCallout.target}</div>
             </div>
@@ -525,7 +526,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
         <div className="pointer-events-none absolute inset-x-0 top-[25%] z-10 flex justify-center px-4" aria-live="polite">
           {dropCallout && (
             <div key={dropCallout.id} className="flight-shot-pop border border-emerald-300/70 bg-[#10261d]/90 px-5 py-2 text-center text-white squircle-2xl shadow-[0_14px_50px_rgba(52,211,153,.35)] backdrop-blur-xl">
-              <div className="text-[10px] font-black text-emerald-200">BALL IN!</div>
+              <div className="text-xs font-black text-emerald-200">BALL IN!</div>
               <div className="text-2xl font-black text-amber-200 sm:text-3xl">{dropCallout.points > 0 ? `+${dropCallout.points} คะแนน` : dropCallout.points < 0 ? `${dropCallout.points} คะแนน` : 'ไม่ได้คะแนน'}</div>
               <div className="text-xs font-semibold text-emerald-100">บอล {dropCallout.balls} ลูก · {dropCallout.target}</div>
             </div>
@@ -534,12 +535,28 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
         <div className="pointer-events-none absolute inset-x-0 top-[25%] z-10 flex justify-center px-4" aria-live="polite">
           {landingCallout && (
             <div key={landingCallout.id} className="flight-shot-pop border border-sky-300/70 bg-[#102338]/90 px-5 py-2 text-center text-white squircle-2xl shadow-[0_14px_50px_rgba(56,189,248,.35)] backdrop-blur-xl">
-              <div className="text-[10px] font-black  text-sky-200">CHECKPOINT LANDED</div>
+              <div className="text-xs font-black text-sky-200">CHECKPOINT LANDED</div>
               <div className="text-2xl font-black text-amber-200 sm:text-3xl">+{landingCallout.points} คะแนน</div>
               <div className="text-xs font-semibold text-sky-100">{landingCallout.target}</div>
             </div>
           )}
         </div>
+
+        {/* ปุ่มเริ่มบินของตัวจำลองหลัก: อยู่ในสนามที่ตาจ้องอยู่ ไม่ต้องไปหาแผ่น KEY ใต้สนาม
+            ถ้าโค้ดผิดหรือยังไม่ผูก KEY ก็บอกเหตุผลตรงนี้ */}
+        {!previewKey && !bigPlay && !flightInProgress && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-3">
+            {codeErrors.length > 0 ? (
+              <p role="status" className="pointer-events-auto max-w-full squircle-xl bg-black/80 px-3 py-2 text-sm font-semibold text-rose-200">แก้โค้ดก่อนบิน: {codeErrors[0].text}</p>
+            ) : readyKey ? (
+              <Button type="button" size="lg" className="pointer-events-auto h-12 gap-2 bg-brand-blue px-6 text-base text-white shadow-lg hover:bg-brand-blue/90" onClick={() => play(readyKey)}>
+                <Play className="size-5 fill-current" aria-hidden /> {done ? 'บินอีกครั้ง' : 'เริ่มบิน'} · KEY {readyKey}
+              </Button>
+            ) : (
+              <p role="status" className="pointer-events-auto max-w-full squircle-xl bg-black/80 px-3 py-2 text-sm text-white">{remoteStatus}</p>
+            )}
+          </div>
+        )}
 
         {/* ปุ่มเล่นใหญ่กลางสนาม: สิ่งเดียวที่ต้องกดตอนเริ่ม */}
         {bigPlay && !started && (
@@ -556,8 +573,9 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
             {remoteStatus}
           </p>
         </div>
-        <div className={remoteKeys ? "grid grid-cols-2 gap-2" : "grid grid-cols-3 gap-1.5 sm:grid-cols-4 xl:grid-cols-6"}>
-          {(remoteKeys ?? Array.from({ length: 11 }, (_, index) => index + 1)).map((key) => {
+        {(() => {
+          const allKeys = remoteKeys ?? Array.from({ length: 11 }, (_, index) => index + 1);
+          const renderKey = (key: number) => {
             const binding = keyBindings.find((entry) => entry.key === key);
             const disabled = !binding || flightInProgress || codeErrors.length > 0;
             const status = !binding ? 'ยังไม่ผูก' : flightInProgress ? 'รอจบเที่ยวบิน' : codeErrors.length ? 'แก้โค้ดก่อน' : 'พร้อมกด';
@@ -567,13 +585,27 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
                 disabled={disabled} onClick={() => play(key)}>
                 <span className="flex w-full flex-wrap items-center justify-between gap-x-1">
                   <span className="font-mono text-xs font-bold">KEY {key}</span>
-                  <span className="text-[0.65rem]">{status}</span>
+                  <span className="text-xs">{status}</span>
                 </span>
                 {binding && <span className="w-full truncate font-mono text-xs font-normal">{binding.functionName}()</span>}
               </Button>
             );
-          })}
-        </div>
+          };
+          const gridClass = remoteKeys ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-1.5 sm:grid-cols-4 xl:grid-cols-6';
+          // ตัวจำลองหลัก: แสดงเฉพาะ KEY ที่ผูกแล้ว ปุ่มที่ว่างพับไว้ ไม่ให้ 10 ช่อง "ยังไม่ผูก" บังตา
+          if (remoteKeys) return <div className={gridClass}>{allKeys.map(renderKey)}</div>;
+          const bound = allKeys.filter((key) => keyBindings.some((entry) => entry.key === key));
+          const free = allKeys.filter((key) => !bound.includes(key));
+          return <>
+            {bound.length > 0 && <div className={gridClass}>{bound.map(renderKey)}</div>}
+            {free.length > 0 && (
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer select-none py-1 font-semibold hover:text-foreground">KEY ที่ยังไม่ผูก ({free.length} ปุ่ม) · ผูกเพิ่มได้ใน setup()</summary>
+                <div className={gridClass + ' mt-1'}>{free.map(renderKey)}</div>
+              </details>
+            )}
+          </>;
+        })()}
       </section>}
 
       {/* แถบควบคุม: ซ้าย = เล่น/หยุด/เริ่มใหม่ · ขวา = มุมมอง เสียง 2D/3D (ทุกปุ่มมีข้อความ) */}

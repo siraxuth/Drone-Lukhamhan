@@ -25,6 +25,16 @@ import { parseBlockProgram, type BlockProgram } from './parser';
 const LEVEL_TONE: Record<string, string> = { เริ่มต้น: 'bg-surface-2 text-foreground', กลาง: 'bg-brand-blue/10 text-brand-blue', ยาก: 'bg-emphasis text-emphasis-foreground', 'โหดมาก': 'bg-destructive/10 text-destructive' };
 const LEGACY: Record<string, string> = { mission: 'mission-start', aviation: 'aviation-start', innovation: 'innovation-start' };
 const STYLE_KEY = 'sim-style-v1';
+const LAST_KEY = 'sim-last-mission-v1';
+const DONE_KEY = 'sim-progress-v1';
+/** ด่านสำหรับคนเพิ่งเริ่ม เรียงจากง่ายไปยาก (ด่านที่ไม่มีในฐานข้อมูลจะถูกข้าม) */
+const START_HERE = ['blank-hover', 'grid-line', 'grid-l', 'grid-square', 'grid-hoops', 'grid-delivery'];
+/** เป้าหมายของด่าน: บล็อก (ย่อหน้าหรือข้อในรายการ) ที่ขึ้นต้นด้วย "เป้าหมาย" ถ้าไม่มีใช้ย่อหน้าแรก (มักเป็นคำโปรย) */
+function objectiveOf(html: string) {
+  const blocks = [...html.matchAll(/<(p|li)(?:\s[^>]*)?>([\s\S]*?)<\/\1>/gi)].map((match) => ({ tag: match[1].toLowerCase(), inner: match[2] }));
+  const goal = blocks.find((block) => block.inner.replace(/<[^>]+>/g, '').trim().startsWith('เป้าหมาย'));
+  return (goal ?? blocks.find((block) => block.tag === 'p'))?.inner ?? html;
+}
 const KEYS: Array<[string, string]> = [
   ['Tab / Shift+Tab', 'เยื้องเข้า / ออก (เลือกหลายบรรทัดได้)'], ['Ctrl+] / Ctrl+[', 'เยื้องเข้า / ออกทั้งบรรทัด'],
   ['Enter', 'ขึ้นบรรทัดใหม่ คงการเยื้อง · หลัง { เยื้องเพิ่มและปิด } ให้'], ['Ctrl+Enter / Ctrl+Shift+Enter', 'เพิ่มบรรทัดใหม่ด้านล่าง / ด้านบน'],
@@ -215,7 +225,8 @@ const SIM_TOUR: TourStep[] = [
   {
     target: '[data-tour="sim-pick"]',
     title: 'เลือกสนามฝึก',
-    text: 'กด “เลือกภารกิจ” ด้านบนเพื่อดูด่าน อ่านเป้าหมายจากรายการแล้วกดด่านที่ต้องการหนึ่งครั้ง สนามและโค้ดตั้งต้นจะเปลี่ยนตามด่าน',
+    text: 'กด “เลือกภารกิจ” ด้านบนเพื่อดูด่าน ถ้าเพิ่งเริ่ม เลือกจากกลุ่ม “เริ่มจากตรงนี้” อ่านเป้าหมายแล้วกดด่านหนึ่งครั้ง สนามและโค้ดตั้งต้นจะเปลี่ยนตามด่าน',
+    advanceOnClick: true,
   },
   {
     target: '[data-tour="sim-brief-toggle"]',
@@ -224,8 +235,8 @@ const SIM_TOUR: TourStep[] = [
   },
   {
     target: '[data-tour="sim-keys"]',
-    title: 'กลับมาทดลองโค้ดของคุณ',
-    text: 'ใต้สนามจริงของด่านมี KEY 1–11 ปุ่มที่ผูกแล้วจะแสดงชื่อฟังก์ชัน กดปุ่มนั้นเพื่อบินตามโค้ดของคุณ ถ้าปุ่มกดไม่ได้ ให้ตรวจว่าผูกชื่อไว้ใน `setup()` และสะกดตรงกับชื่อฟังก์ชัน',
+    title: 'กดเริ่มบินเพื่อทดลองโค้ด',
+    text: 'ปุ่ม “เริ่มบิน” อยู่มุมล่างของสนาม กดแล้วโดรนจะบินตามโค้ดของคุณ ใต้สนามคือรีโมต ปุ่ม KEY ที่ผูกไว้ใน `setup()` จะโผล่ที่นี่ ถ้าไม่มีปุ่มพร้อมกด ให้ตรวจว่าชื่อฟังก์ชันที่ผูกสะกดตรงกับชื่อที่เขียนไว้',
   },
   {
     target: '[data-tour="sim-camera"]',
@@ -286,7 +297,10 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
   const qs = useSearchParams();
   const wanted = LEGACY[qs.get('tab') ?? ''] ?? qs.get('tab');
   const legacyProgram = programs.find((p) => p.id === qs.get('p'));
-  const initial = scenarios.find((s) => s.slug === wanted) ?? scenarios.find((s) => legacyProgram && s.slug === LEGACY[legacyProgram.event]) ?? scenarios[0];
+  const hasLink = !!wanted || !!legacyProgram;
+  // เข้ามาครั้งแรกเริ่มที่ด่านง่ายสุด ไม่ใช่ด่านแรกของรายการ (ซึ่งเป็นโจทย์นำเสนอที่ยากที่สุด)
+  const beginnerSlug = START_HERE.find((id) => scenarios.some((s) => s.slug === id));
+  const initial = scenarios.find((s) => s.slug === wanted) ?? scenarios.find((s) => legacyProgram && s.slug === LEGACY[legacyProgram.event]) ?? scenarios.find((s) => s.slug === beginnerSlug) ?? scenarios[0];
   const [slug, setSlug] = useState(initial.slug);
   const [drafts, setDrafts] = useState<Record<string, string>>(legacyProgram ? { [initial.slug]: bindStarterToKey(legacyProgram.code) } : {});
   const [briefOpen, setBriefOpen] = useState(false);
@@ -305,6 +319,8 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
   const [payloads, setPayloads] = useState<Record<string, { L: number; R: number }>>({});
   const [canReload, setCanReload] = useState(true);
   const [loadCount, setLoadCount] = useState({ L: 20, R: 20 });
+  /** คะแนนสูงสุดต่อด่านที่เคยบินจบโดยไม่พัง เก็บในเครื่องนี้ */
+  const [progress, setProgress] = useState<Record<string, number>>({});
   const sc = scenarios.find((s) => s.slug === slug) ?? scenarios[0];
   const code = drafts[sc.slug] ?? sc.starter;
   const edited = code !== sc.starter;
@@ -319,6 +335,15 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
   const pat = PATTERNS.find((p) => p.id === sc.config.pattern);
 
   useEffect(() => { try { const v = localStorage.getItem(STYLE_KEY); if (v === 'full' || v === 'any' || v === 'drone' || v === 'parduino') setStyleSel(v); } catch { /* ไม่เป็นไร */ } }, []);
+  // กลับมาใหม่: ถ้าไม่ได้เข้าด้วยลิงก์ด่านเฉพาะ ให้ต่อจากด่านที่เล่นล่าสุด
+  useEffect(() => {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(DONE_KEY) ?? '{}');
+      if (saved && typeof saved === 'object') setProgress(saved as Record<string, number>);
+      const last = localStorage.getItem(LAST_KEY);
+      if (!hasLink && last && last !== initial.slug && scenarios.some((s) => s.slug === last)) setSlug(last);
+    } catch { /* ไม่มี storage ก็เริ่มที่ด่านง่าย */ }
+  }, []);
   const chooseStyle = (v: Style) => { setStyleSel(v); try { localStorage.setItem(STYLE_KEY, v); } catch { /* ไม่เป็นไร */ } };
 
   useEffect(() => { document.title = 'ตัวจำลองการบิน · ชมรมโดรน ลือคำหาญฯ'; }, []);
@@ -326,12 +351,20 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
   const onFinish = useCallback((result: Result) => {
     setPayloads((current) => ({ ...current, [sc.slug]: result.payloadRemaining }));
     setCanReload(result.landedOnPad);
+    if (!result.events.some((event) => event.kind === 'error')) {
+      setProgress((current) => {
+        const next = { ...current, [sc.slug]: Math.max(current[sc.slug] ?? 0, result.score) };
+        try { localStorage.setItem(DONE_KEY, JSON.stringify(next)); } catch { /* ไม่เป็นไร */ }
+        return next;
+      });
+    }
   }, [sc.slug]);
   const onFlightResult = useCallback((result: Result | null) => { if (!result) setCanReload(true); }, []);
 
   const commitPick = (s: string) => {
     setSlug(s); setPanel(null);
     setCanReload(true);
+    try { localStorage.setItem(LAST_KEY, s); } catch { /* ไม่เป็นไร */ }
     const u = new URL(window.location.href);
     u.searchParams.set('tab', s); u.searchParams.delete('p'); u.searchParams.delete('mode');
     window.history.replaceState(null, '', u);
@@ -397,17 +430,17 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
 
   return (
     <main className="flex h-svh w-full min-w-0 flex-col overflow-hidden pt-[4.75rem]">
-      <header className="flex flex-wrap items-center gap-3  px-4 py-3 sm:px-6">
-        <div className="min-w-0 flex-1"><h1 className="text-xl font-extrabold sm:text-2xl">สนามฝึกการบินโดรน</h1><p className="text-sm text-muted-foreground">วางแผนคำสั่ง ดูเส้นทางจริง แล้วเรียนรู้จากสิ่งที่คลาดเคลื่อน</p></div>
+      <header className="flex flex-wrap items-center gap-3 px-4 py-2 sm:px-6">
+        <div className="min-w-0 flex-1"><h1 className="text-xl font-extrabold sm:text-2xl">สนามฝึกการบินโดรน</h1><p className="hidden text-sm text-muted-foreground lg:block">วางแผนคำสั่ง ดูเส้นทางจริง แล้วเรียนรู้จากสิ่งที่คลาดเคลื่อน</p></div>
         {qs.get('lesson') !== '1' && <Button variant="outline" className="min-h-10" data-sim-guide><CircleHelp className="size-4" /> วิธีใช้</Button>}
         <Button className="min-h-10" data-tour="sim-pick" onClick={() => setPanel('pick')}><BookOpen className="size-4" /> เลือกภารกิจ</Button>
       </header>
-      <div className="grid w-full min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 sm:p-4 xl:overflow-hidden xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="grid w-full min-h-0 min-w-0 flex-1 auto-rows-max grid-cols-1 gap-3 overflow-y-auto p-3 sm:p-4 xl:auto-rows-[minmax(0,1fr)] xl:overflow-hidden xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <section data-tour="sim-stage" aria-label="สนามจำลอง" className="order-1 grid min-h-0 min-w-0 content-start gap-2 xl:order-2 xl:grid-rows-[auto_auto_auto] xl:overflow-y-auto">
           <div className="min-w-0 squircle-2xl border border-line bg-surface">
             <div className="flex min-w-0 items-center gap-2 px-3 py-2">
-            <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-extrabold sm:text-base">{sc.title}</h2><p className="truncate text-xs text-muted-foreground">{sc.level} · {pat?.label}</p></div>
-              <Button size="sm" variant="outline" data-tour="sim-brief-toggle" aria-expanded={briefOpen} aria-controls="sim-mission-brief" onClick={() => setBriefOpen(!briefOpen)}>
+            <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-extrabold sm:text-base">{sc.title}</h2><p className="truncate text-xs text-muted-foreground">{sc.level} · {pat?.label}</p>{!briefOpen && <p className="rich mt-0.5 line-clamp-2 text-xs leading-5" dangerouslySetInnerHTML={{ __html: objectiveOf(sc.briefHtml) }} />}</div>
+              <Button size="sm" variant="outline" className="min-h-9" data-tour="sim-brief-toggle" aria-expanded={briefOpen} aria-controls="sim-mission-brief" onClick={() => setBriefOpen(!briefOpen)}>
                 <ChevronDown className={`size-4 transition-transform motion-reduce:transition-none ${briefOpen ? 'rotate-180' : ''}`} />
                 {briefOpen ? 'ซ่อนโจทย์' : 'อ่านโจทย์'}
               </Button>
@@ -423,7 +456,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
             <FlightRunner event={ev} code={code} config={config} scene={scene} maxPoints={max} bigPlay={false} fullHeightField onResult={onFlightResult} onCommandProgress={setActiveBlockCommand} onStart={() => setCanReload(false)} onFinish={onFinish} />
           </div>
           {sc.config.requiresPayload && <section className="grid gap-2 squircle-2xl border border-line bg-surface p-3" aria-label="เตรียมโดรน">
-            <div className="flex flex-wrap items-center gap-2"><h2 className="mr-auto text-sm font-bold">เตรียมโดรน</h2>{sc.config.requiresPayload && <span className="text-xs text-muted-foreground">บอล ซ้าย {payload.L}/20 · ขวา {payload.R}/20</span>}{sc.config.requiresPayload && <Button size="sm" variant="outline" onClick={reloadPayload} disabled={!canReload || (payload.L === loadCount.L && payload.R === loadCount.R)} title={!canReload ? 'ต้องกลับมาลงบนฐานก่อน' : undefined}>{`ใส่บอล ${loadCount.L + loadCount.R} ลูก`}</Button>}</div>
+            <div className="flex flex-wrap items-center gap-2"><h2 className="mr-auto text-sm font-bold">เตรียมโดรน</h2>{sc.config.requiresPayload && <span className="text-xs text-muted-foreground">บอล ซ้าย {payload.L}/20 · ขวา {payload.R}/20</span>}{sc.config.requiresPayload && <Button size="sm" variant="outline" className="min-h-9" onClick={reloadPayload} disabled={!canReload || (payload.L === loadCount.L && payload.R === loadCount.R)} title={!canReload ? 'ต้องกลับมาลงบนฐานก่อน' : undefined}>{`ใส่บอล ${loadCount.L + loadCount.R} ลูก`}</Button>}</div>
             {!canReload ? <p className="text-xs text-muted-foreground">เติมบอลได้เมื่อโดรนลงบนฐานแล้ว</p> : payload.L === loadCount.L && payload.R === loadCount.R ? <p className="text-xs text-muted-foreground">ใส่บอลตามจำนวนที่เลือกแล้ว พร้อมบิน</p> : <p className="text-xs text-muted-foreground">ถ้าโจทย์ให้ปล่อยบอล ให้เติมก่อนกด KEY</p>}
           <div className="flex flex-wrap gap-3">
               {(['L', 'R'] as const).map(side => <label key={side} className="flex items-center gap-2 text-sm">เติมฝั่ง{side === 'L' ? 'ซ้าย' : 'ขวา'}
@@ -434,7 +467,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
           </section>}
         </section>
         <aside className="order-2 grid min-h-0 min-w-0 content-start gap-2 xl:order-1 xl:grid-rows-[minmax(0,1fr)] xl:overflow-hidden xl:pr-1">
-          <section className="grid min-h-[20rem] min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden squircle-3xl border border-line bg-surface xl:min-h-0" data-tour="sim-code" aria-label="โค้ดภารกิจ">
+          <section className="grid min-h-[28rem] min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden squircle-3xl border border-line bg-surface xl:min-h-0" data-tour="sim-code" aria-label="โค้ดภารกิจ">
             <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
               <div className="min-w-0 flex-1"><h2 className="font-bold">เขียนโค้ดภารกิจ</h2><p className="text-xs text-muted-foreground">เขียนฟังก์ชัน → ผูก KEY → กดปุ่มใต้สนาม</p></div>
               <Button className="min-h-10" data-sim-course>ฝึกเขียนโค้ด</Button>
@@ -446,13 +479,19 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
           <button type="button" role="tab" aria-selected={editorMode === 'blocks'} onClick={enterBlocks} className={`inline-flex h-8 items-center gap-1.5 squircle-lg px-3 text-sm font-semibold transition-colors ${editorMode === 'blocks' ? 'bg-brand-blue text-background' : 'hover:bg-surface-2'}`}><Blocks className="size-4" /> บล็อก</button>
           <button type="button" role="tab" aria-selected={editorMode === 'cpp'} onClick={() => setEditorMode('cpp')} className={`inline-flex h-8 items-center gap-1.5 squircle-lg px-3 text-sm font-semibold transition-colors ${editorMode === 'cpp' ? 'bg-brand-blue text-background' : 'hover:bg-surface-2'}`}><Braces className="size-4" /> C++</button>
         </div>
-        {editorMode === 'cpp' && <span className="text-xs font-medium text-muted-foreground">รูปแบบคำสั่ง</span>}
-        {editorMode === 'cpp' && <>
-        <div role="group" aria-label="แบบการเขียนโค้ด" data-tour="sim-style" className="flex items-center gap-1 squircle-xl border border-line bg-surface p-1">
-          {STYLES.map((x) => <button key={x.id} type="button" aria-pressed={style === x.id} onClick={() => chooseStyle(x.id)} title={x.hint} className={"h-8 squircle-xl px-2.5 font-mono text-sm font-semibold transition-colors disabled:opacity-60 " + (style === x.id ? "bg-brand-blue text-background" : "hover:bg-surface-2")}>{x.label}</button>)}
-        </div>
-        {style !== 'any' && converted !== code && <Button variant="outline" onClick={() => setCode(converted)}>แปลงชื่อคำสั่ง</Button>}
-        </>}
+        {editorMode === 'cpp' && (
+          <Popover>
+            <PopoverTrigger render={<Button variant="outline" className="min-h-9" data-tour="sim-style" />}>ชื่อคำสั่ง: {STYLES.find((x) => x.id === style)?.label}</PopoverTrigger>
+            <PopoverContent align="start" className="w-[min(24rem,calc(100vw-2rem))] p-3">
+              <p className="text-sm font-semibold">รูปแบบชื่อคำสั่ง</p>
+              <p className="mb-2 mt-1 text-xs leading-5 text-muted-foreground">ตัวอย่างโจทย์ใช้ชื่อเต็ม (`take_off()`) ไม่ต้องเปลี่ยนถ้าเขียนตามโจทย์ ที่เหลือเป็นชื่อสั้นหรือรูปแบบของ Arduino ใช้เมื่อโค้ดจากที่อื่นเขียนไว้อีกแบบ</p>
+              <div role="group" aria-label="แบบการเขียนโค้ด" className="flex flex-wrap items-center gap-1 squircle-xl border border-line bg-surface p-1">
+                {STYLES.map((x) => <button key={x.id} type="button" aria-pressed={style === x.id} onClick={() => chooseStyle(x.id)} title={x.hint} className={"h-9 squircle-xl px-2.5 font-mono text-sm font-semibold transition-colors " + (style === x.id ? "bg-brand-blue text-background" : "hover:bg-surface-2")}>{x.label}</button>)}
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
+        {editorMode === 'cpp' && style !== 'any' && converted !== code && <Button variant="outline" className="min-h-9" onClick={() => setCode(converted)}>แปลงชื่อคำสั่ง</Button>}
         {edited && <Button variant="outline" onClick={resetCode}><RotateCcw className="size-4" /> คืนโค้ดตั้งต้น</Button>}
             </div>
             {editorMode === 'cpp'
@@ -466,8 +505,15 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
           </section>
 
         </aside>
+        {/* จอแคบ: สนามกับโค้ดเรียงต่อกัน ปุ่มนี้พาไปมาระหว่างสองส่วนได้ในแตะเดียว */}
+        <div className="pointer-events-none sticky bottom-0 z-20 order-3 flex justify-center pb-1 xl:hidden">
+          <div className="pointer-events-auto flex gap-1 squircle-2xl border border-line bg-surface/95 p-1 shadow-lg backdrop-blur">
+            <Button size="sm" variant="ghost" className="min-h-10" onClick={() => document.querySelector('[data-tour="sim-stage"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>สนามจำลอง</Button>
+            <Button size="sm" variant="ghost" className="min-h-10" onClick={() => document.querySelector('[data-tour="sim-code"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>เขียนโค้ด</Button>
+          </div>
+        </div>
       </div>
-      {qs.get('lesson') !== '1' && <Tour id="simulator-guide-v2" steps={SIM_TOUR} autoOpenImmediately trigger="[data-sim-guide]" allowTargetInteraction />}
+      {qs.get('lesson') !== '1' && <Tour id="simulator-guide-v2" steps={SIM_TOUR} autoOpenImmediately trigger="[data-sim-guide]" allowTargetInteraction paused={panel === 'pick'} />}
       <Tour id="sim-code-course" steps={CODE_COURSE} forceQuery="lesson" autoOpenImmediately startOnFocus="[data-sim-editor] textarea" trigger="[data-sim-course]" allowTargetInteraction />
       <Dialog open={!!pendingBlockImport} onOpenChange={(open) => { if (!open) setPendingBlockImport(null); }}>
         <DialogContent className="max-w-md">
@@ -488,27 +534,39 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
       </Dialog>
       <Dialog open={panel === 'pick'} onOpenChange={(open) => setPanel(open ? 'pick' : null)}>
         <DialogContent className="max-h-[90svh] w-[96vw] gap-4 overflow-y-auto p-4 sm:max-w-5xl sm:p-6">
-          <DialogHeader><DialogTitle className="font-display text-2xl font-extrabold">เลือกภารกิจ</DialogTitle><DialogDescription>เลือกโจทย์ตามระดับและประเภท กดชื่อภารกิจหนึ่งครั้งเพื่อเลือกได้เลย</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle className="font-display text-2xl font-extrabold">เลือกภารกิจ</DialogTitle><DialogDescription>เพิ่งเริ่มเขียนโค้ด ให้เริ่มจาก 6 ด่านแรกด้านล่าง หรือค้นหาและกรองจากทั้งหมด กดการ์ดหนึ่งครั้งเพื่อเลือก</DialogDescription></DialogHeader>
+          <section className="flex flex-wrap items-center gap-2 squircle-2xl border border-line bg-surface-2 px-3 py-2" aria-label="ภารกิจที่เลือกอยู่">
+            <p className="min-w-0 flex-1 text-sm"><span className="text-muted-foreground">กำลังใช้ </span><b>{sc.title}</b> · {sc.level}<span className="block text-xs text-muted-foreground">{pat?.label} · {ev.short}{max !== null ? ` · คะแนนเต็ม ${max}` : ''}{sc.config.pattern === 'grid5' ? ' · ฐาน C3 · 1 ช่อง = 1 เมตร' : ''}</span></p>
+            <Button size="sm" className="min-h-9" onClick={() => setPanel(null)}>ใช้ด่านนี้ต่อ</Button>
+          </section>
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
             <input value={missionSearch} onChange={(e) => setMissionSearch(e.target.value)} placeholder="ค้นหาด่าน..." aria-label="ค้นหาภารกิจ" className="h-10 min-w-0 squircle-xl border border-line bg-canvas px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-brand-blue" />
             <select aria-label="กรองตามระดับ" value={missionLevel} onChange={(e) => setMissionLevel(e.target.value)} className="h-10 squircle-xl border border-line bg-canvas px-3 text-sm"><option>ทุกระดับ</option>{LEVELS.map((level) => <option key={level}>{level}</option>)}</select>
             <select aria-label="กรองตามชนิดภารกิจ" value={missionType} onChange={(e) => setMissionType(e.target.value)} className="h-10 squircle-xl border border-line bg-canvas px-3 text-sm"><option>ทุกประเภท</option>{categories.map((type) => <option key={type} value={type}>{typeLabel[type] ?? type}</option>)}</select>
           </div>
-          <p className="text-sm text-muted-foreground">พบ {filteredScenarios.length} ภารกิจ · กดภารกิจที่ต้องการหนึ่งครั้ง</p>
-          <section className="grid gap-1 squircle-2xl border border-line bg-surface-2 p-3" aria-label="รายละเอียดภารกิจที่เลือก">
-            <h3 className="font-bold">{sc.title} · {sc.level}</h3>
-            <div className="rich text-sm leading-6 text-muted-foreground" dangerouslySetInnerHTML={{ __html: sc.briefHtml }} />
-            <p className="text-xs text-muted-foreground">{pat?.label} · {ev.short}{max !== null ? ` · คะแนนเต็ม ${max}` : ''}{sc.config.pattern === 'grid5' ? ' · ฐาน C3 · 1 ช่อง = 1 เมตร' : ''}</p>
-          </section>
-          <div className="grid max-h-[55svh] gap-2 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredScenarios.map((s) => {
+          {(() => {
+            const card = (s: ScenarioView, n?: number) => {
               const selected = slug === s.slug;
-              const objective = /<p(?:\s[^>]*)?>([\s\S]*?)<\/p>/i.exec(s.briefHtml)?.[1] ?? s.briefHtml;
+              const best = progress[s.slug];
               return <button key={s.slug} type="button" aria-pressed={selected} onClick={() => pick(s.slug)} className={'grid min-w-0 grid-cols-[3rem_minmax(0,1fr)] items-center gap-2 squircle-2xl border p-2 text-left ' + (selected ? 'border-brand-blue bg-brand-blue/5' : 'border-line bg-surface hover:border-brand-blue hover:bg-surface-2')}>
-                <ScenePreview config={s.config} className="size-12 squircle-xl" /><span className="min-w-0"><span className="block truncate text-sm font-bold">{s.title}</span><span className={'mt-1 inline-block squircle-xl px-2 py-0.5 text-xs font-medium ' + (LEVEL_TONE[s.level] ?? 'bg-surface-2 text-foreground')}>{s.level}</span><span className="rich mt-1 block line-clamp-2 text-xs leading-5 text-muted-foreground" dangerouslySetInnerHTML={{ __html: objective }} /><span className="mt-2 block text-xs font-semibold text-brand-blue">{selected ? 'กำลังใช้งาน' : 'เลือกด่านนี้ →'}</span></span>
+                <ScenePreview config={s.config} className="size-12 squircle-xl" />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-bold">{n ? `${n}. ` : ''}{s.title}</span>
+                  <span className={'mt-1 inline-block squircle-xl px-2 py-0.5 text-xs font-medium ' + (LEVEL_TONE[s.level] ?? 'bg-surface-2 text-foreground')}>{s.level}</span>
+                  <span className="rich mt-1 block line-clamp-2 text-xs leading-5 text-muted-foreground" dangerouslySetInnerHTML={{ __html: objectiveOf(s.briefHtml) }} />
+                  <span className="mt-2 flex flex-wrap items-center justify-between gap-x-2 text-xs"><span className="font-semibold text-brand-blue">{selected ? 'กำลังใช้งาน' : 'เลือกด่านนี้ →'}</span>{best !== undefined && <span className="text-muted-foreground">✓ บินแล้ว{best > 0 ? ` · ${best} คะแนน` : ''}</span>}</span>
+                </span>
               </button>;
-            })}
-          </div>
+            };
+            const startList = START_HERE.map((id) => scenarios.find((s) => s.slug === id)).filter((s): s is ScenarioView => !!s);
+            const showStart = !missionSearch && missionLevel === 'ทุกระดับ' && missionType === 'ทุกประเภท' && startList.length > 0;
+            const rest = showStart ? filteredScenarios.filter((s) => !START_HERE.includes(s.slug)) : filteredScenarios;
+            return <>
+              {showStart && <section aria-label="เริ่มจากตรงนี้"><h3 className="mb-2 text-sm font-bold">เริ่มจากตรงนี้ · เรียงจากง่ายไปยาก</h3><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{startList.map((s, i) => card(s, i + 1))}</div></section>}
+              <p className="text-sm text-muted-foreground">{showStart ? `ภารกิจอื่น ๆ ${rest.length} ด่าน` : `พบ ${filteredScenarios.length} ภารกิจ`} · กดการ์ดหนึ่งครั้งเพื่อเลือก</p>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{rest.map((s) => card(s))}</div>
+            </>;
+          })()}
         </DialogContent>
       </Dialog>
     </main>
