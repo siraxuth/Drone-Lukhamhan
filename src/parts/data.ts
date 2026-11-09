@@ -44,7 +44,8 @@ export function partFromNode(name: string): PartId | null {
   if (/^Channel MCU|^MOSFET|^Motor output pad|^BEC|^Bulk capacitor|^Battery pad/.test(name)) return 'esc';
   if (/^IMU/.test(name)) return 'gyro';
   if (/^Barometer/.test(name)) return 'barometer';
-  if (/^Nano reference board/.test(name)) return 'nano';
+  // ไฟล์ Nano ที่นำเข้าตั้งชื่อชิ้นย่อยว่า GPIO_insulator_0, GPIO_insulator_0_1, … ทั้งหมดเป็นบอร์ด Nano
+  if (/^Nano reference board|^GPIO/.test(name)) return 'nano';
   if (/^Nano header socket|^FC|^MCU LQFP|^Crystal|^microSD|^2\.4 GHz|^u\.FL|^3V3|^LDO|^Boot button/.test(name)) return 'fc';
   if (/^Battery|^Balance|^Power contact|^Battery port/i.test(name)) return 'battery';
   if (/^ToF|^LiDAR/i.test(name)) return 'lidar';
@@ -54,9 +55,16 @@ export function partFromNode(name: string): PartId | null {
   if (/^Motor(?! screw)|^MotorCap/i.test(name)) return 'motor';
   if (/^Guard|^Cage/i.test(name)) return 'guard';
   if (/^Arm|^Beam bolt|^Motor screw|^3-hole-beam|^Leg|^Pin with bush|^Pin bush|^Pin head/i.test(name)) return 'frame';
-  if (/^GPIO|^USB-C/i.test(name)) return 'ports';
+  if (/^USB-C/i.test(name)) return 'ports';
   if (/^Sensor plate|^Cooling|^Enclosure/i.test(name)) return 'cover';
   if (/^LED_Back|^Power button/i.test(name)) return 'ports';
   if (/^White motor/i.test(name)) return 'motor';
   return null;
 }
+
+/** จัดกลุ่มรายการชิ้นส่วนในหน้า /parts: ของที่เห็นจากข้างนอก → บอร์ดใต้ฝา → เซ็นเซอร์ */
+export const partGroups: { title: string; hint: string; ids: PartId[] }[] = [
+  { title: 'ชิ้นที่เห็นจากข้างนอก', hint: 'ไม่ต้องเปิดฝา', ids: ['cover', 'motor', 'propeller', 'guard', 'frame', 'battery', 'camera', 'ports'] },
+  { title: 'บอร์ดใต้ฝาครอบ', hint: 'เปิดฝาก่อนจึงเห็น', ids: ['nano', 'fc', 'esc'] },
+  { title: 'เซ็นเซอร์ช่วยบิน', hint: 'อยู่บนบอร์ดหรือใต้ท้อง', ids: ['gyro', 'accel', 'barometer', 'lidar', 'flow'] },
+];

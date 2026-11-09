@@ -7,16 +7,30 @@ import * as THREE from 'three';
 import { LANDING_DRONE_MODEL } from '@/lib/drone-assets';
 import { kindOf, labels, prerequisites, whiteArm, type Kind } from './mounts';
 import { partById, partFromNode, type PartId } from './data';
+import { GLBoundary, WebGLNotice, useWebGL } from './webgl';
 
-export type View = 'free' | 'top' | 'front' | 'bottom' | 'rear';
+/** inner = มุมสูงเฉียงลงกลางลำ ใช้ตอนเปิดฝาดูบอร์ดข้างใน */
+export type View = 'free' | 'top' | 'front' | 'bottom' | 'rear' | 'inner';
 export type Point3 = [number, number, number];
 
-function ModelLoading({ label = 'กำลังโหลดโมเดลโดรน' }: { label?: string }) {
-  const { progress } = useProgress();
-  const percentage = Math.round(progress);
+/** ชื่อพอร์ตที่โชว์ตอนชี้ที่กล่องจับเมาส์ของพอร์ต (ชื่อบนโมเดล → ชื่อที่คนอ่านรู้เรื่อง) */
+const PORT_NAMES: Record<string, string> = {
+  'UART 7': 'พอร์ต UART 7', 'USB-C Arduino': 'USB-C ของ Arduino', D5: 'พอร์ตดิจิทัล/อะนาล็อก 5', D6: 'พอร์ตดิจิทัล/อะนาล็อก 6',
+  'UWM 1': 'พอร์ต UWM 1', 'UWM 2': 'พอร์ต UWM 2', 'UWM 3': 'พอร์ต UWM 3', 'UWM 4': 'พอร์ต UWM 4', 'USB-C FC': 'USB-C ของบอร์ดควบคุมการบิน',
+  'TF card': 'ช่องการ์ด TF', battery: 'พอร์ตแบตเตอรี่', motor: 'ช่องเสียบมอเตอร์',
+};
 
-  return <Html fullscreen zIndexRange={[100, 100]}>
-    <div role="status" aria-live="polite" className="absolute inset-0 grid place-items-center bg-canvas/90 px-5 text-foreground backdrop-blur-sm">
+/**
+ * แผ่นโหลดโมเดล: เป็น DOM ธรรมดาที่วางทับ Canvas ไม่ใช่ <Html> ของ drei ใน Suspense fallback
+ * เพราะ <Html> ถอดตัวเองไม่ได้ตอนโมเดลโหลดเสร็จ (removeChild error) แล้วทั้งฉากว่าง
+ */
+function ModelLoading({ label = 'กำลังโหลดโมเดลโดรน' }: { label?: string }) {
+  const { active, progress } = useProgress();
+  const percentage = Math.round(progress);
+  if (!active) return null;
+
+  return <>
+    <div role="status" aria-live="polite" className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-canvas/80 px-5 text-foreground backdrop-blur-sm">
       <div className="w-full max-w-sm squircle-2xl border border-line bg-surface p-5 shadow-xl">
         <div className="flex items-center gap-3">
           <span className="grid size-11 shrink-0 place-items-center squircle-xl border border-line bg-surface-2 text-brand-blue"><span className="size-5 animate-spin rounded-full border-2 border-current border-r-transparent" /></span>
@@ -26,11 +40,12 @@ function ModelLoading({ label = 'กำลังโหลดโมเดลโ�
         <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-surface-2"><div className="h-full rounded-full bg-brand-blue transition-[width] duration-200" style={{ width: `${percentage}%` }} /></div>
       </div>
     </div>
-  </Html>;
+  </>;
 }
 
 function paintPart(mesh: THREE.Mesh) {
-  if (mesh.name.startsWith('Nano reference board')) return;
+  // Nano ใช้สีจากไฟล์เดิม (ชิ้นย่อยชื่อ GPIO_insulator_* ไม่ใช่ Nano reference board)
+  if (partFromNode(String(mesh.userData.name ?? mesh.name)) === 'nano') return;
   const name = String(mesh.userData.name ?? mesh.name).replace(
     /_(?=[A-Za-z])/g,
     ' ',
@@ -92,6 +107,7 @@ function CameraPreset({
       front: [0, distance * 0.12, distance],
       rear: [0, distance * .12, -distance],
       bottom: [0.001, -distance, 0],
+      inner: [distance * 0.2, distance * 1.0, distance * 0.64],
     };
     const [x, y, z] = positions[view];
     camera.position.set(x + targetX, y + targetY, z);
@@ -181,9 +197,13 @@ function ReferenceBoard({sensor}: {sensor: 'imu'|'range'}) {
 }
 
 export function PartDetailModel({ part, reference }: { part: PartId; reference?: boolean }) {
+  const gl = useWebGL();
+  if (gl === 'pending') return <div className="size-full" aria-hidden />;
+  if (gl === 'none') return <WebGLNotice compact />;
   return (
+    <GLBoundary fallback={<WebGLNotice compact />}>
     <div
-      className="h-full w-full"
+      className="relative h-full w-full"
       aria-label={`โมเดลเฉพาะชิ้นส่วน ${partById[part].name} หมุนดูได้`}
     >
       <Canvas
@@ -194,12 +214,14 @@ export function PartDetailModel({ part, reference }: { part: PartId; reference?:
         <ambientLight intensity={2.2} />
         <directionalLight position={[2, 4, 3]} intensity={3.1} />
         <directionalLight position={[-3, 1, -2]} intensity={1.5} />
-        <Suspense fallback={<ModelLoading label="กำลังโหลดชิ้นส่วน" />}>
+        <Suspense fallback={null}>
            {reference && (part==='gyro'||part==='accel'||part==='lidar') ? <ReferenceBoard sensor={part==='lidar'?'range':'imu'}/> : <IsolatedPart part={part==='accel'?'gyro':part} />}
         </Suspense>
         <CameraPreset view="free" fit="part" />
       </Canvas>
+      <ModelLoading label="กำลังโหลดชิ้นส่วน" />
     </div>
+    </GLBoundary>
   );
 }
 
@@ -346,12 +368,14 @@ type WorkshopProps = {
   onMount: (id: string) => void;
   remove: boolean;
   dragPoint: React.RefObject<{ x: number; y: number } | null>;
+  /** ชิ้นที่ไฮไลต์จากรายการข้าง ๆ (ชี้รายการแล้วชิ้นบนโมเดลสว่างตาม) */
+  focusPart?: PartId | null;
 };
 
 function Workbench(props: WorkshopProps) {
   const { root, groups, shell } = useWorkshopModel();
   const { assemble, installed, held, lid, remove, dragPoint, turn } = props;
-  const [hovered, setHovered] = useState<{ part: PartId; point: Point3 } | null>(null);
+  const [hovered, setHovered] = useState<{ part: PartId; point: Point3; title: string; hint: string } | null>(null);
   const highlight = useRef<{ material: THREE.MeshStandardMaterial; emissive: THREE.Color; intensity: number }[]>([]);
   function clearHighlight() {
     for (const item of highlight.current) {
@@ -382,6 +406,23 @@ function Workbench(props: WorkshopProps) {
       setHovered(null);
     }
   }, [assemble]);
+  useEffect(() => {
+    if (assemble) return;
+    if (props.focusPart) highlightPart(props.focusPart);
+    else clearHighlight();
+  }, [props.focusPart, assemble]);
+  // เปิดฝาแล้วกรงกับใบพัดบังบอร์ด: ทำให้โปร่งและไม่รับเมาส์ ปิดฝาแล้วคืนเดิม
+  const fade = useRef(0);
+  const fadeable = useMemo(() => {
+    const list: { mesh: THREE.Mesh; materials: THREE.Material[]; raycast: THREE.Mesh['raycast'] }[] = [];
+    root.traverse((node) => {
+      if (!(node instanceof THREE.Mesh)) return;
+      const id = partFromNode(String(node.userData.name ?? node.name));
+      if (id !== 'guard' && id !== 'propeller') return;
+      list.push({ mesh: node, materials: Array.isArray(node.material) ? node.material : [node.material], raycast: node.raycast });
+    });
+    return list;
+  }, [root]);
   const previous = useRef(new Set(installed));
   const animation = useRef(new Map<string, number>());
   const ghosts = useMemo(
@@ -431,8 +472,27 @@ function Workbench(props: WorkshopProps) {
   });
   useFrame(({ camera, gl, clock }, dt) => {
     const blend = 1 - Math.exp(-9 * dt);
+    // กล่องจับเมาส์ของพอร์ตอยู่ที่ผิวฝา ใช้ได้เฉพาะตอนปิดฝา ไม่งั้นมันบังบอร์ดที่เห็นอยู่
+    const hotspotsOn = !assemble && lid === 0;
     for (const child of root.children) {
-      if (child.userData.partOnly) child.visible = !assemble;
+      if (!child.userData.partOnly) continue;
+      child.visible = hotspotsOn;
+      if (child instanceof THREE.Mesh) child.raycast = hotspotsOn ? THREE.Mesh.prototype.raycast : () => {};
+    }
+    const fadeTarget = !assemble && lid > 0 ? 1 : 0;
+    if (Math.abs(fade.current - fadeTarget) > 0.002) {
+      fade.current += (fadeTarget - fade.current) * blend;
+      if (Math.abs(fade.current - fadeTarget) <= 0.002) fade.current = fadeTarget;
+      for (const item of fadeable) {
+        for (const material of item.materials) {
+          const wasTransparent = material.transparent;
+          material.transparent = fade.current > 0.001;
+          material.opacity = 1 - 0.9 * fade.current;
+          material.depthWrite = fade.current < 0.05;
+          if (wasTransparent !== material.transparent) material.needsUpdate = true;
+        }
+        item.mesh.raycast = fade.current > 0.5 ? () => {} : item.raycast;
+      }
     }
     opening.current=THREE.MathUtils.clamp(opening.current+((lid&&!assemble)?1:-1)*dt*.8,0,1);
     const phase=(from:number,to:number)=>THREE.MathUtils.smoothstep(opening.current,from,to);
@@ -588,6 +648,7 @@ function Workbench(props: WorkshopProps) {
           if (assemble || !(e.object instanceof THREE.Mesh)) return;
           let node: THREE.Object3D | null = e.object;
           let id: PartId | null = null;
+          const hitName = String(e.object.userData.name ?? e.object.name);
           while (node && !id) {
             id = partFromNode(node.userData.name ?? node.name);
             node = node.parent;
@@ -595,7 +656,9 @@ function Workbench(props: WorkshopProps) {
           if (!id) return;
           e.stopPropagation();
           highlightPart(id);
-          setHovered({ part: id, point: [e.point.x, e.point.y + 0.045, e.point.z] });
+          const port = PORT_NAMES[hitName.replace(/^Port hotspot /, '')];
+          const item = partById[id];
+          setHovered({ part: id, point: [e.point.x, e.point.y + 0.045, e.point.z], title: port ?? item.name, hint: port ? 'พอร์ตบนตัวลำ' : item.label });
         }}
         onPointerOut={() => { clearHighlight(); setHovered(null); }}
         onClick={(e: import('@react-three/fiber').ThreeEvent<MouseEvent>) => {
@@ -630,7 +693,7 @@ function Workbench(props: WorkshopProps) {
           }
         }}
       />
-      {!assemble && hovered && <Html position={hovered.point} center zIndexRange={[20, 20]} className="pointer-events-none"><span className="whitespace-nowrap squircle-xl border border-line bg-surface px-2 py-1 text-xs font-bold text-foreground shadow-md">{partById[hovered.part].name}</span></Html>}
+      {!assemble && hovered && <Html position={hovered.point} center zIndexRange={[20, 20]} className="pointer-events-none"><span className="block whitespace-nowrap squircle-xl border border-line bg-surface px-3 py-1.5 text-center text-foreground shadow-lg"><span className="block text-sm font-bold leading-5">{hovered.title}</span><span className="block text-xs leading-4 text-muted-foreground">{hovered.hint} · คลิกเพื่ออ่านต่อ</span></span></Html>}
       {ghosts.map((ghost) => (
         <primitive key={ghost.id} object={ghost.mesh} />
       ))}
@@ -690,16 +753,22 @@ function Workbench(props: WorkshopProps) {
   );
 }
 
-export function Workshop({ view, ...props }: WorkshopProps & { view: View }) {
+export function Workshop({ view, onCrash, ...props }: WorkshopProps & { view: View; onCrash?: () => void }) {
   return (
-    <Canvas camera={{ position: [1.6, 1, 1.8], fov: 39 }} dpr={[1, 1.5]}>
-      <ambientLight intensity={2.2} />
-      <directionalLight position={[2, 4, 3]} intensity={3} />
-      <directionalLight position={[-3, 1, -2]} intensity={1.4} />
-      <Suspense fallback={<ModelLoading />}>
-        <Workbench {...props} />
-      </Suspense>
-      <CameraPreset view={view} />
-    </Canvas>
+    <GLBoundary fallback={null} onFail={onCrash}>
+      <div className="relative size-full">
+      <Canvas camera={{ position: [1.6, 1, 1.8], fov: 39 }} dpr={[1, 1.5]}>
+        <ambientLight intensity={2.2} />
+        <directionalLight position={[2, 4, 3]} intensity={3} />
+        <directionalLight position={[-3, 1, -2]} intensity={1.4} />
+        <directionalLight position={[0, 2.5, -3]} intensity={1.1} />
+        <Suspense fallback={null}>
+          <Workbench {...props} />
+        </Suspense>
+        <CameraPreset view={view} />
+      </Canvas>
+      <ModelLoading />
+      </div>
+    </GLBoundary>
   );
 }
