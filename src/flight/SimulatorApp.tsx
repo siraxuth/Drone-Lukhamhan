@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Blocks, BookOpen, Braces, ChevronDown, CircleHelp, Plus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -21,6 +21,7 @@ import { bindStarterToKey, KEY_FUNCTION_EXAMPLE } from './key-program';
 import { BlockProgramEditor } from './BlockProgramEditor';
 import { generateBlockProgram } from './block-program';
 import { parseBlockProgram, type BlockProgram } from './parser';
+import { readWorkspace, WORKSPACE_STORAGE_KEY, type SimulatorWorkspaceData } from './workspace';
 
 const LEVEL_TONE: Record<string, string> = { เริ่มต้น: 'bg-surface-2 text-foreground', กลาง: 'bg-brand-blue/10 text-brand-blue', ยาก: 'bg-emphasis text-emphasis-foreground', 'โหดมาก': 'bg-destructive/10 text-destructive' };
 const LEGACY: Record<string, string> = { mission: 'mission-start', aviation: 'aviation-start', innovation: 'innovation-start' };
@@ -91,26 +92,17 @@ const practiceCommands = commandsFor('full');
 function KeyExamplePopover() {
   return (
     <Popover>
-      <PopoverTrigger render={<Button variant="outline" className="min-h-10" />}>ตัวอย่าง KEY 1–2</PopoverTrigger>
-      <PopoverContent align="end" className="max-h-[min(70svh,32rem)] w-[min(32rem,calc(100vw-2rem))] overflow-y-auto p-3">
+      <PopoverTrigger render={<Button variant="outline" className="min-h-10" />}>ช่วยเขียน</PopoverTrigger>
+      <PopoverContent align="end" className="max-h-[min(70svh,32rem)] w-[min(38rem,calc(100vw-2rem))] overflow-y-auto p-3">
+        <p className="mb-2 text-sm font-semibold">ตัวอย่างผูก KEY</p>
         <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5">{KEY_FUNCTION_EXAMPLE}</pre>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function CommandReferencePopover() {
-  return (
-    <Popover>
-      <PopoverTrigger render={<Button variant="outline" className="min-h-10" />}>ชื่อคำสั่ง</PopoverTrigger>
-      <PopoverContent align="end" className="max-h-[min(70svh,32rem)] w-[min(38rem,calc(100vw-2rem))] overflow-y-auto p-3 text-xs">
-        <p className="mb-2">ใช้ <code>move_forward(100);</code>, <code>set_height(120);</code> และคำสั่งเต็มที่อ่านง่าย</p>
+        <p className="mb-2 mt-3 text-sm font-semibold">ชื่อคำสั่ง</p>
         <div className="overflow-x-auto">
-          <table className="w-full text-left"><thead><tr><th className="p-1">ย่อ</th><th className="p-1">เต็ม</th><th className="p-1">drone.</th><th className="p-1">pArduino-&gt;</th></tr></thead>
+          <table className="w-full text-left text-xs"><thead><tr><th className="p-1">ย่อ</th><th className="p-1">เต็ม</th><th className="p-1">drone.</th><th className="p-1">pArduino-&gt;</th></tr></thead>
             <tbody>{PAIRS.map(([a, b, c, d]) => <tr key={a} className="border-t border-line"><td className="p-1 font-mono">{a}</td><td className="p-1 font-mono">{b}</td><td className="p-1 font-mono">{c}</td><td className="p-1 font-mono">{d}</td></tr>)}</tbody>
           </table>
         </div>
-        <details className="mt-2"><summary className="cursor-pointer font-semibold">คีย์ลัดในตัวแก้โค้ด</summary><ul className="mt-1 grid gap-1 sm:grid-cols-2">{KEYS.map(([key, description]) => <li key={key}><kbd className="font-mono">{key}</kbd> · {description}</li>)}</ul></details>
+        <details className="mt-2 text-xs"><summary className="cursor-pointer font-semibold">คีย์ลัดในตัวแก้โค้ด</summary><ul className="mt-1 grid gap-1 sm:grid-cols-2">{KEYS.map(([key, description]) => <li key={key}><kbd className="font-mono">{key}</kbd> · {description}</li>)}</ul></details>
       </PopoverContent>
     </Popover>
   );
@@ -237,13 +229,13 @@ const SIM_TOUR: TourStep[] = [
   },
   {
     target: '[data-tour="sim-keys"]',
-    title: 'กดเริ่มบินเพื่อทดลองโค้ด',
-    text: 'ปุ่ม “เริ่มบิน” อยู่มุมล่างของสนาม กดแล้วโดรนจะบินตามโค้ดของคุณ ใต้สนามคือรีโมต ปุ่ม KEY ที่ผูกไว้ใน `setup()` จะโผล่ที่นี่ ถ้าไม่มีปุ่มพร้อมกด ให้ตรวจว่าชื่อฟังก์ชันที่ผูกสะกดตรงกับชื่อที่เขียนไว้',
+    title: 'กด KEY เพื่อทดลองโค้ด',
+    text: 'รีโมตอยู่ใต้สนาม กด KEY ที่ขึ้นว่า “พร้อมกด” เพื่อบินตามโค้ด ในมุมเดินมีปุ่ม “เปิดรีโมท” อยู่บนสนามด้วย ถ้าไม่มี KEY ที่พร้อมกด ให้ตรวจชื่อฟังก์ชันที่ผูกไว้ใน `setup()`',
   },
   {
     target: '[data-tour="sim-camera"]',
     title: 'เลือกมุมกล้องให้เหมาะกับสิ่งที่ดู',
-    text: 'ในสนาม 3D ใช้ “ตามโดรน” เพื่อเห็นตัวลำและการเอียง หรือ “มองจากบน” เพื่อดูทิศทางเทียบกับจุดในสนาม ถ้าเครื่องแสดงสนาม 2D จะเห็นเส้นทางจากด้านบน หลังบินจบให้ดูเส้นทางจริงเทียบกับแผน แล้วลองแก้ระยะหรือทิศในโค้ดก่อนกด KEY อีกครั้ง',
+    text: 'เลือก “ตามโดรน” เพื่อดูตัวลำ “มองจากบน” เพื่อดูเส้นทาง หรือ “เดินในสนาม” เพื่อวางโดรนเอง มุมเดินจะขยายสนามเต็มจอและเปิดวิธีบังคับให้ครั้งแรก ในเต็มจอมีปุ่มสลับมุมอยู่ด้านบน ถ้าเครื่องใช้ 3D ไม่ได้ ยังดูสนาม 2D ได้',
   },
 ];
 
@@ -295,21 +287,22 @@ const CODE_COURSE: TourStep[] = [
  * ใช้ครั้งแรกจะมีบทสอนเขียนโค้ดทีละขั้นก่อน (เปิดซ้ำได้ที่ปุ่ม "บทสอน") · โจทย์มาจากฐานข้อมูล (จัดการที่ /admin/challenges)
  * URL: ?tab=<slug ของโจทย์> (รับ mission|aviation|innovation แบบเก่าด้วย) · ?lesson=1 เปิดบทสอน · ?notour ปิดบทสอนอัตโนมัติ
  */
-export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
+export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenarios: ScenarioView[]; initialWorkspace: SimulatorWorkspaceData | null; signedIn: boolean }) {
   const qs = useSearchParams();
   const wanted = LEGACY[qs.get('tab') ?? ''] ?? qs.get('tab');
   const legacyProgram = programs.find((p) => p.id === qs.get('p'));
   const hasLink = !!wanted || !!legacyProgram;
   // เข้ามาครั้งแรกเริ่มที่ด่านง่ายสุด ไม่ใช่ด่านแรกของรายการ (ซึ่งเป็นโจทย์นำเสนอที่ยากที่สุด)
   const beginnerSlug = START_HERE.find((id) => scenarios.some((s) => s.slug === id));
-  const initial = scenarios.find((s) => s.slug === wanted) ?? scenarios.find((s) => legacyProgram && s.slug === LEGACY[legacyProgram.event]) ?? scenarios.find((s) => s.slug === beginnerSlug) ?? scenarios[0];
+  const initial = scenarios.find((s) => s.slug === wanted) ?? scenarios.find((s) => legacyProgram && s.slug === LEGACY[legacyProgram.event]) ?? scenarios.find((s) => s.slug === initialWorkspace?.slug) ?? scenarios.find((s) => s.slug === beginnerSlug) ?? scenarios[0];
   const [slug, setSlug] = useState(initial.slug);
-  const [drafts, setDrafts] = useState<Record<string, string>>(legacyProgram ? { [initial.slug]: bindStarterToKey(legacyProgram.code) } : {});
+  const [drafts, setDrafts] = useState<Record<string, string>>(legacyProgram ? { ...initialWorkspace?.drafts, [initial.slug]: bindStarterToKey(legacyProgram.code) } : initialWorkspace?.drafts ?? {});
   const [briefOpen, setBriefOpen] = useState(false);
   const [panel, setPanel] = useState<null | 'pick'>(null);
-  const [styleSel, setStyleSel] = useState<Style>('full');
-  const [editorMode, setEditorMode] = useState<'cpp' | 'blocks'>('cpp');
-  const [blockProgram, setBlockProgram] = useState<BlockProgram | null>(null);
+  const [styleSel, setStyleSel] = useState<Style>(initialWorkspace?.style ?? 'full');
+  const [editorMode, setEditorMode] = useState<'cpp' | 'blocks'>(initialWorkspace?.editorMode ?? 'cpp');
+  const [blockPrograms, setBlockPrograms] = useState<Record<string, BlockProgram>>(initialWorkspace?.blockPrograms ?? {});
+  const [blockProgram, setBlockProgram] = useState<BlockProgram | null>(initialWorkspace?.editorMode === 'blocks' ? initialWorkspace.blockPrograms[initial.slug] ?? parseBlockProgram(initialWorkspace.drafts[initial.slug] ?? initial.starter).program : null);
   const [blockProgramSlug, setBlockProgramSlug] = useState(initial.slug);
   const [blockSkipped, setBlockSkipped] = useState(0);
   const [blockRevision, setBlockRevision] = useState(0);
@@ -323,6 +316,10 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
   const [loadCount, setLoadCount] = useState({ L: 20, R: 20 });
   /** คะแนนสูงสุดต่อด่านที่เคยบินจบโดยไม่พัง เก็บในเครื่องนี้ */
   const [progress, setProgress] = useState<Record<string, number>>({});
+  const [workspaceReady, setWorkspaceReady] = useState(signedIn);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const latestWorkspace = useRef<{ ready: boolean; data: SimulatorWorkspaceData }>({ ready: workspaceReady, data: { slug, drafts, style: styleSel, editorMode, blockPrograms } });
+  latestWorkspace.current = { ready: workspaceReady, data: { slug, drafts, style: styleSel, editorMode, blockPrograms } };
   const sc = scenarios.find((s) => s.slug === slug) ?? scenarios[0];
   const code = drafts[sc.slug] ?? sc.starter;
   const edited = code !== sc.starter;
@@ -332,20 +329,64 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
   const payload = payloads[sc.slug] ?? { L: 0, R: 0 };
   const config = useMemo(() => ({ ...buildScenarioConfig(sc.config), style, initialPayload: payload }), [sc, style, payload]);
   const converted = useMemo(() => convertStyle(code, style), [code, style]);
-  const scene = useMemo(() => (sc.config.pattern !== 'standard' || sc.config.objects.length ? { pattern: sc.config.pattern, objects: sc.config.objects, start: sc.config.start, base: sc.config.base } : undefined), [sc]);
+  const scene = useMemo(() => (sc.config.pattern !== 'standard' || sc.config.objects.length || sc.config.start ? { pattern: sc.config.pattern, objects: sc.config.objects, start: sc.config.start, base: sc.config.base } : undefined), [sc]);
   const max = maxScore(sc.config);
   const pat = PATTERNS.find((p) => p.id === sc.config.pattern);
 
-  useEffect(() => { try { const v = localStorage.getItem(STYLE_KEY); if (v === 'full' || v === 'any' || v === 'drone' || v === 'parduino') setStyleSel(v); } catch { /* ไม่เป็นไร */ } }, []);
+  useEffect(() => {
+    if (signedIn) return;
+    try {
+      const saved = readWorkspace(JSON.parse(localStorage.getItem(WORKSPACE_STORAGE_KEY) ?? 'null'));
+      if (saved) {
+        setDrafts(saved.drafts);
+        setStyleSel(saved.style);
+        setEditorMode(saved.editorMode);
+        setBlockPrograms(saved.blockPrograms);
+        const target = hasLink ? initial.slug : scenarios.some(item => item.slug === saved.slug) ? saved.slug : initial.slug;
+        if (!hasLink) setSlug(target);
+        if (saved.editorMode === 'blocks') {
+          setBlockProgram(saved.blockPrograms[target] ?? parseBlockProgram(saved.drafts[target] ?? scenarios.find(item => item.slug === target)?.starter ?? '').program);
+          setBlockProgramSlug(target);
+        }
+      } else {
+        const style = localStorage.getItem(STYLE_KEY);
+        if (style === 'full' || style === 'any' || style === 'drone' || style === 'parduino') setStyleSel(style);
+      }
+    } catch { /* storage may be disabled */ }
+    setWorkspaceReady(true);
+  }, [signedIn]);
   // กลับมาใหม่: ถ้าไม่ได้เข้าด้วยลิงก์ด่านเฉพาะ ให้ต่อจากด่านที่เล่นล่าสุด
   useEffect(() => {
     try {
       const saved: unknown = JSON.parse(localStorage.getItem(DONE_KEY) ?? '{}');
       if (saved && typeof saved === 'object') setProgress(saved as Record<string, number>);
       const last = localStorage.getItem(LAST_KEY);
-      if (!hasLink && last && last !== initial.slug && scenarios.some((s) => s.slug === last)) setSlug(last);
+      if (!signedIn && !hasLink && !localStorage.getItem(WORKSPACE_STORAGE_KEY) && last && last !== initial.slug && scenarios.some((s) => s.slug === last)) setSlug(last);
     } catch { /* ไม่มี storage ก็เริ่มที่ด่านง่าย */ }
   }, []);
+  useEffect(() => {
+    if (!workspaceReady) return;
+    const data = latestWorkspace.current.data;
+    try { localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(data)); } catch { /* storage may be disabled */ }
+    if (!signedIn) { setSaveStatus('saved'); return; }
+    setSaveStatus('saving');
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch('/api/simulator/workspace', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        setSaveStatus(response.ok ? 'saved' : 'error');
+      } catch { setSaveStatus('error'); }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [workspaceReady, signedIn, slug, drafts, styleSel, editorMode, blockPrograms]);
+  useEffect(() => {
+    if (!signedIn) return;
+    const flush = () => {
+      if (!latestWorkspace.current.ready) return;
+      void fetch('/api/simulator/workspace', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(latestWorkspace.current.data), keepalive: true });
+    };
+    window.addEventListener('pagehide', flush);
+    return () => { window.removeEventListener('pagehide', flush); flush(); };
+  }, [signedIn]);
   const chooseStyle = (v: Style) => { setStyleSel(v); if (v !== 'any') setCode(convertStyle(code, v)); try { localStorage.setItem(STYLE_KEY, v); } catch { /* ไม่เป็นไร */ } };
 
   useEffect(() => { document.title = 'ตัวจำลองการบิน · ชมรมโดรน ลือคำหาญฯ'; }, []);
@@ -374,6 +415,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
   const setCode = (v: string) => setDrafts((d) => ({ ...d, [sc.slug]: v }));
   const useBlockProgram = (targetSlug: string, program: BlockProgram, skipped: number) => {
     setBlockProgram(program);
+    setBlockPrograms(current => ({ ...current, [targetSlug]: program }));
     setBlockProgramSlug(targetSlug);
     setBlockSkipped(skipped);
     setDrafts((current) => ({ ...current, [targetSlug]: convertStyle(generateBlockProgram(program), style) }));
@@ -385,6 +427,8 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
     if (editorMode === 'blocks') {
       const target = scenarios.find((scenario) => scenario.slug === s);
       if (target) {
+        const savedProgram = blockPrograms[s];
+        if (savedProgram) { useBlockProgram(s, savedProgram, 0); return; }
         const imported = parseBlockProgram(drafts[s] ?? target.starter);
         if (imported.skipped) {
           setPendingBlockImport({ slug: s, ...imported });
@@ -410,10 +454,12 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
       setBlockProgramSlug(sc.slug);
       setBlockSkipped(imported.skipped);
       setBlockRevision((revision) => revision + 1);
+      setBlockPrograms(current => { const next = { ...current }; delete next[sc.slug]; return next; });
     }
   };
   const onBlockProgramChange = (program: BlockProgram) => {
     setBlockProgram(program);
+    setBlockPrograms(current => ({ ...current, [blockProgramSlug]: program }));
     setDrafts((current) => ({ ...current, [blockProgramSlug]: convertStyle(generateBlockProgram(program), style) }));
   };
 
@@ -435,6 +481,7 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
       <header className="flex flex-wrap items-center gap-3 px-4 py-2 sm:px-6">
         <div className="min-w-0 flex-1"><h1 className="text-xl font-extrabold sm:text-2xl">สนามฝึกการบินโดรน</h1><p className="hidden text-sm text-muted-foreground lg:block">วางแผนคำสั่ง ดูเส้นทางจริง แล้วเรียนรู้จากสิ่งที่คลาดเคลื่อน</p></div>
         {qs.get('lesson') !== '1' && <Button variant="outline" className="min-h-10" data-sim-guide><CircleHelp className="size-4" /> วิธีใช้</Button>}
+        <span role="status" className="text-xs text-muted-foreground">{saveStatus === 'saving' ? 'กำลังบันทึก…' : saveStatus === 'saved' ? signedIn ? 'บันทึกในบัญชีแล้ว' : 'บันทึกในเครื่องแล้ว' : saveStatus === 'error' ? 'บันทึกข้ามอุปกรณ์ไม่สำเร็จ' : ''}</span>
         <Button className="min-h-10" data-tour="sim-pick" onClick={() => setPanel('pick')}><BookOpen className="size-4" /> เลือกภารกิจ</Button>
       </header>
       <div className="grid w-full min-h-0 min-w-0 flex-1 auto-rows-max grid-cols-1 gap-3 overflow-y-auto p-3 sm:p-4 xl:auto-rows-[minmax(0,1fr)] xl:overflow-hidden xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
@@ -474,7 +521,6 @@ export function SimulatorApp({ scenarios }: { scenarios: ScenarioView[] }) {
               <div className="min-w-0 flex-1"><h2 className="font-bold">เขียนโค้ดภารกิจ</h2><p className="text-xs text-muted-foreground">เขียนฟังก์ชัน → ผูก KEY → กดปุ่มใต้สนาม</p></div>
               <Button className="min-h-10" data-sim-course>ฝึกเขียนโค้ด</Button>
               <KeyExamplePopover />
-              <CommandReferencePopover />
             </div>
             <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
         <div role="tablist" aria-label="รูปแบบการเขียนโปรแกรม" className="flex items-center gap-1 squircle-xl border border-line bg-surface p-1">

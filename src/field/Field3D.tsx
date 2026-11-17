@@ -13,9 +13,12 @@ import { heading, type DroneState } from './aim';
 import { balloonId } from './layout';
 import type { RuleEvent } from '@/rules/types';
 import type { Measurement } from '@/flight/measurements';
+import type { CeilingLights, FieldLights } from '@/flight/environment';
 import { FieldDimensions3D, FieldMeasurements3D } from './FieldMeasurements3D';
 
-export type ViewPreset = 'top' | 'chase';
+export type ViewPreset = 'top' | 'chase' | 'walk';
+export type WalkPose = { x: number; y: number; yaw: number; pitch: number };
+export type WalkInput = { forward: number; right: number; lookX: number; lookY: number };
 export type Shot = { from: [number, number, number]; to: [number, number, number]; ok: boolean; mount?: 'front' | 'back'; id?: number; t?: number; terminal?: boolean; speed?: number } | null;
 export type ShotHighlight = { id: number; from: [number, number, number]; to: [number, number, number] } | null;
 
@@ -48,6 +51,15 @@ type Props = {
   showDimensions?: boolean;
   dimensionFrom?: string;
   dimensionTo?: string;
+  lights?: FieldLights;
+  ceilingLights?: CeilingLights;
+  walkPoseRef?: React.RefObject<WalkPose>;
+  walkInputRef?: React.RefObject<WalkInput>;
+  walkControlsEnabled?: boolean;
+  onWalk?: (pose: WalkPose) => void;
+  placement?: { center: { x: number; y: number }; target: { x: number; y: number }; aligned: boolean; onRotate: (yaw: number) => void };
+  carryingDrone?: boolean;
+  rescuePose?: LivePose | null;
 };
 
 /** สนามอยู่ในพิกัดเมตร: field(x,y) → three(x, 0, -y) เพื่อให้ "เหนือ" อยู่ไกลจากกล้องเริ่มต้น */
@@ -81,6 +93,224 @@ function Surround() {
       <meshStandardMaterial color="#111318" roughness={1} />
     </mesh>
   );
+}
+
+const CORNERS: Array<[number, number]> = [[-4.85, 4.85], [4.85, 4.85], [-4.85, -4.85], [4.85, -4.85]];
+const LED_COLORS = { cyan: '#5cc6e8', blue: '#355bd4', ice: '#b5e9ff' } as const;
+
+function fixtureTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const context = canvas.getContext('2d')!;
+  const pixels = context.createImageData(64, 64);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const grain = Math.sin(x * 47.3 + y * 19.7) * Math.cos(x * 9.1 - y * 31.3);
+    const shade = Math.round(64 + grain * 10 + (y % 8 === 0 ? 7 : 0));
+    const index = (y * 64 + x) * 4;
+    pixels.data[index] = shade;
+    pixels.data[index + 1] = shade + 4;
+    pixels.data[index + 2] = shade + 12;
+    pixels.data[index + 3] = 255;
+  }
+  context.putImageData(pixels, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function softBeamTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128; canvas.height = 256;
+  const context = canvas.getContext('2d')!;
+  const pixels = context.createImageData(128, 256);
+  for (let y = 0; y < 256; y++) for (let x = 0; x < 128; x++) {
+    const across = (x - 63.5) / 63.5, along = (y - 127.5) / 127.5;
+    const fade = Math.max(0, 1 - across * across) ** 2 * Math.max(0, 1 - along * along) ** 1.7;
+    const index = (y * 128 + x) * 4;
+    pixels.data[index] = 255; pixels.data[index + 1] = 255; pixels.data[index + 2] = 255;
+    pixels.data[index + 3] = Math.round(fade * 170);
+  }
+  context.putImageData(pixels, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function GroundLed({ x, y, light, low, metal, wash }: { x: number; y: number; light: FieldLights[number]; low: boolean; metal: THREE.Texture; wash: THREE.Texture }) {
+  const color = LED_COLORS[light.color];
+  const target = useMemo(() => {
+    const object = new THREE.Object3D();
+    object.position.set(-x, 0.32, y);
+    return object;
+  }, [x, y]);
+  const length = Math.hypot(x, y);
+  const washCenter: [number, number, number] = [(-x / length) * 2.7, 0.008, (y / length) * 2.7];
+  return <group position={[x, 0, -y]}>
+    <mesh position={[0, 0.045, 0]}><cylinderGeometry args={[0.19, 0.21, 0.09, 16]} /><meshStandardMaterial map={metal} metalness={0.55} roughness={0.35} /></mesh>
+    <mesh position={[0, 0.091, 0]} rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[0.125, 0.17, 24]} /><meshStandardMaterial color="#a4adba" metalness={0.8} roughness={0.25} /></mesh>
+    <mesh position={[0, 0.105, 0]}><cylinderGeometry args={[0.14, 0.17, 0.045, 16]} /><meshStandardMaterial color={light.enabled ? color : '#44505c'} emissive={light.enabled ? color : '#000000'} emissiveIntensity={light.enabled ? light.intensity * 2.2 : 0} toneMapped={false} /></mesh>
+    <primitive object={target} />
+    {light.enabled && <>
+      <spotLight position={[0, 0.19, 0]} target={target} color={color} angle={0.44} penumbra={1} intensity={light.intensity * (low ? 18 : 28)} distance={10} decay={2} />
+      {!low && <pointLight position={[0, 0.18, 0]} color={color} intensity={light.intensity * 1.8} distance={1.5} decay={2} />}
+      <group position={washCenter} rotation={[0, Math.atan2(x, -y), 0]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
+          <planeGeometry args={[low ? 2.1 : 2.8, 5.4]} />
+          <meshBasicMaterial map={wash} color={color} transparent opacity={light.intensity * 0.55} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+        </mesh>
+      </group>
+    </>}
+  </group>;
+}
+
+function CeilingLed({ x, y, enabled, low, metal }: { x: number; y: number; enabled: boolean; low: boolean; metal: THREE.Texture }) {
+  const target = useMemo(() => {
+    const object = new THREE.Object3D();
+    object.position.set(-x, -5.1, y);
+    return object;
+  }, [x, y]);
+  return <group position={[x, 5.45, -y]}>
+    <mesh><boxGeometry args={[0.78, 0.16, 0.56]} /><meshStandardMaterial map={metal} metalness={0.48} roughness={0.4} /></mesh>
+    <mesh position={[0, -0.095, 0]} rotation={[Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[0.65, 0.44]} />
+      <meshBasicMaterial color={enabled ? '#f0f8ff' : '#59616c'} toneMapped={false} />
+    </mesh>
+    <primitive object={target} />
+    {enabled && <>
+      <spotLight position={[0, -0.12, 0]} target={target} color="#e9f4ff" angle={1.08} penumbra={1} intensity={low ? 28 : 42} distance={16} decay={2} />
+      {!low && <pointLight position={[0, -0.15, 0]} color="#e9f4ff" intensity={5} distance={4} decay={2} />}
+    </>}
+  </group>;
+}
+
+function CornerLeds({ lights, ceilingLights, low }: { lights: FieldLights; ceilingLights: CeilingLights; low: boolean }) {
+  const metal = useMemo(fixtureTexture, []);
+  const wash = useMemo(softBeamTexture, []);
+  useEffect(() => () => { metal.dispose(); wash.dispose(); }, [metal, wash]);
+  return <>
+    {CORNERS.map(([x, y], index) => <GroundLed key={`floor-${index}`} x={x} y={y} light={lights[index]} low={low} metal={metal} wash={wash} />)}
+    {CORNERS.map(([x, y], index) => <CeilingLed key={`ceiling-${index}`} x={x} y={y} enabled={ceilingLights[index]} low={low} metal={metal} />)}
+  </>;
+}
+
+function WalkCameraRig({ poseRef, inputRef, onWalk, scene, enabled }: { poseRef: React.RefObject<WalkPose>; inputRef: React.RefObject<WalkInput>; onWalk?: (pose: WalkPose) => void; scene?: SceneSpec; enabled: boolean }) {
+  const { camera, gl } = useThree();
+  const keys = useRef(new Set<string>());
+  const lastReport = useRef(0);
+  const dragLook = useRef<{ id: number; x: number; y: number } | null>(null);
+  const padCenter = useMemo(() => scene ? baseAt(scene) : { x: 0, y: 0 }, [scene]);
+  const obstacles = useMemo(() => scene?.pattern !== 'standard' && scene
+    ? scene.objects.flatMap(o => {
+        if (o.type === 'hoop') {
+          const half = (o.size ?? 1) / 2;
+          const angle = ((o.yaw ?? 0) * Math.PI) / 180;
+          const sideX = Math.cos(angle) * half, sideY = -Math.sin(angle) * half;
+          return [[o.x - sideX, o.y - sideY, 0.24], [o.x + sideX, o.y + sideY, 0.24]];
+        }
+        return ['platform', 'balloon', 'target'].includes(o.type) ? [[o.x, o.y, o.type === 'platform' ? 0.58 : 0.28]] : [];
+      })
+    : [...FIELD.platform.positions.map(([x, y]) => [x, y, 0.58]), ...[-0.5, 0.5].flatMap(x => [-0.5, 0.5].map(y => [x, y, 0.18]))], [scene]);
+  useEffect(() => {
+    const down = (event: KeyboardEvent) => {
+      if (!enabled) return;
+      if (event.target instanceof HTMLElement && event.target.closest('input,textarea,[contenteditable="true"]')) return;
+      if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) { keys.current.add(event.code); event.preventDefault(); }
+    };
+    const up = (event: KeyboardEvent) => keys.current.delete(event.code);
+    const look = (dx: number, dy: number) => {
+      poseRef.current.yaw += dx * 0.12;
+      poseRef.current.pitch = THREE.MathUtils.clamp(poseRef.current.pitch - dy * 0.12, -75, 75);
+    };
+    const move = (event: MouseEvent) => {
+      if (document.pointerLockElement !== gl.domElement) return;
+      look(event.movementX, event.movementY);
+    };
+    const lock = (event: PointerEvent) => {
+      if (!enabled || event.pointerType !== 'mouse') return;
+      dragLook.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      try { void gl.domElement.requestPointerLock().catch(() => { /* use drag-to-look instead */ }); }
+      catch { /* use drag-to-look instead */ }
+    };
+    const drag = (event: PointerEvent) => {
+      const previous = dragLook.current;
+      if (!enabled || !previous || previous.id !== event.pointerId || document.pointerLockElement === gl.domElement || !event.buttons) return;
+      look(event.clientX - previous.x, event.clientY - previous.y);
+      previous.x = event.clientX; previous.y = event.clientY;
+    };
+    const endDrag = (event: PointerEvent) => { if (dragLook.current?.id === event.pointerId) dragLook.current = null; };
+    gl.domElement.addEventListener('pointerdown', lock);
+    gl.domElement.addEventListener('pointermove', drag);
+    gl.domElement.addEventListener('pointerup', endDrag);
+    gl.domElement.addEventListener('pointercancel', endDrag);
+    window.addEventListener('keydown', down); window.addEventListener('keyup', up); window.addEventListener('mousemove', move);
+    return () => { keys.current.clear(); dragLook.current = null; gl.domElement.removeEventListener('pointerdown', lock); gl.domElement.removeEventListener('pointermove', drag); gl.domElement.removeEventListener('pointerup', endDrag); gl.domElement.removeEventListener('pointercancel', endDrag); window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('mousemove', move); if (document.pointerLockElement === gl.domElement) document.exitPointerLock(); };
+  }, [gl, poseRef, enabled]);
+  useFrame((state, delta) => {
+    const pose = poseRef.current, input = inputRef.current;
+    const dt = Math.min(delta, 0.05);
+    pose.yaw += input.lookX; pose.pitch = THREE.MathUtils.clamp(pose.pitch + input.lookY, -75, 75);
+    input.lookX = 0; input.lookY = 0;
+    const forward = enabled ? Math.max(-1, Math.min(1, input.forward + Number(keys.current.has('KeyW')) - Number(keys.current.has('KeyS')))) : 0;
+    const right = enabled ? Math.max(-1, Math.min(1, input.right + Number(keys.current.has('KeyD')) - Number(keys.current.has('KeyA')))) : 0;
+    const radians = pose.yaw * Math.PI / 180;
+    const speed = 2.1 * dt / Math.max(1, Math.hypot(forward, right));
+    const nextX = THREE.MathUtils.clamp(pose.x + (Math.sin(radians) * forward + Math.cos(radians) * right) * speed, -4.72, 4.72);
+    const nextY = THREE.MathUtils.clamp(pose.y + (Math.cos(radians) * forward - Math.sin(radians) * right) * speed, -4.72, 4.72);
+    const blocked = obstacles.some(([x, y, radius]) => Math.hypot(nextX - x, nextY - y) < radius)
+      || !!padCenter && Math.abs(nextX - padCenter.x) < FIELD.takeoff.size / 2 + 0.18 && Math.abs(nextY - padCenter.y) < FIELD.takeoff.size / 2 + 0.18;
+    if (!blocked) { pose.x = nextX; pose.y = nextY; }
+    camera.position.set(pose.x, 1.7, -pose.y);
+    camera.rotation.order = 'YXZ';
+    camera.rotation.set(pose.pitch * Math.PI / 180, -radians, 0);
+    if (state.clock.elapsedTime - lastReport.current >= 0.15) { lastReport.current = state.clock.elapsedTime; onWalk?.({ ...pose }); }
+  });
+  return null;
+}
+
+function PlacementMarkers({ center, target, drone, aligned, onRotate, scene }: { center: { x: number; y: number }; target: { x: number; y: number }; drone: DroneState; aligned: boolean; onRotate: (yaw: number) => void; scene?: SceneSpec }) {
+  const turning = useRef(false);
+  const base = scene ? baseAt(scene) : { x: 0, y: 0 };
+  const surfaceY = base && Math.abs(base.x - center.x) <= 0.75 && Math.abs(base.y - center.y) <= 0.75 ? 0.235 : 0.035;
+  const targetY = base && Math.abs(base.x - target.x) <= 0.75 && Math.abs(base.y - target.y) <= 0.75 ? 0.235 : 0.035;
+  const turn = (event: ThreeEvent<PointerEvent>) => {
+    if (!turning.current) return;
+    event.stopPropagation();
+    const point = event.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+    if (!point) return;
+    const dx = point.x - drone.x, dy = -point.z - drone.y;
+    if (Math.hypot(dx, dy) < 0.12) return;
+    onRotate((Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360);
+  };
+  return <>
+    <group position={[center.x, surfaceY, -center.y]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}><planeGeometry args={[1.26, 1.26]} /><meshBasicMaterial color="#ffffff" transparent opacity={0.09} depthWrite={false} /></mesh>
+      {[-0.63, 0.63].map(side => <group key={side}>
+        <mesh position={[side, 0, 0]}><boxGeometry args={[0.018, 0.008, 1.26]} /><meshBasicMaterial color="#ffffff" /></mesh>
+        <mesh position={[0, 0, side]}><boxGeometry args={[1.26, 0.008, 0.018]} /><meshBasicMaterial color="#ffffff" /></mesh>
+      </group>)}
+    </group>
+    <mesh position={[target.x, targetY + 0.015, -target.y]} rotation={[-Math.PI / 2, 0, 0]}>
+      <circleGeometry args={[0.17, 32]} />
+      <meshBasicMaterial color={aligned ? '#4aa3ff' : '#ffffff'} depthWrite={false} />
+    </mesh>
+    <mesh position={[drone.x, drone.alt + 0.11, -drone.y]} rotation={[-Math.PI / 2, 0, 0]}
+      onPointerDown={event => { event.stopPropagation(); (event.target as Element).setPointerCapture?.(event.pointerId); turning.current = true; turn(event); }}
+      onPointerMove={turn}
+      onPointerUp={event => { event.stopPropagation(); turning.current = false; }}
+      onPointerCancel={() => { turning.current = false; }}>
+      <ringGeometry args={[0.30, 0.37, 48]} />
+      <meshBasicMaterial color="#4aa3ff" side={THREE.DoubleSide} transparent opacity={0.85} depthWrite={false} />
+    </mesh>
+  </>;
+}
+
+function WalkerMarker({ poseRef, visible }: { poseRef: React.RefObject<WalkPose>; visible: boolean }) {
+  const group = useRef<THREE.Group>(null);
+  useFrame(() => { if (group.current) { group.current.position.set(poseRef.current.x, 0, -poseRef.current.y); group.current.rotation.y = -poseRef.current.yaw * Math.PI / 180; } });
+  return <group ref={group} visible={visible}>
+    <mesh position={[0, 0.85, 0]}><capsuleGeometry args={[0.18, 1.25, 6, 10]} /><meshStandardMaterial color="#c8d0d9" transparent opacity={0.65} /></mesh>
+    <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}><circleGeometry args={[0.34, 24]} /><meshBasicMaterial color="#8ca1b5" transparent opacity={0.3} /></mesh>
+  </group>;
 }
 
 export function Takeoff({ color, hoop = true }: { color: 'green' | 'red'; hoop?: boolean }) {
@@ -354,6 +584,55 @@ export function DroneModel({ low, propsRef }: { low: boolean; propsRef?: React.M
   return <primitive object={model} scale={0.16} />;
 }
 
+function HandDrone({ low }: { low: boolean }) {
+  const { camera } = useThree();
+  const group = useRef<THREE.Group>(null);
+  useFrame(() => {
+    if (!group.current) return;
+    group.current.position.copy(camera.localToWorld(new THREE.Vector3(0.15, -0.22, -0.9)));
+    group.current.quaternion.copy(camera.quaternion);
+  });
+  return <group ref={group}>
+    <group rotation={[0.45, -0.4, -0.2]} scale={0.6}><DroneModel low={low} /></group>
+  </group>;
+}
+
+/** ยกจากพื้น จับบริเวณแบตเตอรี่ แล้วพลิกทั้งตัวโดรนในมือ */
+function RescueDrone({ low, start, walker, view }: { low: boolean; start: LivePose; walker: React.RefObject<WalkPose>; view: ViewPreset }) {
+  const { camera } = useThree();
+  const carrier = useRef<THREE.Group>(null);
+  const grip = useRef<THREE.Group>(null);
+  const began = useRef<number | null>(null);
+  const origin = useMemo(() => new THREE.Vector3(start.x, start.alt, -start.y), [start]);
+  const yaw = useMemo(() => new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI - start.yaw * Math.PI / 180, 0)), [start.yaw]);
+  const target = useMemo(() => new THREE.Vector3(), []);
+  useFrame(({ clock }) => {
+    if (!carrier.current || !grip.current) return;
+    began.current ??= clock.elapsedTime;
+    const elapsed = clock.elapsedTime - began.current;
+    const lift = THREE.MathUtils.smoothstep(elapsed, 0, 0.62);
+    const flip = THREE.MathUtils.smoothstep(elapsed, 0.25, 0.92);
+    if (view === 'walk') camera.localToWorld(target.set(0.19, -0.2, -0.82));
+    else target.set(walker.current.x + 0.18, 1.28, -walker.current.y - 0.12);
+    carrier.current.position.copy(origin).lerp(target, lift);
+    carrier.current.quaternion.copy(yaw).slerp(view === 'walk' ? camera.quaternion : yaw, lift);
+    grip.current.rotation.x = Math.PI * flip;
+  });
+  return <group ref={carrier} position={origin} quaternion={yaw}>
+    <group ref={grip} scale={1.4}>
+      <DroneModel low={low} />
+      <mesh position={[0.14, -0.055, 0.035]} rotation={[0, 0, -0.5]}>
+        <capsuleGeometry args={[0.028, 0.18, 4, 8]} />
+        <meshStandardMaterial color="#8794a2" roughness={0.85} />
+      </mesh>
+      {[-1, 1].map(side => <mesh key={side} position={[0.055, 0.045, side * 0.052]} rotation={[0, 0, Math.PI / 2]}>
+        <capsuleGeometry args={[0.012, 0.07, 4, 8]} />
+        <meshStandardMaterial color="#a9b4bf" roughness={0.82} />
+      </mesh>)}
+    </group>
+  </group>;
+}
+
 /** ความสูงพื้นผิวใต้โดรน: บนแท่น Takeoff/แท่นวงกลมสูง 20 ซม. นอกนั้นคือพื้นสนาม */
 function groundY(x: number, y: number, platforms: boolean) {
   if (Math.abs(x) <= FIELD.takeoff.size / 2 && Math.abs(y) <= FIELD.takeoff.size / 2) return FIELD.takeoff.height + 0.004;
@@ -361,9 +640,10 @@ function groundY(x: number, y: number, platforms: boolean) {
   return 0.016;
 }
 
-function Drone({ drone, onDrone, setDragging, low, live, poseRef, platforms, loaded, dartInventory, needle }: { drone: DroneState; onDrone: Props['onDrone']; setDragging: (v: boolean) => void; low: boolean; live: boolean; poseRef?: React.RefObject<LivePose>; platforms: boolean; loaded: { L: number; R: number }; dartInventory: { front: number; back: number }; needle: boolean }) {
+function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, poseRef, platforms, loaded, dartInventory, needle }: { drone: DroneState; onDrone: Props['onDrone']; onRotate?: (yaw: number) => void; setDragging: (v: boolean) => void; low: boolean; live: boolean; placement?: boolean; poseRef?: React.RefObject<LivePose>; platforms: boolean; loaded: { L: number; R: number }; dartInventory: { front: number; back: number }; needle: boolean }) {
   const dragging = useRef(false);
-  const lim = FIELD.size / 2 - 0.15;
+  const rotating = useRef(false);
+  const lim = placement ? 5.8 : FIELD.size / 2 - 0.15;
   const clamp = (v: number) => Math.max(-lim, Math.min(lim, v));
   const yawGroup = useRef<THREE.Group>(null);
   const tiltGroup = useRef<THREE.Group>(null);
@@ -433,13 +713,26 @@ function Drone({ drone, onDrone, setDragging, low, live, poseRef, platforms, loa
           e.stopPropagation();
           (e.target as Element).setPointerCapture?.(e.pointerId);
           dragging.current = true;
+          rotating.current = !!placement && e.button === 2;
           setDragging(true);
+        }}
+        onPointerMove={(e: ThreeEvent<PointerEvent>) => {
+          if (!placement || !dragging.current) return;
+          e.stopPropagation();
+          const point = e.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+          if (!point) return;
+          if (rotating.current) {
+            const dx = point.x - drone.x, dy = -point.z - drone.y;
+            if (Math.hypot(dx, dy) >= 0.12) onRotate?.((Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360);
+          } else onDrone({ x: clamp(point.x), y: clamp(-point.z) });
         }}
         onPointerUp={(e: ThreeEvent<PointerEvent>) => {
           e.stopPropagation();
           dragging.current = false;
+          rotating.current = false;
           setDragging(false);
         }}
+        onPointerCancel={() => { dragging.current = false; rotating.current = false; setDragging(false); }}
       >
         {/* พื้นที่จับให้ใหญ่ขึ้นบนจอสัมผัส */}
         <mesh visible={false}>
@@ -454,7 +747,7 @@ function Drone({ drone, onDrone, setDragging, low, live, poseRef, platforms, loa
         </group>
       </group>
       {/* ระนาบรับการลาก/แตะ ครอบทั้งสนามที่ระดับพื้น */}
-      {!live && (
+      {!live && !placement && (
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}
           position={[0, 0.02, 0]}
@@ -468,7 +761,7 @@ function Drone({ drone, onDrone, setDragging, low, live, poseRef, platforms, loa
             onDrone({ x: clamp(e.point.x), y: clamp(-e.point.z) });
           }}
         >
-          <planeGeometry args={[FIELD.size, FIELD.size]} />
+          <planeGeometry args={[placement ? 12 : FIELD.size, placement ? 12 : FIELD.size]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} />
         </mesh>
       )}
@@ -692,9 +985,9 @@ function DartModel() {
 }
 
 /** กล้อง: ตั้งตำแหน่งตามมุมที่เลือก แล้วให้ผู้ใช้หมุน/ซูมต่อได้ */
-function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { view: ViewPreset; topH: number; drone: DroneState; dragging: boolean; live: boolean; poseRef?: React.RefObject<LivePose>; highlight?: ShotHighlight }) {
+function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight, placementCenter }: { view: ViewPreset; topH: number; drone: DroneState; dragging: boolean; live: boolean; poseRef?: React.RefObject<LivePose>; highlight?: ShotHighlight; placementCenter?: { x: number; y: number } }) {
   const controls = useRef<React.ComponentRef<typeof OrbitControls>>(null);
-  const { camera, invalidate } = useThree();
+  const { camera, invalidate, size } = useThree();
   const droneRef = useRef(drone);
   const cinematic = useRef<{ view: ViewPreset; position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   droneRef.current = drone;
@@ -703,10 +996,15 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { 
     const c = controls.current;
     if (!c) return;
     const cam = camera as THREE.PerspectiveCamera;
-    if (view === 'top') { cam.position.set(0, topH, 0.01); c.target.set(0, 0, 0); }
+    if (placementCenter) {
+      const height = Math.max(3.3, 2.5 / (2 * Math.tan((cam.fov * Math.PI) / 360) * cam.aspect));
+      cam.position.set(placementCenter.x, height, -placementCenter.y + 0.001);
+      c.target.set(placementCenter.x, 0, -placementCenter.y);
+    }
+    else if (view === 'top') { cam.position.set(0, topH, 0.01); c.target.set(0, 0, 0); }
     c.update();
     invalidate();
-  }, [view, topH, camera, invalidate]);
+  }, [view, topH, placementCenter?.x, placementCenter?.y, camera, invalidate, size.width, size.height]);
 
   // มุม "ตามโดรน" (ขณะแก้ตำแหน่งเอง)
   useEffect(() => {
@@ -800,7 +1098,7 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { 
     <OrbitControls
       ref={controls}
       makeDefault
-      enabled={!dragging && !highlight}
+      enabled={!placementCenter && !dragging && !highlight}
       enableDamping={false}
       minDistance={0.8}
       maxDistance={22}
@@ -810,44 +1108,53 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { 
   );
 }
 
-export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo }: Props) {
+export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, ceilingLights, walkPoseRef, walkInputRef, walkControlsEnabled = true, onWalk, placement, carryingDrone = false, rescuePose = null }: Props) {
   const [dragging, setDragging] = useState(false);
   // โจทย์ฝึกบนกริด/พื้นว่าง: วาดวัตถุจาก scene แทนของตามกติกา และให้โดรนมีเข็ม/ลูกดอกตามวัตถุที่วางไว้
   const custom = !!scene && scene.pattern !== 'standard';
   const has = (t: string) => !!scene && scene.objects.some((o) => o.type === t);
   const hasBalloons = custom ? has('balloon') : event.field.balloons;
   const hasTargets = custom ? has('target') : event.field.targets;
+  const fieldLit = !!(lights?.some(light => light.enabled) || ceilingLights?.some(enabled => enabled));
   return (
     <Canvas
-      frameloop={live ? 'always' : 'demand'}
+      frameloop={live || view === 'walk' ? 'always' : 'demand'}
       dpr={low ? 1 : [1, 1.5]}
       camera={{ position: [0, 15.5, 0.01], fov: 42, near: 0.05, far: 80 }}
       gl={{ antialias: !low, powerPreference: low ? 'low-power' : 'high-performance', stencil: false }}
       style={{ touchAction: 'none' }}
+      onContextMenu={placement ? event => event.preventDefault() : undefined}
       aria-label="สนามแข่งขัน 3 มิติ"
     >
       <color attach="background" args={['#0b0d12']} />
-      <ambientLight intensity={1.15} />
-      <hemisphereLight args={['#dbe7ff', '#202530', 0.9]} />
-      <directionalLight position={[5, 9, 6]} intensity={2.2} />
+      <ambientLight intensity={fieldLit ? 0.8 : 1.15} />
+      <hemisphereLight args={['#dbe7ff', '#202530', fieldLit ? 0.65 : 0.9]} />
+      <directionalLight position={[5, 9, 6]} intensity={fieldLit ? 1.65 : 2.2} />
       <Surround />
       {scene && scene.pattern !== 'standard' ? <PlainMat pattern={scene.pattern} low={low} /> : <Mat low={low} />}
       <Surroundings />
-      {scene && <SceneLayer3D spec={scene} popped={marks.popped} playheadRef={playheadRef} />}
+      {lights && <CornerLeds lights={lights} ceilingLights={ceilingLights ?? [false, false, false, false]} low={low} />}
+      {scene && !placement && <SceneLayer3D spec={scene} popped={marks.popped} playheadRef={playheadRef} />}
       {(() => {
         const pb = custom ? baseAt(scene) : { x: 0, y: 0 };
-        return pb ? <group position={[pb.x, 0, -pb.y]}><Takeoff color={event.field.takeoffColor} hoop={!custom} /></group> : null;
+        return pb ? <group position={[pb.x, 0, -pb.y]}><Takeoff color={event.field.takeoffColor} hoop={!custom && !placement} /></group> : null;
       })()}
-      {!custom && event.field.platforms && <Platforms />}
-      {!custom && event.field.balloons && <Balloons popped={marks.popped} />}
-      {!custom && event.field.targets && (<><Targets /><ShootZones drone={drone} /></>)}
-      <Drone drone={drone} onDrone={onDrone} setDragging={setDragging} low={low} live={live} poseRef={poseRef} platforms={event.field.platforms && !custom} loaded={loaded} dartInventory={hasTargets ? dartInventory : { front: 0, back: 0 }} needle={hasBalloons} />
+      {!placement && !custom && event.field.platforms && <Platforms />}
+      {!placement && !custom && event.field.balloons && <Balloons popped={marks.popped} />}
+      {!placement && !custom && event.field.targets && (<><Targets /><ShootZones drone={drone} /></>)}
+      {!carryingDrone && !rescuePose && <Drone drone={drone} onDrone={onDrone} onRotate={placement?.onRotate} setDragging={setDragging} low={low} live={live && !placement} placement={!!placement} poseRef={poseRef} platforms={event.field.platforms && !custom} loaded={loaded} dartInventory={hasTargets ? dartInventory : { front: 0, back: 0 }} needle={hasBalloons} />}
+      {rescuePose && walkPoseRef && <RescueDrone low={low} start={rescuePose} walker={walkPoseRef} view={view} />}
+      {carryingDrone && view === 'walk' && <HandDrone low={low} />}
+      {placement && <PlacementMarkers center={placement.center} target={placement.target} drone={drone} aligned={placement.aligned} onRotate={placement.onRotate} scene={scene} />}
+      {walkPoseRef && <WalkerMarker poseRef={walkPoseRef} visible={view !== 'walk' && !placement} />}
       {showDimensions && <FieldDimensions3D scene={scene} fromId={dimensionFrom} toId={dimensionTo} />}
       {measurements.some((item) => item.points.length > 0) && <FieldMeasurements3D measurements={measurements} />}
-      <MarksLayer marks={marks} playheadRef={playheadRef} />
+      {!placement && <MarksLayer marks={marks} playheadRef={playheadRef} />}
       {live && <HoldPulse k={holdKey} poseRef={poseRef} />}
       {shot && <DartFlight key={shot.id ?? 0} shot={shot} />}
-      <CameraRig view={view} topH={custom && scene!.pattern === 'grid5' ? 8.4 : 15.5} drone={drone} dragging={dragging} live={live} poseRef={poseRef} highlight={highlight} />
+      {view === 'walk' && walkPoseRef && walkInputRef
+        ? <WalkCameraRig poseRef={walkPoseRef} inputRef={walkInputRef} onWalk={onWalk} scene={scene} enabled={walkControlsEnabled} />
+        : <CameraRig view={view} topH={custom && scene!.pattern === 'grid5' ? 8.4 : 15.5} drone={drone} dragging={dragging} live={live} poseRef={poseRef} highlight={highlight} placementCenter={placement?.center} />}
     </Canvas>
   );
 }

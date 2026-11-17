@@ -2,20 +2,26 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { FieldLegend, FieldSet } from '@/components/ui/field';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { NO_MARKS, type LivePose, type Marks, type ShotHighlight, type ViewPreset } from '@/field/Field3D';
+import { NO_MARKS, type LivePose, type Marks, type ShotHighlight, type ViewPreset, type WalkInput, type WalkPose } from '@/field/Field3D';
 import { FieldPlan2D } from '@/field/FieldPlan2D';
 import type { RuleEvent } from '@/rules/types';
 import { detectQuality } from '@/scene/quality';
-import { Layers, Maximize2, Minimize2, Pause, Play, RotateCcw, Ruler, Video, Volume2, VolumeX } from 'lucide-react';
+import { CircleHelp, Footprints, Keyboard, Layers, Lightbulb, Maximize2, Minimize2, Pause, Play, RotateCcw, Ruler, Video, Volume2, VolumeX } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildConfig, toField } from './config';
 import { baseAt, startOf } from '@/lib/scenarios';
 import type { FlightConfig } from './engine';
 import type { SceneSpec } from '@/field/SceneObjects';
-import { frameAt, parse, simulate, type Frame, type Result, type SimEvent } from './engine';
+import { frameAt, parse, simulate, TIME_LIMIT_MS, type Frame, type Result, type SimEvent } from './engine';
+import { CEILING_LIGHTS_ON, LIGHTS_OFF, LIGHTS_ON, type CeilingLights, type FieldLights, type FlightAction, type FlightDifficulty, type FlightEnvironment, type ManualStick } from './environment';
+import { TouchStick, TouchWalkControls } from './TouchControls';
+import { WalkGuide } from './WalkGuide';
+import { forecastLaunch, recommendLaunch, type LaunchPose } from './placement';
 import { FlightAudio } from './sound';
 import { FieldMeasure } from './FieldMeasure';
 import type { Measurement } from './measurements';
@@ -30,9 +36,16 @@ const Field3D = dynamic(() => import('@/field/Field3D'), {
 const LEG = 0.0702;
 const PAD = 0.2;
 const REST = PAD + LEG;
+const PICKUP_DISTANCE_M = 1.5;
+const DIFFICULTY_OPTIONS = [
+  { id: 'easy', label: 'ง่าย', tip: 'บินตรงตามระยะที่สั่ง ไม่มีความคลาดสะสมและไม่ไหลต่อหลังหยุด' },
+  { id: 'medium', label: 'ปานกลาง', tip: 'ต้องเผื่อระยะและความสูงเล็กน้อย มีช่วงเร่งและเบรกให้แก้โค้ดเพิ่มจากระดับง่าย' },
+  { id: 'hard', label: 'ยาก', tip: 'โดรนเอียงและลอยไม่นิ่ง ระยะไหลเกิน ความสูงคลาด แสงกับเงามีผลต่อ optical flow' },
+] as const;
 const VIEWS: Array<{ id: ViewPreset; label: string; Icon: typeof Video }> = [
   { id: 'chase', label: 'ตามโดรน', Icon: Video },
   { id: 'top', label: 'มองจากบน', Icon: Layers },
+  { id: 'walk', label: 'เดินในสนาม', Icon: Footprints },
 ];
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const fmtTime = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}.${Math.floor((ms % 1000) / 100)}`;
@@ -85,6 +98,26 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   const [result, setResult] = useState<Result | null>(null);
   const [plannedResult, setPlannedResult] = useState<Result | null>(null);
   const [flightSeed, setFlightSeed] = useState(0);
+  const [difficulty, setDifficulty] = useState<FlightDifficulty>('medium');
+  const [lights, setLights] = useState<FieldLights>(LIGHTS_OFF);
+  const [ceilingLights, setCeilingLights] = useState<CeilingLights>(CEILING_LIGHTS_ON);
+  const [launch, setLaunch] = useState<{ x: number; y: number; yaw: number } | null>(null);
+  const [walkPosition, setWalkPosition] = useState({ x: 0, y: -4.45 });
+  const [remoteManual, setRemoteManual] = useState(false);
+  const [remoteOpen, setRemoteOpen] = useState(false);
+  const [lightsOpen, setLightsOpen] = useState(false);
+  const [rescued, setRescued] = useState(false);
+  const [rescuePose, setRescuePose] = useState<LivePose | null>(null);
+  const [flipComplete, setFlipComplete] = useState(false);
+  const [emergencyRequested, setEmergencyRequested] = useState(false);
+  const [emergencyLanded, setEmergencyLanded] = useState(false);
+  const [needsPlacementAfterRecovery, setNeedsPlacementAfterRecovery] = useState(false);
+  const [rescueStatus, setRescueStatus] = useState('');
+  const [hazard, setHazard] = useState('');
+  const [scoreCarry, setScoreCarry] = useState(0);
+  const [timeCarry, setTimeCarry] = useState(0);
+  const [standby, setStandby] = useState(false);
+  const [replaying, setReplaying] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [now, setNow] = useState(0);
   const [done, setDone] = useState(false);
@@ -108,6 +141,12 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   const [supports3d, setSupports3d] = useState(false);
   const [mode, setMode] = useState<'pending' | '2d' | '3d'>('pending');
   const [expanded, setExpanded] = useState(false);
+  const [walkGuideOpen, setWalkGuideOpen] = useState(false);
+  const [placing, setPlacing] = useState(false);
+  const [draftLaunch, setDraftLaunch] = useState<LaunchPose | null>(null);
+  const [placementSeed, setPlacementSeed] = useState(0);
+  const [placementKey, setPlacementKey] = useState<number | null>(null);
+  const [keyPickerOpen, setKeyPickerOpen] = useState(false);
   const [low, setLow] = useState(true);
   const [pose2d, setPose2d] = useState(HOME);
   const [holdKey, setHoldKey] = useState(0);
@@ -119,6 +158,19 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   const commandFocusRef = useRef<{ key: number; line: number } | null>(null);
 
   const poseRef = useRef<LivePose>({ ...IDLE });
+  const beforePlacementRef = useRef<LivePose>({ ...IDLE });
+  const placementReturnViewRef = useRef<ViewPreset>('walk');
+  const autoRecommendationKeyRef = useRef<number | null>(null);
+  const walkPoseRef = useRef<WalkPose>({ x: 0, y: -4.45, yaw: 0, pitch: -14 });
+  const walkInputRef = useRef<WalkInput>({ forward: 0, right: 0, lookX: 0, lookY: 0 });
+  const lastWalkRef = useRef({ x: 0, y: -4.45 });
+  const stickRef = useRef<ManualStick>({ forward: 0, right: 0, up: 0, yaw: 0 });
+  const actionsRef = useRef<FlightAction[]>([]);
+  const completedRef = useRef<NonNullable<FlightEnvironment['completed']>>({ balls: [], balloons: [], platforms: [], boards: [], visits: [] });
+  const actionHistoryRef = useRef<FlightAction[][]>([]);
+  const carryMarksRef = useRef<Marks>(NO_MARKS);
+  const lastRecomputeRef = useRef(0);
+  const replayRef = useRef(false);
   const playheadRef = useRef(0);
   const shotSequence = useRef(0);
   const popSequence = useRef(0);
@@ -128,12 +180,46 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const later = (fn: () => void, ms: number) => { timers.current.push(setTimeout(fn, ms)); };
   const resultRef = useRef<Result | null>(null);
+  const finishedResultRef = useRef<Result | null>(null);
   const seedRef = useRef(0);
   const replayPayloadRef = useRef<{ L: number; R: number } | null>(null);
   const remainingPayloadRef = useRef<{ L: number; R: number } | null>(null);
   const speedRef = useRef(1);
   speedRef.current = speed;
   const { keyBindings, errors: codeErrors } = useMemo(() => parse(code, cfg.style ?? 'any'), [code, cfg.style]);
+  const environmentOf = useCallback((actions: FlightAction[] = actionsRef.current): FlightEnvironment => ({ difficulty, lights, ceilingLights, actions, launch: launch ?? undefined, timeLimitMs: TIME_LIMIT_MS - timeCarry, completed: completedRef.current }), [difficulty, lights, ceilingLights, launch, timeCarry]);
+  const groundAltitudeAt = useCallback((x: number, y: number) => {
+    const pad = cfg.padAt === undefined ? cfg.start : cfg.padAt;
+    const onPad = !!pad && Math.abs(x - pad.x) <= cfg.pad.half && Math.abs(y - pad.y) <= cfg.pad.half;
+    const onPlatform = cfg.platforms.some(platform => Math.hypot(x - platform.x, y - platform.y) <= platform.r);
+    return onPad || onPlatform ? REST : LEG;
+  }, [cfg]);
+  const openWalkGuide = useCallback(() => {
+    if (document.pointerLockElement) document.exitPointerLock();
+    setKeyPickerOpen(false);
+    setLightsOpen(false);
+    walkInputRef.current = { forward: 0, right: 0, lookX: 0, lookY: 0 };
+    setWalkGuideOpen(true);
+  }, []);
+  const closeWalkGuide = useCallback(() => {
+    setWalkGuideOpen(false);
+  }, []);
+  const cancelPlacement = useCallback(() => {
+    setPlacing(false);
+    setDraftLaunch(null);
+    setRescueStatus('');
+    poseRef.current = { ...beforePlacementRef.current };
+    setPose2d({ x: poseRef.current.x, y: poseRef.current.y, yaw: poseRef.current.yaw, alt: poseRef.current.alt });
+    setView(placementReturnViewRef.current);
+  }, []);
+  const chooseView = useCallback((next: ViewPreset) => {
+    if (document.pointerLockElement) document.exitPointerLock();
+    setKeyPickerOpen(false);
+    setView(next);
+    if (next !== 'walk' || !fullHeightField) return;
+    setExpanded(true);
+    if (view !== 'walk') openWalkGuide();
+  }, [fullHeightField, openWalkGuide, view]);
 
   useEffect(() => {
     const q = detectQuality();
@@ -153,17 +239,28 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     if (previewKey !== undefined) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (walkGuideOpen) { closeWalkGuide(); return; }
+        if (lightsOpen) { setLightsOpen(false); return; }
+        if (placing) { cancelPlacement(); return; }
+        if (keyPickerOpen) { setKeyPickerOpen(false); return; }
+        if (document.pointerLockElement) { document.exitPointerLock(); return; }
         setExpanded(false);
         return;
       }
+      if (event.target instanceof HTMLElement && event.target.closest('input,textarea,[contenteditable="true"]')) return;
+      if (event.code === 'KeyH' && !event.ctrlKey && !event.metaKey && fullHeightField && mode === '3d') {
+        event.preventDefault(); openWalkGuide(); return;
+      }
       if (event.code === 'KeyX' && event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey) {
         event.preventDefault();
+        if (document.pointerLockElement) document.exitPointerLock();
+        setLightsOpen(false);
         setExpanded((current) => !current);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [previewKey]);
+  }, [previewKey, walkGuideOpen, lightsOpen, placing, keyPickerOpen, cancelPlacement, closeWalkGuide, fullHeightField, mode, openWalkGuide]);
 
   const snd = () => (audio.current ??= new FlightAudio());
 
@@ -173,8 +270,10 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     timers.current.forEach(clearTimeout); timers.current = [];
     audio.current?.stopMotor();
     resultRef.current = null;
+    finishedResultRef.current = null;
     Object.assign(run.current, { t: 0, fired: 0, count: undefined, spin: 0, speed: 0, airborne: false });
     poseRef.current = { ...IDLE };
+    beforePlacementRef.current = { ...IDLE };
     playheadRef.current = 0;
     shotSequence.current = 0;
     popSequence.current = 0;
@@ -184,7 +283,30 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     commandFocusRef.current = null;
     onCommandProgress?.(null);
     onResult?.(null);
+    actionsRef.current = [];
+    completedRef.current = { balls: [], balloons: [], platforms: [], boards: [], visits: [] };
+    actionHistoryRef.current = [];
+    carryMarksRef.current = NO_MARKS;
+    stickRef.current = { forward: 0, right: 0, up: 0, yaw: 0 };
+    walkPoseRef.current = { x: 0, y: -4.45, yaw: 0, pitch: -14 };
+    walkInputRef.current = { forward: 0, right: 0, lookX: 0, lookY: 0 };
+    lastWalkRef.current = { x: 0, y: -4.45 };
+    setWalkPosition(lastWalkRef.current);
+    replayRef.current = false;
+    setLaunch(null); setRemoteManual(false); setRemoteOpen(false); setLightsOpen(false); setRescued(false); setRescuePose(null); setFlipComplete(false); setEmergencyRequested(false); setEmergencyLanded(false); setNeedsPlacementAfterRecovery(false); setRescueStatus(''); setHazard(''); setScoreCarry(0); setTimeCarry(0); setStandby(false); setReplaying(false); setPlacing(false); setDraftLaunch(null); setKeyPickerOpen(false);
   }, [onCommandProgress, onResult]);
+  useEffect(() => {
+    if (!fullHeightField || previewKey !== undefined || walkGuideOpen) return;
+    const onRestart = (event: KeyboardEvent) => {
+      if (event.code !== 'KeyR' || event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
+      if (event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
+      if (!resultRef.current && !placing && !launch && !standby) return;
+      event.preventDefault();
+      reset();
+    };
+    window.addEventListener('keydown', onRestart);
+    return () => window.removeEventListener('keydown', onRestart);
+  }, [fullHeightField, previewKey, walkGuideOpen, placing, launch, standby, reset]);
 
   // เปลี่ยนประเภทหรือโค้ดแล้วผลเก่าไม่ใช้ต่อ
   useEffect(() => {
@@ -196,6 +318,12 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
 
   // สะท้อนจำนวนสัมภาระที่เตรียมจากแผงด้านข้าง โดยไม่ล้างผลเที่ยวบินที่เพิ่งจบ
   useEffect(() => { setLoaded({ L: payloadL, R: payloadR }); }, [payloadL, payloadR]);
+
+  useEffect(() => {
+    if (!standby) return;
+    const interval = setInterval(() => setTimeCarry(value => Math.min(TIME_LIMIT_MS, value + 100)), 100);
+    return () => clearInterval(interval);
+  }, [standby]);
 
   const fire = useCallback((e: SimEvent, r: Result) => {
     const a = audio.current;
@@ -292,11 +420,128 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   }, [cfg.platforms]);
 
   useEffect(() => {
-    if (done && result) {
+    if (done && result && finishedResultRef.current !== result) {
+      finishedResultRef.current = result;
       remainingPayloadRef.current = result.payloadRemaining;
       onFinish?.(result);
+      if (fullHeightField) {
+        try { localStorage.setItem('sim-last-flight-v1', JSON.stringify({ seed: flightSeed, difficulty, lights, ceilingLights, launch, actions: [...actionHistoryRef.current.flat(), ...actionsRef.current], score: result.score, duration: timeCarry + result.duration })); } catch { /* storage may be disabled */ }
+      }
     }
-  }, [done, result, onFinish]);
+  }, [done, result, onFinish, fullHeightField, flightSeed, difficulty, lights, ceilingLights, launch, timeCarry]);
+
+  const recompute = useCallback(() => {
+    if (!resultRef.current || !activeKeyRef.current) return;
+    const next = simulate(code, { ...cfg, initialPayload: replayPayloadRef.current ?? cfg.initialPayload }, seedRef.current, activeKeyRef.current, environmentOf());
+    resultRef.current = next;
+    run.current.fired = next.events.filter(event => event.t <= run.current.t).length;
+    setResult(next);
+  }, [code, cfg, environmentOf]);
+  useEffect(() => {
+    if (difficulty === 'hard' && resultRef.current && !done) recompute();
+  }, [lights, ceilingLights, difficulty, done, recompute]);
+
+  const recordAction = useCallback((action: FlightAction, refresh = true) => {
+    if (!resultRef.current || done || replayRef.current) return;
+    actionsRef.current.push({ ...action, t: run.current.t });
+    if (refresh) recompute();
+  }, [done, recompute]);
+
+  const onWalk = useCallback((pose: WalkPose) => {
+    if (replayRef.current) return;
+    if (Math.hypot(pose.x - lastWalkRef.current.x, pose.y - lastWalkRef.current.y) < 0.02) return;
+    lastWalkRef.current = { x: pose.x, y: pose.y };
+    setWalkPosition({ x: pose.x, y: pose.y });
+    if (!resultRef.current || done) return;
+    actionsRef.current.push({ t: run.current.t, type: 'walk', position: { x: pose.x, y: pose.y } });
+    if (difficulty === 'hard' && performance.now() - lastRecomputeRef.current > 450) {
+      lastRecomputeRef.current = performance.now();
+      recompute();
+    }
+  }, [difficulty, done, recompute]);
+
+  const openPlacement = () => {
+    if (resultRef.current || placing) return;
+    if (document.pointerLockElement) document.exitPointerLock();
+    if (!seedRef.current) seedRef.current = Math.max(1, Math.floor(Math.random() * 2_147_483_647));
+    setPlacementSeed(seedRef.current);
+    setPlacementKey(keyBindings[0]?.key ?? null);
+    autoRecommendationKeyRef.current = null;
+    beforePlacementRef.current = { ...poseRef.current };
+    placementReturnViewRef.current = view;
+    setDraftLaunch(launch ?? { x: cfg.start.x, y: cfg.start.y, yaw: cfg.startYaw ?? 0 });
+    setKeyPickerOpen(false);
+    setPlacing(true);
+    setView('top');
+    setExpanded(true);
+    setRescueStatus('ตำแหน่งและทิศหัวเริ่มตามที่แอดมินกำหนด ปรับได้ก่อนยืนยัน');
+  };
+  const confirmPlacement = () => {
+    if (!draftLaunch) return;
+    setLaunch(draftLaunch);
+    setNeedsPlacementAfterRecovery(false);
+    setPlacing(false);
+    setView(placementReturnViewRef.current);
+    setRescueStatus(`วางโดรนแล้ว · หันหัว ${Math.round(draftLaunch.yaw)}°`);
+  };
+  const moveDraft = (dx: number, dy: number, yaw = 0) => setDraftLaunch(current => {
+    if (!current) return current;
+    const x = current.x + dx, y = current.y + dy;
+    const inside = x >= -80 && x <= 1080 && y >= -80 && y <= 1080;
+    return { x: inside ? x : current.x, y: inside ? y : current.y, yaw: (current.yaw + yaw + 360) % 360 };
+  });
+  useEffect(() => {
+    if (!placing || !draftLaunch) return;
+    const position = toField(draftLaunch.x, draftLaunch.y);
+    const alt = groundAltitudeAt(draftLaunch.x, draftLaunch.y);
+    poseRef.current = { ...IDLE, x: position.x, y: position.y, yaw: draftLaunch.yaw, alt };
+    setPose2d({ x: position.x, y: position.y, yaw: draftLaunch.yaw, alt });
+  }, [placing, draftLaunch, IDLE, groundAltitudeAt]);
+  const analysisKey = keyBindings.find(binding => binding.key === placementKey)?.key ?? keyBindings[0]?.key;
+  const placementAdvice = useMemo(() => placing && analysisKey !== undefined && !codeErrors.length
+    ? recommendLaunch(code, cfg, analysisKey, difficulty, lights, placementSeed || 1, walkPosition, ceilingLights)
+    : null, [placing, analysisKey, codeErrors.length, code, cfg, difficulty, lights, ceilingLights, placementSeed, walkPosition]);
+  useEffect(() => {
+    if (!placing || !placementAdvice || analysisKey === undefined || autoRecommendationKeyRef.current === analysisKey) return;
+    autoRecommendationKeyRef.current = analysisKey;
+    setDraftLaunch(placementAdvice.pose);
+  }, [placing, placementAdvice, analysisKey]);
+  const placementForecast = useMemo(() => placing && draftLaunch && analysisKey !== undefined && !codeErrors.length
+    ? forecastLaunch(code, cfg, analysisKey, draftLaunch, difficulty, lights, placementSeed || 1, walkPosition, ceilingLights)
+    : null, [placing, draftLaunch, analysisKey, codeErrors.length, code, cfg, difficulty, lights, ceilingLights, placementSeed, walkPosition]);
+  const placementTarget = { ...cfg.start, yaw: cfg.startYaw ?? 0 };
+  const placementAligned = !!draftLaunch && Math.hypot(draftLaunch.x - placementTarget.x, draftLaunch.y - placementTarget.y) <= 10;
+  const movePlacementDrone = (patch: Partial<{ x: number; y: number }>) => {
+    if (patch.x === undefined || patch.y === undefined) return;
+    const x = Math.round(500 + patch.x * 100), y = Math.round(500 - patch.y * 100);
+    if (x < -80 || x > 1080 || y < -80 || y > 1080) return;
+    const snap = Math.hypot(x - placementTarget.x, y - placementTarget.y) <= 14;
+    setDraftLaunch(current => current ? { ...current, x: snap ? placementTarget.x : x, y: snap ? placementTarget.y : y } : current);
+  };
+
+  const updateStick = (patch: Partial<ManualStick>) => {
+    stickRef.current = { ...stickRef.current, ...patch };
+    recordAction({ t: 0, type: 'stick', value: { ...stickRef.current } });
+  };
+
+  useEffect(() => {
+    if (!remoteManual || !fullHeightField || walkGuideOpen) return;
+    const held = new Set<string>();
+    const update = () => updateStick({
+      forward: Number(held.has('ArrowUp')) - Number(held.has('ArrowDown')),
+      right: Number(held.has('ArrowRight')) - Number(held.has('ArrowLeft')),
+      up: Number(held.has('KeyI')) - Number(held.has('KeyK')),
+      yaw: Number(held.has('KeyL')) - Number(held.has('KeyJ')),
+    });
+    const down = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLElement && event.target.closest('input,textarea,[contenteditable="true"]')) return;
+      if (!['ArrowUp', 'ArrowDown', 'ArrowRight', 'ArrowLeft', 'KeyI', 'KeyK', 'KeyJ', 'KeyL'].includes(event.code)) return;
+      event.preventDefault(); if (!held.has(event.code)) { held.add(event.code); update(); }
+    };
+    const up = (event: KeyboardEvent) => { if (held.delete(event.code)) update(); };
+    window.addEventListener('keydown', down); window.addEventListener('keyup', up);
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+  }, [remoteManual, fullHeightField, walkGuideOpen, recordAction]);
 
   const tick = useCallback((ts: number) => {
     const r = resultRef.current;
@@ -322,15 +567,24 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     const af = (vf - along(wx, wy)) / span, ar = (vr - across(wx, wy)) / span;
     const sp = Math.hypot(vx, vy);
     const p = poseRef.current;
-    const tp = clamp(vf * 8 + af * 4.5, -22, 22), tr = clamp(vr * 8 + ar * 4.5, -22, 22);
+    const shake = difficulty === 'hard' && c.airborne ? 7 : 0;
+    const leanLimit = difficulty === 'hard' ? 34 : 22;
+    const tp = clamp(vf * 8 + af * 4.5 + Math.sin(c.t / 260 + flightSeed) * shake, -leanLimit, leanLimit);
+    const tr = clamp(vr * 8 + ar * 4.5 + Math.cos(c.t / 310 + flightSeed * 0.7) * shake, -leanLimit, leanLimit);
     const k = 1 - Math.exp(-dt * 14);
     p.x = fld.x; p.y = fld.y; p.alt = f.z / 100; p.yaw = f.yaw;
     p.pitch += (tp - p.pitch) * k; p.roll += (tr - p.roll) * k;
     // ใบพัด: ดับก่อนขึ้นบิน เร่งหลังขึ้นบิน ดับหลังลงจอด
     // ช่วงสตาร์ทหลัง takeOff: รอบใบพัดไต่จากช้าไปเร็วตามที่ผู้เขียน delay ไว้ (ยกตัวเมื่อครบ 3000 ms)
-    if (!c.airborne && (f.rpm ?? 0) > 0) c.spin = f.rpm ?? 0;
+    if (rescued || (f.rpm ?? 0) === 0 && c.airborne && c.t > 0) c.airborne = false;
+    if (emergencyRequested && (f.rpm ?? 0) === 0) c.spin = 0;
+    else if (!c.airborne && (f.rpm ?? 0) > 0) c.spin = f.rpm ?? 0;
     else c.spin += ((c.airborne ? 1 : 0) - c.spin) * (1 - Math.exp(-dt * 3));
     p.spin = c.spin;
+    if (emergencyRequested && !emergencyLanded && (f.rpm ?? 0) === 0) {
+      setEmergencyLanded(true);
+      setRescueStatus('ลงจอดแล้ว ใบพัดหยุด · เดินเข้าใกล้โดรนแล้วกด G หรือปุ่มจับแล้วพลิก');
+    }
     c.speed += (clamp(sp / 1.2, 0, 1) - c.speed) * (1 - Math.exp(-dt * 4));
     audio.current?.motor(c.spin, c.speed);
 
@@ -341,6 +595,17 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     if (ts - c.uiAt > 100) {
       c.uiAt = ts;
       setNow(c.t);
+      if (replayRef.current) {
+        const walk = actionsRef.current.filter(action => action.type === 'walk' && action.t <= c.t).at(-1);
+        if (walk?.type === 'walk') { walkPoseRef.current.x = walk.position.x; walkPoseRef.current.y = walk.position.y; setWalkPosition(walk.position); }
+      }
+      if (fullHeightField && difficulty !== 'easy' && c.airborne) {
+        const edge = Math.min(f.x, f.y, 1000 - f.x, 1000 - f.y);
+        const nearHoop = cfg.hoops?.some(hoop => Math.hypot(f.x - hoop.x, f.y - hoop.y) < hoop.size / 2 + 65 && f.z <= hoop.zMax + 35);
+        const nearPillar = cfg.balloons.some(balloon => Math.hypot(f.x - balloon.x, f.y - balloon.y) < 55 && f.z < balloon.z - 10);
+        const nearPlatform = cfg.platforms.some(platform => Math.hypot(f.x - platform.x, f.y - platform.y) < platform.r + 35 && f.z < 65 && sp > 0.3);
+        setHazard(edge < 75 && sp > 0.3 ? 'ใกล้ขอบสนาม · กู้โดรนได้' : nearHoop || nearPillar || nearPlatform ? 'ใกล้สิ่งกีดขวาง · สลับ manual หรือลงฉุกเฉิน' : '');
+      } else setHazard('');
       const command = r.commandTimeline.find((item) => item.start <= c.t && item.end > c.t);
       const focus = command && activeKeyRef.current ? { key: activeKeyRef.current, line: command.line } : null;
       if (focus?.key !== commandFocusRef.current?.key || focus?.line !== commandFocusRef.current?.line) {
@@ -350,13 +615,26 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     }
     if (c.t >= r.duration) {
       setNow(c.t); setDone(true); setPlaying(false);
+      setRescueStatus(status => status.startsWith('KEY ') ? '' : status);
       audio.current?.motor(0, 0);
       return;
     }
     c.raf = requestAnimationFrame(tick);
-  }, [fire, onCommandProgress, onFinish]);
+  }, [fire, onCommandProgress, onFinish, rescued, emergencyRequested, emergencyLanded, fullHeightField, difficulty, flightSeed, cfg]);
 
-  const play = useCallback((key?: number) => {
+  const play = useCallback((key?: number, replayActions?: FlightAction[], fresh = false) => {
+    setRescueStatus('');
+    setRescued(false); setRescuePose(null); setFlipComplete(false);
+    if (fresh) {
+      completedRef.current = { balls: [], balloons: [], platforms: [], boards: [], visits: [] };
+      actionHistoryRef.current = [];
+      carryMarksRef.current = NO_MARKS;
+      setScoreCarry(0); setTimeCarry(0); setLaunch(null); setRescued(false); setRemoteManual(false);
+    }
+    replayRef.current = !!replayActions;
+    setReplaying(!!replayActions);
+    if (replayActions) setView('top');
+    setStandby(false);
     cancelAnimationFrame(run.current.raf);
     timers.current.forEach(clearTimeout); timers.current = [];
     if (!seedRef.current) seedRef.current = Math.max(1, Math.floor(Math.random() * 2_147_483_647));
@@ -367,22 +645,30 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     replayPayloadRef.current = startPayload;
     remainingPayloadRef.current = null;
     const runConfig = { ...cfg, initialPayload: startPayload };
-    const r = simulate(code, runConfig, seedRef.current, key);
-    const planned = simulate(code, runConfig, 0, key);
+    actionsRef.current = replayActions ? replayActions.map(action => ({ ...action })) : [{ t: 0, type: 'walk', position: { x: walkPoseRef.current.x, y: walkPoseRef.current.y } }];
+    const launchPose = fresh ? undefined : launch ?? undefined;
+    const flightEnvironment = { ...environmentOf(), launch: launchPose, timeLimitMs: fresh ? TIME_LIMIT_MS : TIME_LIMIT_MS - timeCarry, completed: completedRef.current };
+    const r = simulate(code, runConfig, seedRef.current, key, flightEnvironment);
+    const planned = simulate(code, runConfig, 0, key, { difficulty: 'easy', lights: LIGHTS_OFF, ceilingLights, launch: launchPose, timeLimitMs: flightEnvironment.timeLimitMs });
     setFlightSeed(seedRef.current);
     resultRef.current = r;
+    finishedResultRef.current = null;
     onResult?.(r);
     const first = r.events.filter((e) => e.t === 0 && (e.kind === 'error'));
     shotSequence.current = 0;
     popSequence.current = 0;
     landingSequence.current = 0;
-    setResult(r); setPlannedResult(planned); setMarks(NO_MARKS); setHighlight(null); setShotCallout(null); setPopCallout(null); setLandingCallout(null); setLog(first); setDone(false); setActiveKey(key ?? null);
+    setResult(r); setPlannedResult(planned); setMarks(carryMarksRef.current); setHighlight(null); setShotCallout(null); setPopCallout(null); setLandingCallout(null); setLog(first); setDone(false); setActiveKey(key ?? null);
+    setEmergencyRequested(false);
+    setEmergencyLanded(false);
     activeKeyRef.current = key ?? keyBindings[0]?.key ?? null;
     commandFocusRef.current = null;
     onCommandProgress?.(null);
     Object.assign(run.current, { t: 0, fired: 0, spin: 0, speed: 0, uiAt: 0, airborne: false });
     audio.current?.resetTing();
-    poseRef.current = { ...IDLE };
+    const start = launchPose ? toField(launchPose.x, launchPose.y) : null;
+    const startAlt = launchPose ? groundAltitudeAt(launchPose.x, launchPose.y) : IDLE.alt;
+    poseRef.current = { ...IDLE, alt: startAlt, ...(start ? { x: start.x, y: start.y, yaw: launchPose!.yaw } : {}) };
     playheadRef.current = 0;
     const a = snd();
     a.setMuted(muted);
@@ -392,7 +678,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     setManualActive(false);
     onStart?.();
     setNow(0);
-    setPose2d(HOME);
+    setPose2d(start ? { x: start.x, y: start.y, yaw: launchPose!.yaw, alt: startAlt } : HOME);
     setLoaded(startPayload);
     let n = 3;
     a.sfx('count');
@@ -403,11 +689,95 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     }, 600);
     run.current.count = iv;
     if (r.frames.length < 2) { clearInterval(iv); setPlaying(false); setDone(true); }
-  }, [cfg, code, HOME, keyBindings, muted, onCommandProgress, onFinish, onResult, onStart, tick]);
+  }, [cfg, code, HOME, IDLE, keyBindings, muted, onCommandProgress, onFinish, onResult, onStart, tick, environmentOf, launch, timeCarry, groundAltitudeAt, ceilingLights]);
+
+  const toggleManual = () => {
+    const next = !remoteManual;
+    setRemoteManual(next);
+    if (next) setKeyPickerOpen(false);
+    recordAction({ t: 0, type: 'manual', enabled: next });
+    if (!next) updateStick({ forward: 0, right: 0, up: 0, yaw: 0 });
+    setRescueStatus(next ? 'รีโมทอยู่ในโหมด manual · คำสั่ง KEY เดิมยังรันอยู่' : 'กลับสู่โหมด coding');
+  };
+
+  const pickUpDrone = () => {
+    if (!resultRef.current || rescued || !emergencyLanded) return;
+    const drone = poseRef.current;
+    const person = walkPoseRef.current;
+    if (Math.hypot(person.x - drone.x, person.y - drone.y) > PICKUP_DISTANCE_M) {
+      setRescueStatus('เดินเข้าใกล้โดรนให้ห่างไม่เกิน 1.5 ม. ก่อนจับ');
+      return;
+    }
+    const droneX = 500 + drone.x * 100, droneY = 500 - drone.y * 100;
+    if (drone.spin > 0.01 || drone.alt > groundAltitudeAt(droneX, droneY) + 0.04) {
+      setRescueStatus('รอให้โดรนลงพื้นและใบพัดหยุดก่อน');
+      return;
+    }
+    recordAction({ t: 0, type: 'pickup' });
+    setRescuePose({ ...drone, spin: 0 });
+    setRescued(true);
+    setFlipComplete(false);
+    setPose2d({ x: person.x, y: person.y, yaw: drone.yaw, alt: 1.2 });
+    run.current.airborne = false;
+    run.current.spin = 0;
+    poseRef.current.spin = 0;
+    audio.current?.stopMotor();
+    setRescueStatus('กำลังจับแบตเตอรี่และพลิกโดรนกลางอากาศ…');
+    later(() => {
+      setFlipComplete(true);
+      setRescueStatus('พลิกโดรนแล้ว · กด P ปิดเปิดเครื่อง จากนั้นกด F จัดจุดวาง');
+    }, 1000);
+  };
+
+  const powerCycle = () => {
+    if (!rescued || !flipComplete) return;
+    const current = resultRef.current;
+    if (!current) return;
+    const balls = new Map(completedRef.current.balls.map(item => [item.id, item.count]));
+    const balloons = new Set(completedRef.current.balloons);
+    const platforms = new Set(completedRef.current.platforms);
+    const boards = new Map(completedRef.current.boards.map(item => [item.id, item.points]));
+    const visits = new Set(completedRef.current.visits);
+    for (const event of log) {
+      if (event.kind === 'drop' && event.ok && event.id) balls.set(event.id, (balls.get(event.id) ?? 0) + (event.n ?? 0));
+      if (event.kind === 'pop' && event.ok && event.id) balloons.add(event.id);
+      if (event.kind === 'land' && event.ok && event.id && event.id !== 'pad' && event.id !== 'rest') platforms.add(event.id);
+      if ((event.kind === 'shot' || event.kind === 'shot_b') && event.ok && event.id) boards.set(event.id, Math.min(boards.get(event.id) ?? Infinity, event.points ?? 0));
+    }
+    current.visits.filter(item => item.t <= run.current.t).forEach(item => visits.add(item.id));
+    completedRef.current = { balls: [...balls].map(([id, count]) => ({ id, count })), balloons: [...balloons], platforms: [...platforms], boards: [...boards].map(([id, points]) => ({ id, points })), visits: [...visits] };
+    const c = completedRef.current;
+    const ballScore = c.balls.reduce((sum, item) => { const cap = cfg.platforms.find(platform => platform.id === item.id)?.requiredBalls ?? cfg.ballCap; return sum + (Math.min(item.count, cap) - Math.max(0, item.count - cap)) * cfg.points.ball; }, 0);
+    const visitScore = c.visits.reduce((sum, id) => sum + (cfg.waypoints?.find(item => item.id === id)?.points ?? cfg.hoops?.find(item => item.id === id)?.points ?? 0), 0);
+    setScoreCarry(ballScore + c.balloons.length * cfg.points.balloon + c.platforms.length * cfg.points.platformLanding + c.boards.reduce((sum, item) => sum + item.points, 0) + visitScore);
+    actionHistoryRef.current.push([...actionsRef.current, { t: run.current.t, type: 'power' }]);
+    carryMarksRef.current = marks;
+    actionsRef.current = [];
+    cancelAnimationFrame(run.current.raf); clearInterval(run.current.count); timers.current.forEach(clearTimeout); timers.current = [];
+    audio.current?.stopMotor();
+    const captured = poseRef.current;
+    const capturedX = 500 + captured.x * 100, capturedY = 500 - captured.y * 100;
+    const groundedAlt = groundAltitudeAt(capturedX, capturedY);
+    const pose = { ...captured, alt: groundedAlt, pitch: 0, roll: 0, spin: 0 };
+    setLaunch(null); setNeedsPlacementAfterRecovery(true); poseRef.current = pose; setPose2d({ x: pose.x, y: pose.y, yaw: pose.yaw, alt: groundedAlt });
+    setTimeCarry(value => Math.min(TIME_LIMIT_MS, value + run.current.t)); setStandby(true);
+    resultRef.current = null; setResult(null); setPlannedResult(null); setPlaying(false); setDone(false); setNow(0); setRemoteManual(false); setRescued(false); setRescuePose(null); setFlipComplete(false); setEmergencyRequested(false); setEmergencyLanded(false); setManualActive(true); setActiveKey(null); setHazard('');
+    activeKeyRef.current = null; commandFocusRef.current = null; onCommandProgress?.(null);
+    setRescueStatus('เปิดเครื่องใหม่แล้ว · กด F เพื่อจัดจุดวาง ไม่มีการตั้งศูนย์อัตโนมัติ');
+  };
+
+  const pressKey = (key: number) => {
+    if (needsPlacementAfterRecovery && !launch) { setRescueStatus('กด F จัดจุดวางโดรนก่อนบินต่อ'); return; }
+    if (fullHeightField && view === 'walk' && !launch) { setRescueStatus('กด F เพื่อจัดจุดวางโดรนก่อน'); return; }
+    if (timeCarry >= TIME_LIMIT_MS) { setRescueStatus('หมดเวลาภารกิจ · เริ่มเที่ยวบินใหม่'); return; }
+    if (resultRef.current && !done) { setRescueStatus(`KEY ${activeKey} ยังรันอยู่ · รอให้จบหรือปิดเปิดโดรนใหม่`); return; }
+    if (remoteManual) { setRescueStatus('สลับกลับโหมด coding ก่อนกด KEY'); return; }
+    play(key);
+  };
 
   const randomizeConditions = () => {
     seedRef.current = Math.max(1, Math.floor(Math.random() * 2_147_483_647));
-    play(activeKey ?? undefined);
+    play(activeKey ?? undefined, undefined, true);
   };
 
   const togglePause = () => {
@@ -425,11 +795,11 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
 
   // 2D: ตำแหน่งโดรนบนแผนผังตามเวลา (ใช้เมื่อเครื่องไม่ไหวหรือผู้ใช้เลือก)
   useEffect(() => {
-    if (mode !== '2d' || !resultRef.current) return;
+    if (mode !== '2d' || !resultRef.current || rescued) return;
     const f = frameAt(resultRef.current.frames, now);
     const p = toField(f.x, f.y);
     setPose2d({ x: p.x, y: p.y, yaw: f.yaw, alt: f.z / 100 });
-  }, [now, mode]);
+  }, [now, mode, rescued]);
 
   // วัตถุบนสนาม: 3 มิติเปลี่ยนสีตามเวลาเล่นเอง (อ่าน playheadRef) · 2 มิติใช้เฉพาะที่ผ่านแล้วตามเวลา now
   const visitMap = useMemo(() => Object.fromEntries((result?.visits ?? []).map((v) => [v.id, v.t])), [result]);
@@ -446,8 +816,49 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   const started = !!result;
   const flightError = result?.events.find((event) => event.kind === 'error');
   const flightInProgress = started && !done;
-  const remoteStatus = flightInProgress
-    ? playing ? `KEY ${activeKey} กำลังทำงาน รอให้เที่ยวบินจบก่อนกดอีกปุ่ม` : 'หยุดชั่วคราว กดเล่นต่อหรือรีเซ็ตเที่ยวบิน'
+  const emergencyLand = () => {
+    if (!flightInProgress || rescued) return;
+    recordAction({ t: 0, type: 'land' });
+    setEmergencyRequested(true);
+    setEmergencyLanded(false);
+    setRescueStatus('กำลังลงฉุกเฉิน · รอใบพัดหยุด แล้วเดินเข้าใกล้โดรนเพื่อจับ');
+  };
+  useEffect(() => {
+    if (!fullHeightField || mode !== '3d' || walkGuideOpen) return;
+    const onFieldKey = (event: KeyboardEvent) => {
+      if (event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
+      if (event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
+      if (placing && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyQ', 'KeyE'].includes(event.code)) {
+        event.preventDefault();
+        const steps: Record<string, [number, number, number]> = { ArrowUp: [0, -10, 0], ArrowDown: [0, 10, 0], ArrowLeft: [-10, 0, 0], ArrowRight: [10, 0, 0], KeyQ: [0, 0, -5], KeyE: [0, 0, 5] };
+        moveDraft(...steps[event.code]);
+      } else if (event.code === 'KeyF') {
+        event.preventDefault();
+        if (placing) confirmPlacement(); else openPlacement();
+      } else if (event.code === 'KeyE' && flightInProgress && !rescued) {
+        event.preventDefault(); emergencyLand();
+      } else if (event.code === 'KeyG' && emergencyLanded && !rescued) {
+        event.preventDefault(); pickUpDrone();
+      } else if (event.code === 'KeyP' && rescued && flipComplete) {
+        event.preventDefault(); powerCycle();
+      } else if (event.code === 'KeyK' && expanded && !placing && !remoteManual) {
+        event.preventDefault(); setLightsOpen(false); setKeyPickerOpen(current => !current);
+      } else if (expanded && !placing && !remoteManual && /^(Digit|Numpad)[0-9]$/.test(event.code)) {
+        const key = Number(event.code.slice(-1)) || 10;
+        if (keyBindings.some(binding => binding.key === key)) { event.preventDefault(); if (!flightInProgress) setKeyPickerOpen(false); pressKey(key); }
+      }
+    };
+    window.addEventListener('keydown', onFieldKey);
+    return () => window.removeEventListener('keydown', onFieldKey);
+  }, [fullHeightField, mode, view, walkGuideOpen, placing, expanded, remoteManual, keyPickerOpen, keyBindings, flightInProgress, rescued, flipComplete, emergencyRequested, emergencyLanded, recordAction, draftLaunch]);
+  const pickupNearby = Math.hypot(walkPosition.x - poseRef.current.x, walkPosition.y - poseRef.current.y) <= PICKUP_DISTANCE_M;
+  const remoteStatus = rescued ? flipComplete ? 'พลิกโดรนกลางอากาศแล้ว · กด P ปิดเปิดเครื่อง' : 'กำลังจับแบตเตอรี่และพลิกโดรนกลางอากาศ'
+    : emergencyLanded ? pickupNearby ? 'ใบพัดหยุดแล้ว · กด G หรือปุ่มจับแล้วพลิก' : view === 'walk' ? 'เดินเข้าใกล้โดรนไม่เกิน 1.5 ม. เพื่อจับแล้วพลิก' : 'เปลี่ยนเป็นมุมเดิน แล้วเข้าใกล้โดรนไม่เกิน 1.5 ม.'
+    : emergencyRequested && !rescued ? 'กำลังลงฉุกเฉิน · รอใบพัดหยุด'
+    : flightInProgress
+    ? playing ? `KEY ${activeKey} กำลังทำงาน · กด KEY อื่นได้เมื่อคำสั่งจบหรือปิดเปิดโดรนใหม่` : 'หยุดชั่วคราว กดเล่นต่อหรือรีเซ็ตเที่ยวบิน'
+    : needsPlacementAfterRecovery && !launch ? 'กด F จัดจุดวางโดรนก่อนบินต่อ'
+    : timeCarry >= TIME_LIMIT_MS ? 'หมดเวลา 2 นาที 30 วินาที · เริ่มเที่ยวบินใหม่'
     : codeErrors.length ? codeErrors[0].text
     : keyBindings.length ? 'กดปุ่มที่ขึ้นว่า “พร้อมกด” เพื่อเริ่มบิน'
     : 'ยังไม่มีปุ่มพร้อมใช้ ผูกฟังก์ชันใน setup() เช่น drone.onKey1(fly);';
@@ -457,35 +868,125 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
 
   return (
     <div className={previewKey ? "grid min-w-0 gap-2" : fullHeightField ? "grid min-w-0 gap-3" : "grid gap-3 xl:h-full xl:min-h-0 xl:grid-rows-[minmax(12rem,1fr)_auto_auto_auto] xl:gap-2"}>
+      {fullHeightField && !previewKey && <section className="grid gap-3 squircle-2xl border border-line bg-surface p-3" aria-label="สภาพการบิน">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="min-w-0 flex-1 text-sm font-bold">ระดับการบิน</h3>
+          <TooltipProvider><div role="group" aria-label="ระดับการบิน" className="flex gap-1 squircle-xl border border-line bg-surface-2 p-1">
+            {DIFFICULTY_OPTIONS.map(({ id, label, tip }) => <Tooltip key={id}><TooltipTrigger render={<Button type="button" size="sm" variant={difficulty === id ? 'default' : 'ghost'} aria-pressed={difficulty === id} disabled={flightInProgress} onClick={() => setDifficulty(id)} />}>{label}</TooltipTrigger><TooltipContent side="bottom">{tip}</TooltipContent></Tooltip>)}
+          </div></TooltipProvider>
+        </div>
+        <details className="border-t border-line pt-2 text-sm">
+          <summary className="cursor-pointer font-semibold focus-visible:outline-2 focus-visible:outline-brand-blue">ไฟสนาม · พื้นและด้านบน</summary>
+          <p className="mt-1 text-xs text-muted-foreground">ไฟด้านบนสาดทั่วสนาม · ไฟพื้นสาดเฉพาะแนว · ระดับยากแสงมีผลต่อ optical flow</p>
+          <FieldSet className="mt-3 gap-2"><FieldLegend variant="label">ไฟด้านบน 4 มุม</FieldLegend>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{ceilingLights.map((enabled, index) => <label key={index} className="flex items-center gap-2 squircle-xl border border-line bg-surface-2 px-2 py-1.5 text-xs"><input type="checkbox" checked={enabled} onChange={event => setCeilingLights(previous => previous.map((value, i) => i === index ? event.target.checked : value) as CeilingLights)} />{['ซ้ายบน', 'ขวาบน', 'ซ้ายล่าง', 'ขวาล่าง'][index]}</label>)}</div>
+          </FieldSet>
+          <FieldSet className="mt-3 gap-2"><FieldLegend variant="label">ไฟติดพื้น 4 มุม</FieldLegend>
+          <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setLights(LIGHTS_OFF.map(light => ({ ...light })) as FieldLights)}>ปิดทั้งหมด</Button><Button type="button" size="sm" variant="outline" onClick={() => setLights(LIGHTS_ON.map(light => ({ ...light })) as FieldLights)}>เปิดทั้งหมด</Button></div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {lights.map((light, index) => <div key={index} className="grid gap-2 squircle-xl border border-line bg-surface-2 p-2">
+              <label className="flex items-center gap-2 font-semibold"><input type="checkbox" checked={light.enabled} onChange={event => setLights(previous => previous.map((item, i) => i === index ? { ...item, enabled: event.target.checked } : item) as FieldLights)} />{['ซ้ายบน', 'ขวาบน', 'ซ้ายล่าง', 'ขวาล่าง'][index]}</label>
+              <div className="flex items-center gap-2"><label className="sr-only" htmlFor={`sim-led-${index}`}>สีไฟ{index + 1}</label><select id={`sim-led-${index}`} value={light.color} disabled={!light.enabled} onChange={event => setLights(previous => previous.map((item, i) => i === index ? { ...item, color: event.target.value as typeof item.color } : item) as FieldLights)} className="min-h-9 flex-1 squircle-xl border border-line bg-surface px-2 text-sm"><option value="cyan">ฟ้า</option><option value="blue">น้ำเงิน</option><option value="ice">ฟ้าอ่อน</option></select>
+                <label className="sr-only" htmlFor={`sim-led-strength-${index}`}>ความแรงไฟ{index + 1}</label><input id={`sim-led-strength-${index}`} type="range" min="0" max="1" step="0.1" value={light.intensity} disabled={!light.enabled} onChange={event => setLights(previous => previous.map((item, i) => i === index ? { ...item, intensity: Number(event.target.value) } : item) as FieldLights)} className="w-24" /><span className="w-7 text-right font-mono text-xs">{Math.round(light.intensity * 10)}</span></div>
+            </div>)}
+          </div>
+          </FieldSet>
+        </details>
+      </section>}
       <div className={expanded
         ? 'fixed inset-0 z-[70] h-dvh w-screen overflow-hidden bg-[#0b0d12]'
         : `relative w-full overflow-hidden squircle-2xl border border-line bg-[#0b0d12] ${previewKey ? "aspect-[4/3] max-h-[55dvh] sm:aspect-video" : fullHeightField ? "h-[min(50svh,36rem)] min-h-[18rem]" : "aspect-[4/3] sm:aspect-video xl:aspect-auto xl:h-full xl:min-h-0"}`}>
         {mode === '3d' ? (
-          <Field3D event={event} drone={{ ...pose2d }} onDrone={() => { }} view={view} shot={null} low={low} live={live} poseRef={poseRef} playheadRef={playheadRef} marks={marks} highlight={highlight} dartInventory={{ front: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'front').length), back: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'back').length) }} holdKey={holdKey} loaded={loaded} scene={spec3d} measurements={measurements} showDimensions={!previewKey && showDimensions} dimensionFrom={dimensionFrom.id} dimensionTo={dimensionTo?.id} />
+          <Field3D event={event} drone={{ ...pose2d }} onDrone={placing ? movePlacementDrone : () => { }} view={view} shot={null} low={low} live={live} poseRef={poseRef} playheadRef={playheadRef} marks={marks} highlight={highlight} dartInventory={{ front: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'front').length), back: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'back').length) }} holdKey={holdKey} loaded={loaded} scene={spec3d} measurements={measurements} showDimensions={!previewKey && showDimensions} dimensionFrom={dimensionFrom.id} dimensionTo={dimensionTo?.id} lights={fullHeightField ? lights : undefined} ceilingLights={fullHeightField ? ceilingLights : undefined} walkPoseRef={fullHeightField ? walkPoseRef : undefined} walkInputRef={fullHeightField ? walkInputRef : undefined} walkControlsEnabled={!walkGuideOpen && !keyPickerOpen} onWalk={fullHeightField ? onWalk : undefined} placement={placing ? { center: toField(cfg.start.x, cfg.start.y), target: toField(placementTarget.x, placementTarget.y), aligned: placementAligned, onRotate: yaw => setDraftLaunch(current => current ? { ...current, yaw } : current) } : undefined} carryingDrone={fullHeightField && !launch && !placing && !started} rescuePose={rescued ? rescuePose : null} />
         ) : (
           <FieldPlan2D event={event} drone={pose2d} interactive={false} className="size-full p-2" scene={spec2d} measurements={measurements} />
         )}
 
+        {fullHeightField && mode === '3d' && view === 'walk' && <>
+          <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 size-2 -translate-x-1/2 -translate-y-1/2 squircle-xl border border-foreground bg-surface/60" />
+          <TouchWalkControls inputRef={walkInputRef} />
+          {remoteOpen && <div id="walk-remote" className={`absolute right-3 z-30 grid max-h-[calc(100%-7rem)] w-[min(20rem,calc(100%-1.5rem))] min-w-0 content-start gap-2 overflow-y-auto overscroll-contain squircle-2xl border border-line bg-surface/95 p-3 text-foreground shadow-xl backdrop-blur lg:hidden ${expanded ? 'top-40 max-sm:max-h-[calc(100%-11rem)] sm:top-24' : 'top-24'}`}>
+            <h3 className="text-sm font-bold">รีโมท · {remoteManual ? 'manual' : 'coding'}</h3>
+            <p role="status" className="text-xs text-muted-foreground">{remoteStatus}</p>
+            <div className="grid grid-cols-3 gap-1">{keyBindings.map(binding => <Button key={binding.key} type="button" size="sm" variant="outline" disabled={rescued || !!codeErrors.length || timeCarry >= TIME_LIMIT_MS} onClick={() => pressKey(binding.key)}>KEY {binding.key}</Button>)}</div>
+            <div className="flex flex-wrap gap-1"><Button type="button" size="sm" variant={remoteManual ? 'default' : 'outline'} disabled={!started || done || rescued} onClick={toggleManual}>{remoteManual ? 'กลับ coding' : 'เข้า manual'}</Button><Button type="button" size="sm" variant="outline" disabled={!flightInProgress || rescued || emergencyRequested} onClick={emergencyLand}>ลงฉุกเฉิน · E</Button>{emergencyLanded && !rescued && <Button type="button" size="sm" disabled={!pickupNearby} onClick={pickUpDrone}>จับแล้วพลิก</Button>}{rescued && <Button type="button" size="sm" disabled={!flipComplete} onClick={powerCycle}>เปิดใหม่ · P</Button>}</div>
+            {remoteManual && <div className="flex flex-wrap gap-2"><TouchStick label="บังคับแนวราบ" onMove={(x, y) => updateStick({ right: x, forward: y })} /><TouchStick label="ขึ้นลงและหมุน" onMove={(x, y) => updateStick({ yaw: x, up: y })} /></div>}
+          </div>}
+          <div className="absolute bottom-3 right-3 z-20 grid w-40 gap-1.5 lg:inset-x-0 lg:bottom-3 lg:w-auto lg:flex lg:justify-center lg:px-3">
+            <div className="grid max-h-32 grid-cols-3 gap-1 overflow-y-auto overscroll-contain lg:hidden" role="group" aria-label="ปุ่ม KEY บนรีโมท">
+              {keyBindings.map(binding => <Button key={binding.key} type="button" size="sm" variant="outline" className="min-h-10 bg-surface/95 px-1 font-mono text-xs" disabled={!launch || rescued || remoteManual || !!codeErrors.length || timeCarry >= TIME_LIMIT_MS} onClick={() => pressKey(binding.key)}>KEY {binding.key}</Button>)}
+            </div>
+            {!keyBindings.length && <p className="squircle-xl bg-surface/90 px-2 py-1 text-center text-xs lg:hidden">ผูก KEY ในโค้ดก่อนบิน</p>}
+            <div className="grid grid-cols-2 gap-1 lg:hidden">
+              <Button type="button" size="sm" variant={remoteManual ? 'default' : 'outline'} className="min-h-10 px-1 text-xs" disabled={!started || done || rescued} onClick={toggleManual}>{remoteManual ? 'Coding' : 'Manual'}</Button>
+              <Button type="button" size="sm" variant="outline" className="min-h-10 bg-surface/95 px-1 text-xs" disabled={!flightInProgress || rescued || emergencyRequested} onClick={emergencyLand}>ฉุกเฉิน E</Button>
+            </div>
+            {remoteManual && <Button type="button" size="sm" variant="outline" className="min-h-10 bg-surface/95 lg:hidden" aria-expanded={remoteOpen} aria-controls="walk-remote" onClick={() => setRemoteOpen(value => !value)}>{remoteOpen ? 'ปิดก้านโดรน' : 'เปิดก้านโดรน'}</Button>}
+            {!started && <Button type="button" size="sm" className="min-h-10" onClick={openPlacement}>{launch ? 'ปรับจุดวาง · F' : 'จัดจุดวาง · F'}</Button>}
+            {emergencyLanded && !rescued && <Button type="button" size="sm" className="min-h-10" disabled={!pickupNearby} onClick={pickUpDrone}>กดเพื่อจับแล้วพลิก</Button>}
+            {rescued && <Button type="button" size="sm" className="min-h-10" disabled={!flipComplete} onClick={powerCycle}>ปิดเปิดเครื่อง · P</Button>}
+          </div>
+          <p className="pointer-events-none absolute bottom-3 left-3 z-20 hidden max-w-48 squircle-xl border border-line bg-surface/90 px-2 py-1 text-[11px] leading-5 text-foreground lg:block">WASD เดิน · F จัดวาง · K เลือก KEY<br />E ฉุกเฉิน · G จับ · P เปิดใหม่ · R เริ่มใหม่</p>
+        </>}
+
+        {fullHeightField && !previewKey && mode === '3d' && view !== 'walk' && !placing && !started && <Button type="button" size="sm" className="absolute bottom-3 right-3 z-20 min-h-11 shadow-lg" onClick={openPlacement}>{launch ? 'ปรับจุดวาง' : 'จัดจุดวาง'}</Button>}
+        {expanded && fullHeightField && view !== 'walk' && !placing && <p className="pointer-events-none absolute bottom-3 left-3 z-20 hidden squircle-xl border border-line bg-surface/90 px-2 py-1 text-[11px] text-foreground lg:block">1–9 สั่ง KEY · K เลือก KEY · E ฉุกเฉิน · G จับโดรน · P เปิดใหม่ · R เริ่มใหม่ · Esc ย่อ</p>}
+
+        {placing && draftLaunch && <div className="absolute left-3 top-14 z-40 grid w-[min(20rem,calc(100%-1.5rem))] gap-1.5 squircle-2xl border border-line bg-surface/95 p-2.5 text-sm text-foreground shadow-xl md:w-80" role="dialog" aria-label="จัดจุดวางโดรน">
+          <div className="flex items-center justify-between gap-2"><h3 className="font-bold">จัดจุดวางโดรน</h3><span className="shrink-0 text-xs font-semibold">หัว {Math.round(draftLaunch.yaw)}°</span></div>
+          <p className="truncate text-xs text-muted-foreground">จุด {((draftLaunch.x - 500) / 100).toFixed(2)}, {((500 - draftLaunch.y) / 100).toFixed(2)} ม. · ลากโดรนเพื่อย้าย</p>
+          {keyBindings.length > 1 && <label className="flex min-w-0 items-center gap-2 text-xs font-semibold">วิเคราะห์ KEY
+            <select value={analysisKey} onChange={event => setPlacementKey(Number(event.target.value))} className="min-h-8 min-w-0 flex-1 squircle-xl border border-line bg-surface px-2 text-xs">
+              {keyBindings.map(binding => <option key={binding.key} value={binding.key}>KEY {binding.key} · {binding.functionName}()</option>)}
+            </select>
+          </label>}
+          {placementForecast && <p className={`truncate text-xs ${placementForecast.ok ? 'text-muted-foreground' : 'text-destructive'}`} title={placementForecast.failure ?? placementForecast.reached.join(' → ')}>KEY {analysisKey} · {placementForecast.required ? `ผ่าน ${placementForecast.reached.length}/${placementForecast.required} เป้าหมาย` : `บินได้ ${placementForecast.distanceM.toFixed(2)} ม.`} · {placementForecast.score} คะแนน</p>}
+          <div className="flex gap-1"><Button type="button" size="sm" variant="outline" className="min-w-0 flex-1 px-1 text-xs" disabled={!placementAdvice} onClick={() => placementAdvice && setDraftLaunch(placementAdvice.pose)}>จุดแนะนำ</Button><Button type="button" size="sm" variant="outline" className="min-w-0 flex-1 px-1 text-xs" onClick={() => setDraftLaunch(placementTarget)}>จุดตั้งต้น</Button><Button type="button" size="sm" variant="outline" className="px-2" aria-label="หมุนหัวซ้าย 5 องศา" onClick={() => moveDraft(0, 0, -5)}>↶</Button><Button type="button" size="sm" variant="outline" className="px-2" aria-label="หมุนหัวขวา 5 องศา" onClick={() => moveDraft(0, 0, 5)}>↷</Button></div>
+          {placementForecast && !placementForecast.ok && <p className="truncate text-xs text-destructive" title={placementForecast.failure}>{placementForecast.failure ?? 'เส้นทางนี้อาจบินไม่จบ'}</p>}
+          {!!codeErrors.length && <p className="text-xs text-destructive">{codeErrors[0].text}</p>}
+          <div className="flex gap-1.5"><Button type="button" size="sm" className="flex-1" onClick={confirmPlacement}>ยืนยันวาง · F</Button><Button type="button" size="sm" variant="outline" onClick={cancelPlacement}>ยกเลิก</Button></div>
+        </div>}
+
         {/* HUD เวลา/คะแนน */}
-        <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap items-center gap-2 text-white">
-          <span className="squircle-sm bg-black/65 px-2.5 py-1 font-mono text-sm">{fmtTime(now)} / {fmtTime(event.durationSec * 1000)}</span>
-          {done && result && <span className="squircle-sm bg-brand-blue px-2.5 py-1 text-sm font-semibold">คะแนน {result.score}</span>}
-          {manualActive && <span className="squircle-sm bg-black/65 px-2.5 py-1 text-sm font-semibold">พร้อมรอคำสั่ง KEY</span>}
+        <div className={`pointer-events-none absolute left-3 flex flex-wrap items-center gap-2 text-white ${expanded ? 'top-14 max-w-[calc(100%-8rem)] sm:top-3 sm:max-w-[calc(100%-17rem)] lg:max-w-[calc(100%-32rem)]' : 'top-3'}`}>
+          <span className="squircle-sm bg-black/65 px-2.5 py-1 font-mono text-sm">{fmtTime(now + timeCarry)} / {fmtTime(event.durationSec * 1000)}</span>
+          {(done && result || scoreCarry > 0) && <span className="squircle-sm bg-brand-blue px-2.5 py-1 text-sm font-semibold">คะแนน {done && result ? result.score : scoreCarry}</span>}
+          {manualActive && !needsPlacementAfterRecovery && <span className="squircle-sm bg-black/65 px-2.5 py-1 text-sm font-semibold">พร้อมรอคำสั่ง KEY</span>}
+          {view === 'walk' && !launch && !started && <span className="squircle-sm bg-black/65 px-2.5 py-1 text-xs">ถือโดรนอยู่ · กด F จัดจุดวาง</span>}
           {holding && <span className="squircle-sm bg-brand-red px-2.5 py-1 text-sm font-semibold motion-safe:animate-pulse">◎ POSHOLD · หยุดนิ่ง</span>}
+          {view === 'walk' && <span className="squircle-sm bg-black/65 px-2.5 py-1 text-xs">{walkPosition.x.toFixed(1)}, {walkPosition.y.toFixed(1)} ม. · สายตา 1.70 ม.</span>}
+          {hazard && <span role="alert" className="squircle-sm bg-destructive px-2.5 py-1 text-xs font-bold text-destructive-foreground">{hazard}</span>}
+          {rescueStatus && <span role="status" className="squircle-sm bg-black/75 px-2.5 py-1 text-xs">{rescueStatus}</span>}
         </div>
 
-        {!previewKey && mode === '3d' && (
-          <Button
-            type="button"
-            variant="outline"
-            className="absolute right-3 top-3 z-20 h-9 w-9 p-0"
-            aria-label={expanded ? 'ย่อสนาม 3 มิติ' : 'ขยายสนาม 3 มิติ'}
-            title="Ctrl+Shift+X · Esc เพื่อย่อ"
-            onClick={() => setExpanded((current) => !current)}
-          >
+        {!previewKey && mode === '3d' && <div className="absolute right-3 top-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-1 squircle-xl border border-line bg-surface/95 p-1 shadow-lg" aria-label="ควบคุมมุมสนาม">
+          {expanded && <div role="group" aria-label="เลือกมุมมองในเต็มจอ" className="flex items-center gap-1 border-r border-line pr-1">
+            {VIEWS.filter(item => fullHeightField || item.id !== 'walk').map(({ id, label, Icon }) => <Button key={id} type="button" size="sm" variant={view === id ? 'default' : 'ghost'} className="h-9 min-w-9 gap-1 px-2" aria-label={label} aria-pressed={view === id} disabled={placing || replaying && id === 'walk'} onClick={() => chooseView(id)} title={label}><Icon className="size-4" aria-hidden /><span className="hidden lg:inline">{label}</span></Button>)}
+          </div>}
+          {expanded && fullHeightField && <Button type="button" size="sm" variant={keyPickerOpen ? 'default' : 'ghost'} className="h-9 min-w-9 gap-1 px-2" aria-label="เลือกปุ่ม KEY" aria-expanded={keyPickerOpen} aria-controls="fullscreen-key-picker" title={remoteManual ? 'สลับกลับ coding ก่อนเลือก KEY' : 'เลือกปุ่ม KEY · K'} disabled={remoteManual || placing} onClick={() => { if (document.pointerLockElement) document.exitPointerLock(); setLightsOpen(false); setKeyPickerOpen(current => !current); }}><Keyboard className="size-4" aria-hidden /><span className="hidden lg:inline">KEY · K</span></Button>}
+          {expanded && fullHeightField && <Button type="button" size="sm" variant={lightsOpen ? 'default' : 'ghost'} className="h-9 min-w-9 gap-1 px-2" aria-label="ตั้งไฟสนาม" aria-expanded={lightsOpen} aria-controls="fullscreen-lights" title="ตั้งไฟพื้นและไฟด้านบน" disabled={placing} onClick={() => { if (document.pointerLockElement) document.exitPointerLock(); setKeyPickerOpen(false); setLightsOpen(current => !current); }}><Lightbulb aria-hidden /><span className="hidden lg:inline">ไฟสนาม</span></Button>}
+          {fullHeightField && <Button type="button" size="sm" variant="ghost" className="h-9 min-w-9 gap-1 px-2" aria-label="วิธีเดินและบังคับ" title="วิธีเดินและบังคับ · H" onClick={openWalkGuide}><CircleHelp className="size-4" aria-hidden /><span className="hidden lg:inline">วิธีเดิน</span></Button>}
+          <Button type="button" size="sm" variant="ghost" className="h-9 w-9 p-0" aria-label={expanded ? 'ย่อสนาม 3 มิติ' : 'ขยายสนาม 3 มิติ'} title="Ctrl+Shift+X · Esc เพื่อย่อ" onClick={() => { if (document.pointerLockElement) document.exitPointerLock(); setLightsOpen(false); setExpanded(current => !current); }}>
             {expanded ? <Minimize2 className="size-4" aria-hidden /> : <Maximize2 className="size-4" aria-hidden />}
           </Button>
-        )}
+        </div>}
+        {lightsOpen && expanded && fullHeightField && mode === '3d' && <div id="fullscreen-lights" className="absolute right-3 top-14 z-40 grid w-[min(19rem,calc(100%-1.5rem))] gap-2 squircle-2xl border border-line bg-surface/95 p-3 text-sm text-foreground shadow-xl" role="dialog" aria-label="ตั้งไฟสนาม">
+          <div className="flex items-center justify-between gap-2"><h3 className="font-bold">ไฟสนาม</h3><Button type="button" size="sm" variant="ghost" onClick={() => setLightsOpen(false)}>ปิด</Button></div>
+          <p className="text-xs text-muted-foreground">ด้านบนสาดทั่วสนาม · พื้นสาดเฉพาะแนว</p>
+          <p className="text-xs font-semibold">ด้านบน 4 มุม</p>
+          <div className="grid grid-cols-2 gap-1">{ceilingLights.map((enabled, index) => <Button key={index} type="button" size="sm" variant={enabled ? 'default' : 'outline'} aria-pressed={enabled} onClick={() => setCeilingLights(previous => previous.map((value, i) => i === index ? !value : value) as CeilingLights)}>{['ซ้ายบน', 'ขวาบน', 'ซ้ายล่าง', 'ขวาล่าง'][index]}</Button>)}</div>
+          <p className="text-xs font-semibold">ติดพื้น 4 มุม</p>
+          <div className="grid grid-cols-2 gap-1">{lights.map((light, index) => <Button key={index} type="button" size="sm" variant={light.enabled ? 'default' : 'outline'} aria-pressed={light.enabled} onClick={() => setLights(previous => previous.map((value, i) => i === index ? { ...value, enabled: !value.enabled } : value) as FieldLights)}>{['ซ้ายบน', 'ขวาบน', 'ซ้ายล่าง', 'ขวาล่าง'][index]}</Button>)}</div>
+        </div>}
+        {keyPickerOpen && expanded && mode === '3d' && <div id="fullscreen-key-picker" className="absolute inset-0 z-40 grid place-items-center bg-canvas/85 p-3" role="dialog" aria-modal="true" aria-label="เลือกปุ่ม KEY">
+          <div className="grid max-h-[85dvh] w-full max-w-xl gap-3 overflow-y-auto squircle-3xl border border-line bg-surface p-4 text-foreground shadow-xl sm:p-6">
+            <div className="flex items-center justify-between gap-3"><div><h3 className="text-lg font-bold">เลือก KEY เพื่อรันโค้ด</h3><p className="text-xs text-muted-foreground">คลิกปุ่มด้วยเมาส์ หรือกดเลข 1–9 ได้ทันทีในเต็มจอ</p></div><Button type="button" size="sm" variant="outline" onClick={() => setKeyPickerOpen(false)}>ปิด · K</Button></div>
+            <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">{keyBindings.map(binding => <Button key={binding.key} type="button" variant="outline" className="min-h-16 flex-col items-start gap-0 px-3 text-left" disabled={rescued || remoteManual || !!codeErrors.length || timeCarry >= TIME_LIMIT_MS} onClick={() => { if (!flightInProgress) setKeyPickerOpen(false); pressKey(binding.key); }}><span className="font-bold">KEY {binding.key}</span><span className="max-w-full truncate text-xs opacity-75">{binding.functionName}()</span></Button>)}</div>
+            {!keyBindings.length && <p className="text-sm text-muted-foreground">ยังไม่มี KEY ที่ผูกกับฟังก์ชันในโค้ด</p>}
+            <p role="status" className="text-sm text-muted-foreground">{remoteStatus}{(rescueStatus.startsWith('KEY ') || rescueStatus.startsWith('เดินไปแท่น')) && <><br />{rescueStatus}</>}</p>
+          </div>
+        </div>}
+        {walkGuideOpen && mode === '3d' && fullHeightField && <WalkGuide onClose={closeWalkGuide} />}
         {!previewKey && mode === '3d' && showDimensions && dimensionOptions.length > 1 && <div className="absolute right-3 top-14 z-20 grid max-w-[min(19rem,calc(100%-1.5rem))] gap-1.5 squircle-xl border border-white/25 bg-black/80 p-2 text-xs font-semibold text-white shadow-lg">
           <span>วัดระหว่างจุดในสนาม</span>
           <div className="grid grid-cols-2 gap-1.5">
@@ -573,12 +1074,12 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
           const allKeys = remoteKeys ?? Array.from({ length: 11 }, (_, index) => index + 1);
           const renderKey = (key: number) => {
             const binding = keyBindings.find((entry) => entry.key === key);
-            const disabled = !binding || flightInProgress || codeErrors.length > 0;
-            const status = !binding ? 'ยังไม่ผูก' : flightInProgress ? 'รอจบเที่ยวบิน' : codeErrors.length ? 'แก้โค้ดก่อน' : 'พร้อมกด';
+            const disabled = !binding || codeErrors.length > 0 || rescued || needsPlacementAfterRecovery && !launch || timeCarry >= TIME_LIMIT_MS;
+            const status = !binding ? 'ยังไม่ผูก' : rescued ? 'เปิดเครื่องก่อน' : timeCarry >= TIME_LIMIT_MS ? 'หมดเวลา' : flightInProgress ? 'งานเดิมยังรัน' : remoteManual ? 'โหมด manual' : codeErrors.length ? 'แก้โค้ดก่อน' : 'พร้อมกด';
             return (
-              <Button key={key} type="button" variant={disabled ? 'outline' : 'default'}
+              <Button key={key} type="button" variant={disabled || flightInProgress || remoteManual ? 'outline' : 'default'}
                 className="h-auto min-h-11 min-w-0 flex-col items-start gap-0.5 px-1.5 py-1 text-left disabled:border-line disabled:bg-surface-2 disabled:text-muted-foreground disabled:opacity-100"
-                disabled={disabled} onClick={() => play(key)}>
+                disabled={disabled} onClick={() => pressKey(key)}>
                 <span className="flex w-full flex-wrap items-center justify-between gap-x-1">
                   <span className="font-mono text-xs font-bold">KEY {key}</span>
                   <span className="text-xs">{status}</span>
@@ -602,6 +1103,10 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
             )}
           </>;
         })()}
+        {fullHeightField && <div className="grid gap-2 border-t border-line pt-2">
+          <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant={remoteManual ? 'default' : 'outline'} aria-pressed={remoteManual} disabled={!started || rescued || done} onClick={toggleManual}>{remoteManual ? 'กลับโหมด coding' : 'สลับเป็น manual'}</Button><Button type="button" size="sm" variant="outline" disabled={!flightInProgress || rescued || emergencyRequested} onClick={emergencyLand}>ลงฉุกเฉิน · E</Button>{emergencyLanded && !rescued && <Button type="button" size="sm" disabled={!pickupNearby} onClick={pickUpDrone}>จับแล้วพลิก · G</Button>}{rescued && <Button type="button" size="sm" disabled={!flipComplete} onClick={powerCycle}>ปิดเปิดเครื่อง · P</Button>}</div>
+          {remoteManual && <div className="flex flex-wrap items-center gap-4"><TouchStick label="ก้านเดินหน้าและด้านข้าง" onMove={(x, y) => updateStick({ right: x, forward: y })} /><TouchStick label="ก้านขึ้นลงและหมุนหัว" onMove={(x, y) => updateStick({ yaw: x, up: y })} /><p className="max-w-56 text-xs leading-5 text-muted-foreground">คีย์บอร์ด: ลูกศรบังคับหน้า–หลัง–ซ้าย–ขวา · I/K ขึ้นลง · J/L หมุนหัว</p></div>}
+        </div>}
       </section>}
 
       {/* แถบควบคุม: ซ้าย = เล่น/หยุด/เริ่มใหม่ · ขวา = มุมมอง เสียง 2D/3D (ทุกปุ่มมีข้อความ) */}
@@ -612,7 +1117,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
         {bigPlay && done && (
           <Button className="h-11 px-5 text-base" onClick={() => play(previewKey)}><RotateCcw className="size-4" /> เล่นซ้ำ</Button>
         )}
-        {started && <Button variant="ghost" className="h-11 px-4 text-base" onClick={reset}>รีเซ็ตเที่ยวบิน</Button>}
+        {started && <Button variant="ghost" className="h-11 px-4 text-base" onClick={reset}>รีเซ็ตเที่ยวบิน · R</Button>}
         {!previewKey && done && <Button variant="outline" className="h-11 px-4 text-base" onClick={randomizeConditions}>บินใหม่ · สภาพใหม่</Button>}
         {!previewKey && mode === '3d' && <Button type="button" variant="outline" aria-pressed={showDimensions} className="h-11 px-3 text-base" onClick={() => setShowDimensions((current) => !current)}><Ruler className="size-4" /> {showDimensions ? 'ซ่อนเส้นระยะ' : 'แสดงเส้นระยะ'}</Button>}
         {!previewKey && <Button type="button" variant="outline" className="h-11 px-3 text-base" onClick={() => setMeasureOpen(true)}><Ruler className="size-4" /> เปิดแผนวัดใหญ่</Button>}
@@ -630,8 +1135,8 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
         <div data-tour={previewKey ? undefined : "sim-camera"} className="ml-auto flex flex-wrap items-center gap-2">
           {mode === '3d' && (
             <div role="group" aria-label="เลือกมุมมอง" className="flex gap-1 squircle-xl border border-line bg-surface p-1">
-              {VIEWS.map(({ id, label, Icon }) => (
-                <Button key={id} variant={view === id ? 'default' : 'ghost'} className="h-9 px-3 text-base" aria-pressed={view === id} onClick={() => setView(id)}><Icon className="size-4" /> <span className="max-sm:hidden">{label}</span><span className="sm:hidden sr-only">{label}</span></Button>
+              {VIEWS.filter(item => fullHeightField || item.id !== 'walk').map(({ id, label, Icon }) => (
+                <Button key={id} variant={view === id ? 'default' : 'ghost'} className="h-9 px-3 text-base" aria-pressed={view === id} disabled={replaying && id === 'walk'} onClick={() => chooseView(id)}><Icon className="size-4" /> <span className="max-sm:hidden">{label}</span><span className="sm:hidden sr-only">{label}</span></Button>
               ))}
             </div>
           )}
@@ -671,8 +1176,10 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
         const planned = plannedResult.finalPosition;
         const drift = Math.hypot(actual.x - planned.x, actual.y - planned.y);
         const c = result.conditions;
-        return <section className="grid gap-3 squircle-2xl border border-line bg-surface p-4" aria-label="ทบทวนสภาพการบิน">
-          <div className="flex flex-wrap items-start gap-2"><div className="min-w-0 flex-1"><h3 className="font-bold">ทบทวนเที่ยวบิน {activeKey ? `· KEY ${activeKey}` : ''} · seed {flightSeed}</h3><p className="mt-1 text-sm text-muted-foreground">เส้นฟ้า = แผนตามคำสั่ง · เส้นแดง = เส้นทางที่โดรนบินจริง</p></div><Button size="sm" variant="outline" onClick={() => play(activeKey ?? undefined)}>เล่นซ้ำสภาพเดิม</Button></div>
+        return <details className="squircle-2xl border border-line bg-surface" aria-label="ทบทวนสภาพการบิน">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">ดูเส้นทางบินและสภาพรอบนี้ · KEY {activeKey ?? '-'} · seed {flightSeed}</summary>
+          <div className="grid gap-3 border-t border-line p-4">
+          <div className="flex flex-wrap items-start gap-2"><p className="min-w-0 flex-1 text-sm text-muted-foreground">เส้นฟ้า = แผน · เส้นแดง = บินจริง · บันทึกการกระทำ {actionsRef.current.length} ครั้ง</p><Button size="sm" variant="outline" onClick={() => play(activeKey ?? undefined, actionsRef.current)}>เล่นซ้ำสภาพเดิม</Button></div>
           <svg viewBox="0 0 400 240" role="img" aria-label={`เส้นทางวางแผนเทียบกับเส้นทางจริง ปลายทางต่างกัน ${drift.toFixed(1)} เซนติเมตร`} className="h-48 w-full squircle-xl border border-line bg-canvas">
             <defs><pattern id="flight-grid" width="38" height="38" patternUnits="userSpaceOnUse"><path d="M 38 0 L 0 0 0 38" fill="none" stroke="currentColor" strokeOpacity=".12" strokeWidth="1" /></pattern></defs>
             <rect width="400" height="240" fill="url(#flight-grid)" />
@@ -681,12 +1188,13 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
             <circle cx="200" cy="120" r="5" fill="currentColor" /><text x="208" y="115" fontSize="11" fill="currentColor">ฐาน</text>
           </svg>
           <div className="grid gap-2 text-sm sm:grid-cols-2">
-            <p className="squircle-xl border border-line bg-surface-2 p-2.5">ความคลาดที่จำลองไว้ {Math.hypot(c.driftX, c.driftY).toFixed(1)} ซม. ต่อเที่ยว · ไม่สะสมเพิ่มทุกคำสั่ง</p>
+            <p className="squircle-xl border border-line bg-surface-2 p-2.5">{difficulty === 'hard' ? 'ระดับยาก: ความคลาดเปลี่ยนตามความสูง ความเร็ว แสง และเงาระหว่างรอบ' : difficulty === 'easy' ? 'ระดับง่าย: ระยะเคลื่อนที่หยุดตามคำสั่ง' : `ความคลาดพื้นฐาน ${Math.hypot(c.driftX, c.driftY).toFixed(1)} ซม. ต่อเที่ยว`}</p>
             <p className="squircle-xl border border-line bg-surface-2 p-2.5">แบตเตอรี่ {c.batteryPercent}% · ปลายทางต่างจากแผน {drift.toFixed(1)} ซม.</p>
-            <p className="squircle-xl border border-line bg-surface-2 p-2.5">ถ้าโดรนชนหรือตก ระยะปลายทางอาจต่างจากแผนมากกว่า 3 ซม. เพราะเที่ยวบินหยุดก่อนจบ</p>
+            <p className="squircle-xl border border-line bg-surface-2 p-2.5">ถ้าโดรนชนหรือตก เส้นทางจริงจะหยุดก่อนแผนที่เขียนไว้</p>
             <p className="squircle-xl border border-line bg-surface-2 p-2.5">ลองแก้: ดูจุดที่เริ่มพลาดจากเส้นทาง แล้วปรับคำสั่งช่วงนั้นทีละอย่าง</p>
           </div>
-        </section>;
+          </div>
+        </details>;
       })()}
 
       {/* สถานะการบิน: ตก/ชน/พัง หรือบินสำเร็จ */}
@@ -730,7 +1238,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
                 {result.breakdown.length === 0 && <li className="text-muted-foreground">ยังไม่ได้คะแนน</li>}
               </ul>
               <p className="text-xs text-muted-foreground">
-                {result.stopTime !== null ? `หยุดเวลาที่ ${fmtTime(result.stopTime)}` : 'ยังไม่ได้หยุดเวลา (ต้องลงจอดบนแท่น Takeoff)'}
+                {result.stopTime !== null ? `หยุดเวลาที่ ${fmtTime(timeCarry + result.stopTime)}` : 'ยังไม่ได้หยุดเวลา (ต้องลงจอดบนแท่น Takeoff)'}
                 {result.timedOut ? ' · หมดเวลา' : ''}
               </p>
             </div>

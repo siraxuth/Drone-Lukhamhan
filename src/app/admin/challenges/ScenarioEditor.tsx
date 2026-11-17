@@ -70,7 +70,7 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
     y: round2(clamp(p.y, -4.8, 4.8)),
   });
   const moveItem = (id: string, point: { x: number; y: number }) => {
-    const q = place(point);
+    const q = id === '__start' ? { x: round2(clamp(point.x, -5.8, 5.8)), y: round2(clamp(point.y, -5.8, 5.8)) } : place(point);
     if (id === '__start') setStart(q);
     else if (id === '__base') setCfg((c) => ({ ...c, base: { mode: 'custom', ...q } }));
     else patch(id, q);
@@ -182,7 +182,7 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
           {view === '3d' ? (
             <ScenarioViewport cfg={cfg} selected={sel} snap={snap} onSelect={setSel} onMove={moveItem} onRotate={(id, yaw) => patch(id, { yaw })} onAdd={add} onFallback={() => setView('2d')} />
           ) : <>
-          <svg ref={svg} viewBox="-5.4 -5.4 10.8 10.8" tabIndex={0} onKeyDown={onKey} onPointerMove={onMove} onPointerUp={() => { drag.current = null; }} onPointerLeave={() => { drag.current = null; }}
+          <svg ref={svg} viewBox="-6.2 -6.2 12.4 12.4" tabIndex={0} onKeyDown={onKey} onPointerMove={onMove} onPointerUp={() => { drag.current = null; }} onPointerLeave={() => { drag.current = null; }}
             onPointerDown={(e) => { if (e.target === e.currentTarget || (e.target as SVGElement).dataset.bg) setSel(null); }}
             className="aspect-square w-full touch-none squircle-2xl border border-line bg-[#171b26] outline-none focus-visible:border-brand-blue" role="application" aria-label="แผนผังสนาม ลากวัตถุเพื่อย้าย หรือเลือกแล้วกดลูกศร">
             <g transform="scale(1,-1)">
@@ -192,11 +192,9 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
               ))}
               {standard && [[-2.5, 2.5], [2.5, 2.5], [-2.5, -2.5], [2.5, -2.5]].map(([x, y]) => <circle key={`${x}${y}`} cx={x} cy={y} r={0.5} fill="#1d3fae" opacity={0.5} />)}
               <ScenePlanLayer pattern={cfg.pattern} objects={cfg.objects} selected={sel} />
-              <BaseStartLayer cfg={cfg} showStart={!standard} selected={sel === '__start'} />
-              {!standard && (
-                <circle cx={st.x} cy={st.y} r={0.6} fill="transparent" style={{ cursor: 'grab' }}
-                  onPointerDown={(e) => { e.stopPropagation(); setSel('__start'); drag.current = '__start'; (e.currentTarget as Element).setPointerCapture?.(e.pointerId); svg.current?.focus(); }} />
-              )}
+              <BaseStartLayer cfg={cfg} selected={sel === '__start'} />
+              <circle cx={st.x} cy={st.y} r={0.6} fill="transparent" style={{ cursor: 'grab' }}
+                onPointerDown={(e) => { e.stopPropagation(); setSel('__start'); drag.current = '__start'; (e.currentTarget as Element).setPointerCapture?.(e.pointerId); svg.current?.focus(); }} />
               {!standard && baseMode === 'custom' && bp && (
                 <rect x={bp.x - 0.75} y={bp.y - 0.75} width={1.5} height={1.5} fill="transparent" style={{ cursor: 'grab' }}
                   onPointerDown={(e) => { e.stopPropagation(); drag.current = '__base'; (e.currentTarget as Element).setPointerCapture?.(e.pointerId); svg.current?.focus(); }} />
@@ -283,16 +281,15 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
             </div>
           )}
 
-          {!standard ? (
-            <details open={sel === '__start' || sel === '__base' ? true : undefined} className="squircle-2xl border border-line bg-surface">
-              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">จุดเริ่มโดรนและฐานลงจอด</summary>
+          <details open={sel === '__start' || sel === '__base' ? true : undefined} className="squircle-2xl border border-line bg-surface">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">จุดเริ่มโดรน{standard ? '' : 'และฐานลงจอด'} · {st.x}, {st.y} ม. · {st.yaw}°</summary>
               <div className="grid gap-4 border-t border-line p-4">
               <div className="grid gap-2">
-                <p className="text-base font-bold">1. โดรนเริ่มที่ไหน</p>
-                <p className="text-sm text-muted-foreground">เลือกตัวแทนโดรนในสนามแล้วลากเพื่อย้าย หรือกรอกตำแหน่ง แล้วเลือกว่าหัวโดรนหันไปทางไหน</p>
+                <p className="text-base font-bold">ตำแหน่งและทิศหัว</p>
+                <p className="text-sm text-muted-foreground">ลากโดรนบนสนามหรือกรอกพิกัด · 0° คือทิศเหนือ · วางข้างสนามได้ถึง 0.8 ม.</p>
                 <div className="grid grid-cols-2 gap-3">
-                  <Num label="ซ้าย-ขวา" unit="ม." min={-4.8} max={4.8} value={st.x} onChange={(v) => setStart({ x: clamp(v ?? 0, -4.8, 4.8) })} />
-                  <Num label="หน้า-หลัง" unit="ม." min={-4.8} max={4.8} value={st.y} onChange={(v) => setStart({ y: clamp(v ?? 0, -4.8, 4.8) })} />
+                  <Num label="ซ้าย-ขวา" unit="ม." min={-5.8} max={5.8} value={st.x} onChange={(v) => setStart({ x: clamp(v ?? 0, -5.8, 5.8) })} />
+                  <Num label="หน้า-หลัง" unit="ม." min={-5.8} max={5.8} value={st.y} onChange={(v) => setStart({ y: clamp(v ?? 0, -5.8, 5.8) })} />
                 </div>
                 <div role="radiogroup" aria-label="ทิศหัวโดรน" className="grid grid-cols-4 gap-2">
                   {HEADINGS.map((h) => (
@@ -302,9 +299,10 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
                     </button>
                   ))}
                 </div>
+                <Num label="มุมหัวแบบละเอียด" unit="°" min={0} max={359} value={st.yaw} onChange={(v) => setStart({ yaw: Math.round(clamp(v ?? 0, 0, 359)) })} />
                 <Button type="button" variant="outline" className="h-10 justify-self-start px-3 text-base" onClick={() => setStart({ x: 0, y: 0 })}>วางกลางสนาม</Button>
               </div>
-              <fieldset className="grid gap-2">
+              {!standard && <fieldset className="grid gap-2">
                 <legend className="mb-1 text-base font-bold">2. ฐาน (แท่นลงจอด) อยู่ไหน</legend>
                 {BASE_MODES.map((m) => (
                   <label key={m.mode} className={`flex cursor-pointer items-start gap-3 squircle-xl border p-3 transition-colors ${baseMode === m.mode ? 'border-brand-blue bg-brand-blue/10' : 'border-line hover:bg-surface-2'}`}>
@@ -318,12 +316,9 @@ export function ScenarioEditor({ initial }: { initial: ScenarioConfig }) {
                     <Num label="ฐานหน้า-หลัง" unit="ม." min={-4.8} max={4.8} value={bp.y} onChange={(v) => setCfg((c) => ({ ...c, base: { mode: 'custom', x: bp.x, y: clamp(v ?? 0, -4.8, 4.8) } }))} />
                   </div>
                 )}
-              </fieldset>
+              </fieldset>}
               </div>
             </details>
-          ) : (
-            <p className="squircle-xl bg-surface-2 px-4 py-3 text-sm text-muted-foreground">สนามแข่งจริงเริ่มและลงจอดที่ฐานกลางสนามเสมอ ถ้าอยากย้ายจุดเริ่มหรือไม่มีฐาน ให้เลือกกริดหรือพื้นว่าง</p>
-          )}
           <div className="grid gap-1.5">
             <p className="flex items-center justify-between text-base font-medium"><span>วัตถุในสนาม ({cfg.objects.length})</span>
               {cfg.objects.length > 0 && <button type="button" className="text-sm text-brand-red hover:underline" onClick={() => { if (confirm('ลบวัตถุทั้งหมดในสนาม?')) { setCfg((c) => ({ ...c, objects: [] })); setSel(null); } }}>ลบทั้งหมด</button>}</p>
