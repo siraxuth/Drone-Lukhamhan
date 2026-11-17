@@ -24,23 +24,23 @@ export function WalkGuide({ onClose }: { onClose: () => void }) {
         <section className="squircle-2xl border border-line bg-surface-2 p-3">
           <h3 className="font-bold">คอมพิวเตอร์</h3>
           <p className="mt-1"><Key>W</Key> <Key>A</Key> <Key>S</Key> <Key>D</Key> เดิน · คลิกสนามแล้วขยับเมาส์เพื่อหันมอง ถ้าเบราว์เซอร์ไม่จับเมาส์ ให้คลิกลากในสนาม</p>
-          <p className="mt-1"><Key>F</Key> เปิดมุมจัดจุดวาง · <Key>K</Key> เปิดรีโมทกลางจอ · เลข <Key>1</Key>–<Key>9</Key> สั่ง KEY ได้ทันที · <Key>E</Key> ลงฉุกเฉิน</p>
+          <p className="mt-1"><Key>F</Key> จัดจุดวาง · <Key>K</Key> เลือก KEY · เลข <Key>1</Key>–<Key>9</Key> สั่ง KEY · <Key>E</Key> ลงฉุกเฉิน · <Key>G</Key> จับโดรน · <Key>P</Key> เปิดใหม่ · <Key>R</Key> เริ่มเที่ยวบินใหม่</p>
           <p className="mt-1"><Key>Esc</Key> ปล่อยเมาส์ที่ถูกจับอยู่ กดอีกครั้งเพื่อย่อเต็มจอ ถ้าใช้วิธีคลิกลาก กดครั้งเดียวก็ย่อได้</p>
         </section>
         <section className="squircle-2xl border border-line bg-surface-2 p-3">
           <h3 className="font-bold">มือถือและแท็บเล็ต</h3>
           <p className="mt-1">ลากจอยซ้ายเพื่อเดิน ปัดบนพื้นที่ด้านขวาเพื่อหันมอง</p>
-          <p className="mt-1">ปุ่มจัดจุดวาง, KEY, Manual, ฉุกเฉิน และจับโดรนอยู่ด้านขวาของจอ กด “เปิดก้านโดรน” เมื่อต้องการบังคับเอง</p>
+          <p className="mt-1">ปุ่มจัดจุดวาง, KEY, Manual และฉุกเฉินอยู่ด้านขวาของจอ กด “เปิดก้านโดรน” เมื่อต้องการบังคับเอง</p>
         </section>
         <section className="squircle-2xl border border-line bg-surface-2 p-3">
           <h3 className="font-bold">วางโดรนและบิน</h3>
-          <p className="mt-1">เดินเข้าใกล้แท่นแล้วกด <Key>F</Key> ลากโดรนเข้าจุดสีขาวและลากวงฟ้ารอบตัวเพื่อหมุนหัว กล้องจะล็อกไว้ จุดวางเปลี่ยนเป็นสีฟ้าเมื่อโดรนอยู่ตรงนั้น</p>
-          <p className="mt-1">ระบบลองรันโค้ดเพื่อแนะนำจุดวาง กดยืนยันแล้วเลือก KEY ที่ผูกกับโค้ด ก่อนกด KEY ยังกลับมาแก้จุดวางได้ ถ้าไม่อยากเดิน ใช้ปุ่ม Setup ในมุมบนหรือมุมตามโดรน</p>
+          <p className="mt-1">กด <Key>F</Key> เพื่อจัดจุดวาง ค่าเริ่มต้นมาจากแอดมิน ลากโดรนเพื่อย้ายหรือลากวงฟ้าเพื่อหมุนหัว ใช้ <Key>Q</Key>/<Key>E</Key> หมุนหัวได้ วางข้างสนามได้</p>
+          <p className="mt-1">ระบบลองบินตามโค้ดและแนะนำจุดที่ผ่านเป้าหมายได้มากที่สุด จะใช้จุดนั้นหรือวางเองก็ได้ แล้วกดยืนยัน</p>
         </section>
         <section className="squircle-2xl border border-line bg-surface-2 p-3">
           <h3 className="font-bold">บังคับและกู้โดรน</h3>
           <p className="mt-1">สลับเป็น manual แล้วใช้ปุ่มลูกศรบังคับแนวราบ <Key>I</Key>/<Key>K</Key> ขึ้นลง <Key>J</Key>/<Key>L</Key> หมุนหัว หรือใช้ก้านบนจอ</p>
-          <p className="mt-1">ใกล้ชนกด <Key>E</Key> หรือปุ่ม “ฉุกเฉิน” เพื่อลงจอด หากอยู่ใกล้โดรน กดค้าง “จับและพลิก” ให้ใบพัดหยุด แล้วปิดเปิดโดรนใหม่</p>
+          <p className="mt-1">กด <Key>E</Key> เพื่อลงฉุกเฉิน รอใบพัดหยุด เดินเข้าใกล้โดรนไม่เกิน 1.5 ม. แล้วกด <Key>G</Key> หรือปุ่ม “จับแล้วพลิก” เพื่อหยิบตรงแบตเตอรี่และพลิกกลางอากาศ รอพลิกเสร็จแล้วกด <Key>P</Key> ปิดเปิดใหม่ จากนั้นกด <Key>F</Key> เพื่อวางอีกครั้ง</p>
         </section>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 text-sm">

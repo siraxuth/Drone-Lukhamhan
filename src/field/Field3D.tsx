@@ -13,7 +13,7 @@ import { heading, type DroneState } from './aim';
 import { balloonId } from './layout';
 import type { RuleEvent } from '@/rules/types';
 import type { Measurement } from '@/flight/measurements';
-import type { FieldLights } from '@/flight/environment';
+import type { CeilingLights, FieldLights } from '@/flight/environment';
 import { FieldDimensions3D, FieldMeasurements3D } from './FieldMeasurements3D';
 
 export type ViewPreset = 'top' | 'chase' | 'walk';
@@ -52,12 +52,14 @@ type Props = {
   dimensionFrom?: string;
   dimensionTo?: string;
   lights?: FieldLights;
+  ceilingLights?: CeilingLights;
   walkPoseRef?: React.RefObject<WalkPose>;
   walkInputRef?: React.RefObject<WalkInput>;
   walkControlsEnabled?: boolean;
   onWalk?: (pose: WalkPose) => void;
   placement?: { center: { x: number; y: number }; target: { x: number; y: number }; aligned: boolean; onRotate: (yaw: number) => void };
   carryingDrone?: boolean;
+  rescuePose?: LivePose | null;
 };
 
 /** สนามอยู่ในพิกัดเมตร: field(x,y) → three(x, 0, -y) เพื่อให้ "เหนือ" อยู่ไกลจากกล้องเริ่มต้น */
@@ -96,19 +98,99 @@ function Surround() {
 const CORNERS: Array<[number, number]> = [[-4.85, 4.85], [4.85, 4.85], [-4.85, -4.85], [4.85, -4.85]];
 const LED_COLORS = { cyan: '#5cc6e8', blue: '#355bd4', ice: '#b5e9ff' } as const;
 
-function CornerLeds({ lights, low }: { lights: FieldLights; low: boolean }) {
-  return <>{lights.map((light, index) => {
-    const [x, y] = CORNERS[index];
-    const color = LED_COLORS[light.color];
-    return <group key={index} position={[x, 0, -y]}>
-      <mesh position={[0, 1.6, 0]}><cylinderGeometry args={[0.025, 0.035, 3.2, 8]} /><meshStandardMaterial color="#555c69" /></mesh>
-      <mesh position={[0, 3.2, 0]} rotation={[0, Math.atan2(-x, y), 0]}>
-        <boxGeometry args={[0.22, 0.14, 0.16]} />
-        <meshStandardMaterial color={light.enabled ? color : '#46505b'} emissive={light.enabled ? color : '#000000'} emissiveIntensity={light.enabled ? light.intensity * 2 : 0} />
-      </mesh>
-      {light.enabled && !low && <pointLight position={[0, 3.1, 0]} color={color} intensity={light.intensity * 7} distance={8} decay={2} />}
-    </group>;
-  })}</>;
+function fixtureTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const context = canvas.getContext('2d')!;
+  const pixels = context.createImageData(64, 64);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const grain = Math.sin(x * 47.3 + y * 19.7) * Math.cos(x * 9.1 - y * 31.3);
+    const shade = Math.round(64 + grain * 10 + (y % 8 === 0 ? 7 : 0));
+    const index = (y * 64 + x) * 4;
+    pixels.data[index] = shade;
+    pixels.data[index + 1] = shade + 4;
+    pixels.data[index + 2] = shade + 12;
+    pixels.data[index + 3] = 255;
+  }
+  context.putImageData(pixels, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function softBeamTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128; canvas.height = 256;
+  const context = canvas.getContext('2d')!;
+  const pixels = context.createImageData(128, 256);
+  for (let y = 0; y < 256; y++) for (let x = 0; x < 128; x++) {
+    const across = (x - 63.5) / 63.5, along = (y - 127.5) / 127.5;
+    const fade = Math.max(0, 1 - across * across) ** 2 * Math.max(0, 1 - along * along) ** 1.7;
+    const index = (y * 128 + x) * 4;
+    pixels.data[index] = 255; pixels.data[index + 1] = 255; pixels.data[index + 2] = 255;
+    pixels.data[index + 3] = Math.round(fade * 170);
+  }
+  context.putImageData(pixels, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function GroundLed({ x, y, light, low, metal, wash }: { x: number; y: number; light: FieldLights[number]; low: boolean; metal: THREE.Texture; wash: THREE.Texture }) {
+  const color = LED_COLORS[light.color];
+  const target = useMemo(() => {
+    const object = new THREE.Object3D();
+    object.position.set(-x, 0.32, y);
+    return object;
+  }, [x, y]);
+  const length = Math.hypot(x, y);
+  const washCenter: [number, number, number] = [(-x / length) * 2.7, 0.008, (y / length) * 2.7];
+  return <group position={[x, 0, -y]}>
+    <mesh position={[0, 0.045, 0]}><cylinderGeometry args={[0.19, 0.21, 0.09, 16]} /><meshStandardMaterial map={metal} metalness={0.55} roughness={0.35} /></mesh>
+    <mesh position={[0, 0.091, 0]} rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[0.125, 0.17, 24]} /><meshStandardMaterial color="#a4adba" metalness={0.8} roughness={0.25} /></mesh>
+    <mesh position={[0, 0.105, 0]}><cylinderGeometry args={[0.14, 0.17, 0.045, 16]} /><meshStandardMaterial color={light.enabled ? color : '#44505c'} emissive={light.enabled ? color : '#000000'} emissiveIntensity={light.enabled ? light.intensity * 2.2 : 0} toneMapped={false} /></mesh>
+    <primitive object={target} />
+    {light.enabled && <>
+      <spotLight position={[0, 0.19, 0]} target={target} color={color} angle={0.44} penumbra={1} intensity={light.intensity * (low ? 18 : 28)} distance={10} decay={2} />
+      {!low && <pointLight position={[0, 0.18, 0]} color={color} intensity={light.intensity * 1.8} distance={1.5} decay={2} />}
+      <group position={washCenter} rotation={[0, Math.atan2(x, -y), 0]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
+          <planeGeometry args={[low ? 2.1 : 2.8, 5.4]} />
+          <meshBasicMaterial map={wash} color={color} transparent opacity={light.intensity * 0.55} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+        </mesh>
+      </group>
+    </>}
+  </group>;
+}
+
+function CeilingLed({ x, y, enabled, low, metal }: { x: number; y: number; enabled: boolean; low: boolean; metal: THREE.Texture }) {
+  const target = useMemo(() => {
+    const object = new THREE.Object3D();
+    object.position.set(-x, -5.1, y);
+    return object;
+  }, [x, y]);
+  return <group position={[x, 5.45, -y]}>
+    <mesh><boxGeometry args={[0.78, 0.16, 0.56]} /><meshStandardMaterial map={metal} metalness={0.48} roughness={0.4} /></mesh>
+    <mesh position={[0, -0.095, 0]} rotation={[Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[0.65, 0.44]} />
+      <meshBasicMaterial color={enabled ? '#f0f8ff' : '#59616c'} toneMapped={false} />
+    </mesh>
+    <primitive object={target} />
+    {enabled && <>
+      <spotLight position={[0, -0.12, 0]} target={target} color="#e9f4ff" angle={1.08} penumbra={1} intensity={low ? 28 : 42} distance={16} decay={2} />
+      {!low && <pointLight position={[0, -0.15, 0]} color="#e9f4ff" intensity={5} distance={4} decay={2} />}
+    </>}
+  </group>;
+}
+
+function CornerLeds({ lights, ceilingLights, low }: { lights: FieldLights; ceilingLights: CeilingLights; low: boolean }) {
+  const metal = useMemo(fixtureTexture, []);
+  const wash = useMemo(softBeamTexture, []);
+  useEffect(() => () => { metal.dispose(); wash.dispose(); }, [metal, wash]);
+  return <>
+    {CORNERS.map(([x, y], index) => <GroundLed key={`floor-${index}`} x={x} y={y} light={lights[index]} low={low} metal={metal} wash={wash} />)}
+    {CORNERS.map(([x, y], index) => <CeilingLed key={`ceiling-${index}`} x={x} y={y} enabled={ceilingLights[index]} low={low} metal={metal} />)}
+  </>;
 }
 
 function WalkCameraRig({ poseRef, inputRef, onWalk, scene, enabled }: { poseRef: React.RefObject<WalkPose>; inputRef: React.RefObject<WalkInput>; onWalk?: (pose: WalkPose) => void; scene?: SceneSpec; enabled: boolean }) {
@@ -189,6 +271,7 @@ function PlacementMarkers({ center, target, drone, aligned, onRotate, scene }: {
   const turning = useRef(false);
   const base = scene ? baseAt(scene) : { x: 0, y: 0 };
   const surfaceY = base && Math.abs(base.x - center.x) <= 0.75 && Math.abs(base.y - center.y) <= 0.75 ? 0.235 : 0.035;
+  const targetY = base && Math.abs(base.x - target.x) <= 0.75 && Math.abs(base.y - target.y) <= 0.75 ? 0.235 : 0.035;
   const turn = (event: ThreeEvent<PointerEvent>) => {
     if (!turning.current) return;
     event.stopPropagation();
@@ -206,7 +289,7 @@ function PlacementMarkers({ center, target, drone, aligned, onRotate, scene }: {
         <mesh position={[0, 0, side]}><boxGeometry args={[1.26, 0.008, 0.018]} /><meshBasicMaterial color="#ffffff" /></mesh>
       </group>)}
     </group>
-    <mesh position={[target.x, surfaceY + 0.015, -target.y]} rotation={[-Math.PI / 2, 0, 0]}>
+    <mesh position={[target.x, targetY + 0.015, -target.y]} rotation={[-Math.PI / 2, 0, 0]}>
       <circleGeometry args={[0.17, 32]} />
       <meshBasicMaterial color={aligned ? '#4aa3ff' : '#ffffff'} depthWrite={false} />
     </mesh>
@@ -514,6 +597,42 @@ function HandDrone({ low }: { low: boolean }) {
   </group>;
 }
 
+/** ยกจากพื้น จับบริเวณแบตเตอรี่ แล้วพลิกทั้งตัวโดรนในมือ */
+function RescueDrone({ low, start, walker, view }: { low: boolean; start: LivePose; walker: React.RefObject<WalkPose>; view: ViewPreset }) {
+  const { camera } = useThree();
+  const carrier = useRef<THREE.Group>(null);
+  const grip = useRef<THREE.Group>(null);
+  const began = useRef<number | null>(null);
+  const origin = useMemo(() => new THREE.Vector3(start.x, start.alt, -start.y), [start]);
+  const yaw = useMemo(() => new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI - start.yaw * Math.PI / 180, 0)), [start.yaw]);
+  const target = useMemo(() => new THREE.Vector3(), []);
+  useFrame(({ clock }) => {
+    if (!carrier.current || !grip.current) return;
+    began.current ??= clock.elapsedTime;
+    const elapsed = clock.elapsedTime - began.current;
+    const lift = THREE.MathUtils.smoothstep(elapsed, 0, 0.62);
+    const flip = THREE.MathUtils.smoothstep(elapsed, 0.25, 0.92);
+    if (view === 'walk') camera.localToWorld(target.set(0.19, -0.2, -0.82));
+    else target.set(walker.current.x + 0.18, 1.28, -walker.current.y - 0.12);
+    carrier.current.position.copy(origin).lerp(target, lift);
+    carrier.current.quaternion.copy(yaw).slerp(view === 'walk' ? camera.quaternion : yaw, lift);
+    grip.current.rotation.x = Math.PI * flip;
+  });
+  return <group ref={carrier} position={origin} quaternion={yaw}>
+    <group ref={grip} scale={1.4}>
+      <DroneModel low={low} />
+      <mesh position={[0.14, -0.055, 0.035]} rotation={[0, 0, -0.5]}>
+        <capsuleGeometry args={[0.028, 0.18, 4, 8]} />
+        <meshStandardMaterial color="#8794a2" roughness={0.85} />
+      </mesh>
+      {[-1, 1].map(side => <mesh key={side} position={[0.055, 0.045, side * 0.052]} rotation={[0, 0, Math.PI / 2]}>
+        <capsuleGeometry args={[0.012, 0.07, 4, 8]} />
+        <meshStandardMaterial color="#a9b4bf" roughness={0.82} />
+      </mesh>)}
+    </group>
+  </group>;
+}
+
 /** ความสูงพื้นผิวใต้โดรน: บนแท่น Takeoff/แท่นวงกลมสูง 20 ซม. นอกนั้นคือพื้นสนาม */
 function groundY(x: number, y: number, platforms: boolean) {
   if (Math.abs(x) <= FIELD.takeoff.size / 2 && Math.abs(y) <= FIELD.takeoff.size / 2) return FIELD.takeoff.height + 0.004;
@@ -524,7 +643,7 @@ function groundY(x: number, y: number, platforms: boolean) {
 function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, poseRef, platforms, loaded, dartInventory, needle }: { drone: DroneState; onDrone: Props['onDrone']; onRotate?: (yaw: number) => void; setDragging: (v: boolean) => void; low: boolean; live: boolean; placement?: boolean; poseRef?: React.RefObject<LivePose>; platforms: boolean; loaded: { L: number; R: number }; dartInventory: { front: number; back: number }; needle: boolean }) {
   const dragging = useRef(false);
   const rotating = useRef(false);
-  const lim = FIELD.size / 2 - 0.15;
+  const lim = placement ? 5.8 : FIELD.size / 2 - 0.15;
   const clamp = (v: number) => Math.max(-lim, Math.min(lim, v));
   const yawGroup = useRef<THREE.Group>(null);
   const tiltGroup = useRef<THREE.Group>(null);
@@ -642,7 +761,7 @@ function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, po
             onDrone({ x: clamp(e.point.x), y: clamp(-e.point.z) });
           }}
         >
-          <planeGeometry args={[FIELD.size, FIELD.size]} />
+          <planeGeometry args={[placement ? 12 : FIELD.size, placement ? 12 : FIELD.size]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} />
         </mesh>
       )}
@@ -989,13 +1108,14 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight, plac
   );
 }
 
-export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, walkPoseRef, walkInputRef, walkControlsEnabled = true, onWalk, placement, carryingDrone = false }: Props) {
+export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, ceilingLights, walkPoseRef, walkInputRef, walkControlsEnabled = true, onWalk, placement, carryingDrone = false, rescuePose = null }: Props) {
   const [dragging, setDragging] = useState(false);
   // โจทย์ฝึกบนกริด/พื้นว่าง: วาดวัตถุจาก scene แทนของตามกติกา และให้โดรนมีเข็ม/ลูกดอกตามวัตถุที่วางไว้
   const custom = !!scene && scene.pattern !== 'standard';
   const has = (t: string) => !!scene && scene.objects.some((o) => o.type === t);
   const hasBalloons = custom ? has('balloon') : event.field.balloons;
   const hasTargets = custom ? has('target') : event.field.targets;
+  const fieldLit = !!(lights?.some(light => light.enabled) || ceilingLights?.some(enabled => enabled));
   return (
     <Canvas
       frameloop={live || view === 'walk' ? 'always' : 'demand'}
@@ -1007,13 +1127,13 @@ export default function Field3D({ event, drone, onDrone, view, shot, low, live =
       aria-label="สนามแข่งขัน 3 มิติ"
     >
       <color attach="background" args={['#0b0d12']} />
-      <ambientLight intensity={1.15} />
-      <hemisphereLight args={['#dbe7ff', '#202530', 0.9]} />
-      <directionalLight position={[5, 9, 6]} intensity={2.2} />
+      <ambientLight intensity={fieldLit ? 0.8 : 1.15} />
+      <hemisphereLight args={['#dbe7ff', '#202530', fieldLit ? 0.65 : 0.9]} />
+      <directionalLight position={[5, 9, 6]} intensity={fieldLit ? 1.65 : 2.2} />
       <Surround />
       {scene && scene.pattern !== 'standard' ? <PlainMat pattern={scene.pattern} low={low} /> : <Mat low={low} />}
       <Surroundings />
-      {lights && <CornerLeds lights={lights} low={low} />}
+      {lights && <CornerLeds lights={lights} ceilingLights={ceilingLights ?? [false, false, false, false]} low={low} />}
       {scene && !placement && <SceneLayer3D spec={scene} popped={marks.popped} playheadRef={playheadRef} />}
       {(() => {
         const pb = custom ? baseAt(scene) : { x: 0, y: 0 };
@@ -1022,7 +1142,8 @@ export default function Field3D({ event, drone, onDrone, view, shot, low, live =
       {!placement && !custom && event.field.platforms && <Platforms />}
       {!placement && !custom && event.field.balloons && <Balloons popped={marks.popped} />}
       {!placement && !custom && event.field.targets && (<><Targets /><ShootZones drone={drone} /></>)}
-      {!carryingDrone && <Drone drone={drone} onDrone={onDrone} onRotate={placement?.onRotate} setDragging={setDragging} low={low} live={live && !placement} placement={!!placement} poseRef={poseRef} platforms={event.field.platforms && !custom} loaded={loaded} dartInventory={hasTargets ? dartInventory : { front: 0, back: 0 }} needle={hasBalloons} />}
+      {!carryingDrone && !rescuePose && <Drone drone={drone} onDrone={onDrone} onRotate={placement?.onRotate} setDragging={setDragging} low={low} live={live && !placement} placement={!!placement} poseRef={poseRef} platforms={event.field.platforms && !custom} loaded={loaded} dartInventory={hasTargets ? dartInventory : { front: 0, back: 0 }} needle={hasBalloons} />}
+      {rescuePose && walkPoseRef && <RescueDrone low={low} start={rescuePose} walker={walkPoseRef} view={view} />}
       {carryingDrone && view === 'walk' && <HandDrone low={low} />}
       {placement && <PlacementMarkers center={placement.center} target={placement.target} drone={drone} aligned={placement.aligned} onRotate={placement.onRotate} scene={scene} />}
       {walkPoseRef && <WalkerMarker poseRef={walkPoseRef} visible={view !== 'walk' && !placement} />}
