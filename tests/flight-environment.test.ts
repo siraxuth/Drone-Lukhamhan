@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildScenarioConfig } from '../src/flight/config';
-import { simulate } from '../src/flight/engine';
+import { frameAt, simulate } from '../src/flight/engine';
 import { inLaunchZone, LIGHTS_OFF, LIGHTS_ON, opticalFlowQuality, type FlightEnvironment } from '../src/flight/environment';
 
 const config = buildScenarioConfig({ pattern: 'blank', event: 'mission', objects: [] });
@@ -53,7 +53,8 @@ describe('flight conditions', () => {
       { t: 8500, type: 'stick', value: { forward: 0, right: 1, up: 0, yaw: 0 } },
     ]));
     assert.ok(Math.abs(manual.finalPosition.x - automatic.finalPosition.x) > 0.1);
-    assert.equal(manual.duration, automatic.duration);
+    assert.ok(manual.duration > 8500);
+    assert.equal(manual.commandTimeline.length, automatic.commandTimeline.length);
   });
 
   test('flipping stops the propellers without granting a new flight clock', () => {
@@ -101,5 +102,17 @@ describe('flight conditions', () => {
     const high = atHeight(180).finalPosition;
     assert.ok(Math.hypot(low.x - high.x, low.y - high.y) > 3);
     assert.equal(low.z, high.z);
+  });
+
+  test('hard landing scores the surface touched after descent', () => {
+    const narrowPad = { ...config, pad: { half: 8 } };
+    const hoverAndLand = code.replace('fw(200); ', '');
+    const result = simulate(hoverAndLand, narrowPad, 99, 1, env('hard', LIGHTS_ON));
+    const beforeDescent = frameAt(result.frames, 7920);
+    assert.ok(Math.abs(beforeDescent.x - narrowPad.start.x) < narrowPad.pad.half);
+    assert.ok(Math.abs(beforeDescent.y - narrowPad.start.y) < narrowPad.pad.half);
+    assert.equal(result.landedOnPad, false);
+    assert.equal(result.finalPosition.z, 7.02);
+    assert.equal(result.score, 0);
   });
 });

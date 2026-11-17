@@ -677,11 +677,21 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                     ev({ kind: "warn", line: c.line, text: "โดรนอยู่บนพื้นแล้ว" });
                     break;
                 }
-                const onRealPad = onPadAt(x, y);
-                const plat = cfg.platforms.find(p => Math.hypot(p.x - x, p.y - y) <= p.r);
-                const onPad = padC === null ? !plat : onRealPad; // ไม่มีฐาน: ลงบนพื้นตรงไหนก็นับเป็นจุดลงจอดของภารกิจ
-                const surface = (onRealPad || plat ? PAD_TOP_CM : 0) + LEG_CM; // ลงบนแท่นสูง 20 ซม. หรือพื้นสนาม (ขาอยู่ต่ำกว่ากึ่งกลาง 7 ซม.)
+                let onRealPad = onPadAt(x, y);
+                let plat = cfg.platforms.find(p => Math.hypot(p.x - x, p.y - y) <= p.r);
+                let onPad = padC === null ? !plat : onRealPad; // ไม่มีฐาน: ลงบนพื้นตรงไหนก็นับเป็นจุดลงจอดของภารกิจ
+                let surface = (onRealPad || plat ? PAD_TOP_CM : 0) + LEG_CM; // ลงบนแท่นสูง 20 ซม. หรือพื้นสนาม (ขาอยู่ต่ำกว่ากึ่งกลาง 7 ซม.)
                 if (!travel(0, 0, surface - z, 0, Math.max(0, z - surface) * 15 + 500, c.line)) break;
+                if (difficulty === 'hard') {
+                    // The aircraft can leave a platform during descent. Finish falling to the floor beneath its actual position.
+                    const underNow = (onPadAt(x, y) || cfg.platforms.some(p => Math.hypot(p.x - x, p.y - y) <= p.r) ? PAD_TOP_CM : 0) + LEG_CM;
+                    if (z > underNow + 0.5 && !travel(0, 0, underNow - z, 0, Math.max(500, (z - underNow) * 15), c.line)) break;
+                    onRealPad = onPadAt(x, y);
+                    plat = cfg.platforms.find(p => Math.hypot(p.x - x, p.y - y) <= p.r);
+                    onPad = padC === null ? !plat : onRealPad;
+                    surface = (onRealPad || plat ? PAD_TOP_CM : 0) + LEG_CM;
+                    if (z !== surface) { z = surface; push(); }
+                }
                 flying = false;
                 const finalLanding = !calls.slice(ci + 1).some(q => q.name === "takeOff");
                 if (onPad && !finalLanding) {
