@@ -13,9 +13,12 @@ import { heading, type DroneState } from './aim';
 import { balloonId } from './layout';
 import type { RuleEvent } from '@/rules/types';
 import type { Measurement } from '@/flight/measurements';
+import type { FieldLights } from '@/flight/environment';
 import { FieldDimensions3D, FieldMeasurements3D } from './FieldMeasurements3D';
 
-export type ViewPreset = 'top' | 'chase';
+export type ViewPreset = 'top' | 'chase' | 'walk';
+export type WalkPose = { x: number; y: number; yaw: number; pitch: number };
+export type WalkInput = { forward: number; right: number; lookX: number; lookY: number };
 export type Shot = { from: [number, number, number]; to: [number, number, number]; ok: boolean; mount?: 'front' | 'back'; id?: number; t?: number; terminal?: boolean; speed?: number } | null;
 export type ShotHighlight = { id: number; from: [number, number, number]; to: [number, number, number] } | null;
 
@@ -48,6 +51,10 @@ type Props = {
   showDimensions?: boolean;
   dimensionFrom?: string;
   dimensionTo?: string;
+  lights?: FieldLights;
+  walkPoseRef?: React.RefObject<WalkPose>;
+  walkInputRef?: React.RefObject<WalkInput>;
+  onWalk?: (pose: WalkPose) => void;
 };
 
 /** สนามอยู่ในพิกัดเมตร: field(x,y) → three(x, 0, -y) เพื่อให้ "เหนือ" อยู่ไกลจากกล้องเริ่มต้น */
@@ -81,6 +88,85 @@ function Surround() {
       <meshStandardMaterial color="#111318" roughness={1} />
     </mesh>
   );
+}
+
+const CORNERS: Array<[number, number]> = [[-4.85, 4.85], [4.85, 4.85], [-4.85, -4.85], [4.85, -4.85]];
+const LED_COLORS = { cyan: '#5cc6e8', blue: '#355bd4', ice: '#b5e9ff' } as const;
+
+function CornerLeds({ lights, low }: { lights: FieldLights; low: boolean }) {
+  return <>{lights.map((light, index) => {
+    const [x, y] = CORNERS[index];
+    const color = LED_COLORS[light.color];
+    return <group key={index} position={[x, 0, -y]}>
+      <mesh position={[0, 1.6, 0]}><cylinderGeometry args={[0.025, 0.035, 3.2, 8]} /><meshStandardMaterial color="#555c69" /></mesh>
+      <mesh position={[0, 3.2, 0]} rotation={[0, Math.atan2(-x, y), 0]}>
+        <boxGeometry args={[0.22, 0.14, 0.16]} />
+        <meshStandardMaterial color={light.enabled ? color : '#46505b'} emissive={light.enabled ? color : '#000000'} emissiveIntensity={light.enabled ? light.intensity * 2 : 0} />
+      </mesh>
+      {light.enabled && !low && <pointLight position={[0, 3.1, 0]} color={color} intensity={light.intensity * 7} distance={8} decay={2} />}
+    </group>;
+  })}</>;
+}
+
+function WalkCameraRig({ poseRef, inputRef, onWalk, scene }: { poseRef: React.RefObject<WalkPose>; inputRef: React.RefObject<WalkInput>; onWalk?: (pose: WalkPose) => void; scene?: SceneSpec }) {
+  const { camera, gl } = useThree();
+  const keys = useRef(new Set<string>());
+  const lastReport = useRef(0);
+  const obstacles = useMemo(() => scene?.pattern !== 'standard' && scene
+    ? scene.objects.flatMap(o => {
+        if (o.type === 'hoop') {
+          const half = (o.size ?? 1) / 2;
+          const angle = ((o.yaw ?? 0) * Math.PI) / 180;
+          const sideX = Math.cos(angle) * half, sideY = -Math.sin(angle) * half;
+          return [[o.x - sideX, o.y - sideY, 0.24], [o.x + sideX, o.y + sideY, 0.24]];
+        }
+        return ['platform', 'balloon', 'target'].includes(o.type) ? [[o.x, o.y, o.type === 'platform' ? 0.58 : 0.28]] : [];
+      })
+    : [...FIELD.platform.positions.map(([x, y]) => [x, y, 0.58]), ...[-0.5, 0.5].flatMap(x => [-0.5, 0.5].map(y => [x, y, 0.18]))], [scene]);
+  useEffect(() => {
+    const down = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLElement && event.target.closest('input,textarea,[contenteditable="true"]')) return;
+      if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) { keys.current.add(event.code); event.preventDefault(); }
+    };
+    const up = (event: KeyboardEvent) => keys.current.delete(event.code);
+    const move = (event: MouseEvent) => {
+      if (document.pointerLockElement !== gl.domElement) return;
+      poseRef.current.yaw += event.movementX * 0.12;
+      poseRef.current.pitch = THREE.MathUtils.clamp(poseRef.current.pitch - event.movementY * 0.12, -75, 75);
+    };
+    const lock = (event: PointerEvent) => { if (event.pointerType === 'mouse') void gl.domElement.requestPointerLock(); };
+    gl.domElement.addEventListener('pointerdown', lock);
+    window.addEventListener('keydown', down); window.addEventListener('keyup', up); window.addEventListener('mousemove', move);
+    return () => { gl.domElement.removeEventListener('pointerdown', lock); window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('mousemove', move); if (document.pointerLockElement === gl.domElement) document.exitPointerLock(); };
+  }, [gl, poseRef]);
+  useFrame((state, delta) => {
+    const pose = poseRef.current, input = inputRef.current;
+    const dt = Math.min(delta, 0.05);
+    pose.yaw += input.lookX; pose.pitch = THREE.MathUtils.clamp(pose.pitch + input.lookY, -75, 75);
+    input.lookX = 0; input.lookY = 0;
+    const forward = Math.max(-1, Math.min(1, input.forward + Number(keys.current.has('KeyW')) - Number(keys.current.has('KeyS'))));
+    const right = Math.max(-1, Math.min(1, input.right + Number(keys.current.has('KeyD')) - Number(keys.current.has('KeyA'))));
+    const radians = pose.yaw * Math.PI / 180;
+    const speed = 2.1 * dt / Math.max(1, Math.hypot(forward, right));
+    const nextX = THREE.MathUtils.clamp(pose.x + (Math.sin(radians) * forward + Math.cos(radians) * right) * speed, -4.72, 4.72);
+    const nextY = THREE.MathUtils.clamp(pose.y + (Math.cos(radians) * forward - Math.sin(radians) * right) * speed, -4.72, 4.72);
+    const blocked = obstacles.some(([x, y, radius]) => Math.hypot(nextX - x, nextY - y) < radius);
+    if (!blocked) { pose.x = nextX; pose.y = nextY; }
+    camera.position.set(pose.x, 1.7, -pose.y);
+    camera.rotation.order = 'YXZ';
+    camera.rotation.set(pose.pitch * Math.PI / 180, -radians, 0);
+    if (state.clock.elapsedTime - lastReport.current >= 0.15) { lastReport.current = state.clock.elapsedTime; onWalk?.({ ...pose }); }
+  });
+  return null;
+}
+
+function WalkerMarker({ poseRef, visible }: { poseRef: React.RefObject<WalkPose>; visible: boolean }) {
+  const group = useRef<THREE.Group>(null);
+  useFrame(() => { if (group.current) { group.current.position.set(poseRef.current.x, 0, -poseRef.current.y); group.current.rotation.y = -poseRef.current.yaw * Math.PI / 180; } });
+  return <group ref={group} visible={visible}>
+    <mesh position={[0, 0.85, 0]}><capsuleGeometry args={[0.18, 1.25, 6, 10]} /><meshStandardMaterial color="#c8d0d9" transparent opacity={0.65} /></mesh>
+    <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}><circleGeometry args={[0.34, 24]} /><meshBasicMaterial color="#8ca1b5" transparent opacity={0.3} /></mesh>
+  </group>;
 }
 
 export function Takeoff({ color, hoop = true }: { color: 'green' | 'red'; hoop?: boolean }) {
@@ -810,7 +896,7 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { 
   );
 }
 
-export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo }: Props) {
+export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, walkPoseRef, walkInputRef, onWalk }: Props) {
   const [dragging, setDragging] = useState(false);
   // โจทย์ฝึกบนกริด/พื้นว่าง: วาดวัตถุจาก scene แทนของตามกติกา และให้โดรนมีเข็ม/ลูกดอกตามวัตถุที่วางไว้
   const custom = !!scene && scene.pattern !== 'standard';
@@ -819,7 +905,7 @@ export default function Field3D({ event, drone, onDrone, view, shot, low, live =
   const hasTargets = custom ? has('target') : event.field.targets;
   return (
     <Canvas
-      frameloop={live ? 'always' : 'demand'}
+      frameloop={live || view === 'walk' ? 'always' : 'demand'}
       dpr={low ? 1 : [1, 1.5]}
       camera={{ position: [0, 15.5, 0.01], fov: 42, near: 0.05, far: 80 }}
       gl={{ antialias: !low, powerPreference: low ? 'low-power' : 'high-performance', stencil: false }}
@@ -833,6 +919,7 @@ export default function Field3D({ event, drone, onDrone, view, shot, low, live =
       <Surround />
       {scene && scene.pattern !== 'standard' ? <PlainMat pattern={scene.pattern} low={low} /> : <Mat low={low} />}
       <Surroundings />
+      {lights && <CornerLeds lights={lights} low={low} />}
       {scene && <SceneLayer3D spec={scene} popped={marks.popped} playheadRef={playheadRef} />}
       {(() => {
         const pb = custom ? baseAt(scene) : { x: 0, y: 0 };
@@ -842,12 +929,15 @@ export default function Field3D({ event, drone, onDrone, view, shot, low, live =
       {!custom && event.field.balloons && <Balloons popped={marks.popped} />}
       {!custom && event.field.targets && (<><Targets /><ShootZones drone={drone} /></>)}
       <Drone drone={drone} onDrone={onDrone} setDragging={setDragging} low={low} live={live} poseRef={poseRef} platforms={event.field.platforms && !custom} loaded={loaded} dartInventory={hasTargets ? dartInventory : { front: 0, back: 0 }} needle={hasBalloons} />
+      {walkPoseRef && <WalkerMarker poseRef={walkPoseRef} visible={view !== 'walk'} />}
       {showDimensions && <FieldDimensions3D scene={scene} fromId={dimensionFrom} toId={dimensionTo} />}
       {measurements.some((item) => item.points.length > 0) && <FieldMeasurements3D measurements={measurements} />}
       <MarksLayer marks={marks} playheadRef={playheadRef} />
       {live && <HoldPulse k={holdKey} poseRef={poseRef} />}
       {shot && <DartFlight key={shot.id ?? 0} shot={shot} />}
-      <CameraRig view={view} topH={custom && scene!.pattern === 'grid5' ? 8.4 : 15.5} drone={drone} dragging={dragging} live={live} poseRef={poseRef} highlight={highlight} />
+      {view === 'walk' && walkPoseRef && walkInputRef
+        ? <WalkCameraRig poseRef={walkPoseRef} inputRef={walkInputRef} onWalk={onWalk} scene={scene} />
+        : <CameraRig view={view} topH={custom && scene!.pattern === 'grid5' ? 8.4 : 15.5} drone={drone} dragging={dragging} live={live} poseRef={poseRef} highlight={highlight} />}
     </Canvas>
   );
 }
