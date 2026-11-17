@@ -56,6 +56,8 @@ type Props = {
   walkInputRef?: React.RefObject<WalkInput>;
   walkControlsEnabled?: boolean;
   onWalk?: (pose: WalkPose) => void;
+  placement?: { center: { x: number; y: number }; target: { x: number; y: number }; aligned: boolean; onRotate: (yaw: number) => void };
+  carryingDrone?: boolean;
 };
 
 /** สนามอยู่ในพิกัดเมตร: field(x,y) → three(x, 0, -y) เพื่อให้ "เหนือ" อยู่ไกลจากกล้องเริ่มต้น */
@@ -114,6 +116,7 @@ function WalkCameraRig({ poseRef, inputRef, onWalk, scene, enabled }: { poseRef:
   const keys = useRef(new Set<string>());
   const lastReport = useRef(0);
   const dragLook = useRef<{ id: number; x: number; y: number } | null>(null);
+  const padCenter = useMemo(() => scene ? baseAt(scene) : { x: 0, y: 0 }, [scene]);
   const obstacles = useMemo(() => scene?.pattern !== 'standard' && scene
     ? scene.objects.flatMap(o => {
         if (o.type === 'hoop') {
@@ -171,7 +174,8 @@ function WalkCameraRig({ poseRef, inputRef, onWalk, scene, enabled }: { poseRef:
     const speed = 2.1 * dt / Math.max(1, Math.hypot(forward, right));
     const nextX = THREE.MathUtils.clamp(pose.x + (Math.sin(radians) * forward + Math.cos(radians) * right) * speed, -4.72, 4.72);
     const nextY = THREE.MathUtils.clamp(pose.y + (Math.cos(radians) * forward - Math.sin(radians) * right) * speed, -4.72, 4.72);
-    const blocked = obstacles.some(([x, y, radius]) => Math.hypot(nextX - x, nextY - y) < radius);
+    const blocked = obstacles.some(([x, y, radius]) => Math.hypot(nextX - x, nextY - y) < radius)
+      || !!padCenter && Math.abs(nextX - padCenter.x) < FIELD.takeoff.size / 2 + 0.18 && Math.abs(nextY - padCenter.y) < FIELD.takeoff.size / 2 + 0.18;
     if (!blocked) { pose.x = nextX; pose.y = nextY; }
     camera.position.set(pose.x, 1.7, -pose.y);
     camera.rotation.order = 'YXZ';
@@ -179,6 +183,42 @@ function WalkCameraRig({ poseRef, inputRef, onWalk, scene, enabled }: { poseRef:
     if (state.clock.elapsedTime - lastReport.current >= 0.15) { lastReport.current = state.clock.elapsedTime; onWalk?.({ ...pose }); }
   });
   return null;
+}
+
+function PlacementMarkers({ center, target, drone, aligned, onRotate, scene }: { center: { x: number; y: number }; target: { x: number; y: number }; drone: DroneState; aligned: boolean; onRotate: (yaw: number) => void; scene?: SceneSpec }) {
+  const turning = useRef(false);
+  const base = scene ? baseAt(scene) : { x: 0, y: 0 };
+  const surfaceY = base && Math.abs(base.x - center.x) <= 0.75 && Math.abs(base.y - center.y) <= 0.75 ? 0.235 : 0.035;
+  const turn = (event: ThreeEvent<PointerEvent>) => {
+    if (!turning.current) return;
+    event.stopPropagation();
+    const point = event.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+    if (!point) return;
+    const dx = point.x - drone.x, dy = -point.z - drone.y;
+    if (Math.hypot(dx, dy) < 0.12) return;
+    onRotate((Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360);
+  };
+  return <>
+    <group position={[center.x, surfaceY, -center.y]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}><planeGeometry args={[1.26, 1.26]} /><meshBasicMaterial color="#ffffff" transparent opacity={0.09} depthWrite={false} /></mesh>
+      {[-0.63, 0.63].map(side => <group key={side}>
+        <mesh position={[side, 0, 0]}><boxGeometry args={[0.018, 0.008, 1.26]} /><meshBasicMaterial color="#ffffff" /></mesh>
+        <mesh position={[0, 0, side]}><boxGeometry args={[1.26, 0.008, 0.018]} /><meshBasicMaterial color="#ffffff" /></mesh>
+      </group>)}
+    </group>
+    <mesh position={[target.x, surfaceY + 0.015, -target.y]} rotation={[-Math.PI / 2, 0, 0]}>
+      <circleGeometry args={[0.17, 32]} />
+      <meshBasicMaterial color={aligned ? '#4aa3ff' : '#ffffff'} depthWrite={false} />
+    </mesh>
+    <mesh position={[drone.x, drone.alt + 0.11, -drone.y]} rotation={[-Math.PI / 2, 0, 0]}
+      onPointerDown={event => { event.stopPropagation(); (event.target as Element).setPointerCapture?.(event.pointerId); turning.current = true; turn(event); }}
+      onPointerMove={turn}
+      onPointerUp={event => { event.stopPropagation(); turning.current = false; }}
+      onPointerCancel={() => { turning.current = false; }}>
+      <ringGeometry args={[0.30, 0.37, 48]} />
+      <meshBasicMaterial color="#4aa3ff" side={THREE.DoubleSide} transparent opacity={0.85} depthWrite={false} />
+    </mesh>
+  </>;
 }
 
 function WalkerMarker({ poseRef, visible }: { poseRef: React.RefObject<WalkPose>; visible: boolean }) {
@@ -461,6 +501,19 @@ export function DroneModel({ low, propsRef }: { low: boolean; propsRef?: React.M
   return <primitive object={model} scale={0.16} />;
 }
 
+function HandDrone({ low }: { low: boolean }) {
+  const { camera } = useThree();
+  const group = useRef<THREE.Group>(null);
+  useFrame(() => {
+    if (!group.current) return;
+    group.current.position.copy(camera.localToWorld(new THREE.Vector3(0.15, -0.22, -0.9)));
+    group.current.quaternion.copy(camera.quaternion);
+  });
+  return <group ref={group}>
+    <group rotation={[0.45, -0.4, -0.2]} scale={0.6}><DroneModel low={low} /></group>
+  </group>;
+}
+
 /** ความสูงพื้นผิวใต้โดรน: บนแท่น Takeoff/แท่นวงกลมสูง 20 ซม. นอกนั้นคือพื้นสนาม */
 function groundY(x: number, y: number, platforms: boolean) {
   if (Math.abs(x) <= FIELD.takeoff.size / 2 && Math.abs(y) <= FIELD.takeoff.size / 2) return FIELD.takeoff.height + 0.004;
@@ -468,8 +521,9 @@ function groundY(x: number, y: number, platforms: boolean) {
   return 0.016;
 }
 
-function Drone({ drone, onDrone, setDragging, low, live, poseRef, platforms, loaded, dartInventory, needle }: { drone: DroneState; onDrone: Props['onDrone']; setDragging: (v: boolean) => void; low: boolean; live: boolean; poseRef?: React.RefObject<LivePose>; platforms: boolean; loaded: { L: number; R: number }; dartInventory: { front: number; back: number }; needle: boolean }) {
+function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, poseRef, platforms, loaded, dartInventory, needle }: { drone: DroneState; onDrone: Props['onDrone']; onRotate?: (yaw: number) => void; setDragging: (v: boolean) => void; low: boolean; live: boolean; placement?: boolean; poseRef?: React.RefObject<LivePose>; platforms: boolean; loaded: { L: number; R: number }; dartInventory: { front: number; back: number }; needle: boolean }) {
   const dragging = useRef(false);
+  const rotating = useRef(false);
   const lim = FIELD.size / 2 - 0.15;
   const clamp = (v: number) => Math.max(-lim, Math.min(lim, v));
   const yawGroup = useRef<THREE.Group>(null);
@@ -540,13 +594,26 @@ function Drone({ drone, onDrone, setDragging, low, live, poseRef, platforms, loa
           e.stopPropagation();
           (e.target as Element).setPointerCapture?.(e.pointerId);
           dragging.current = true;
+          rotating.current = !!placement && e.button === 2;
           setDragging(true);
+        }}
+        onPointerMove={(e: ThreeEvent<PointerEvent>) => {
+          if (!placement || !dragging.current) return;
+          e.stopPropagation();
+          const point = e.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+          if (!point) return;
+          if (rotating.current) {
+            const dx = point.x - drone.x, dy = -point.z - drone.y;
+            if (Math.hypot(dx, dy) >= 0.12) onRotate?.((Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360);
+          } else onDrone({ x: clamp(point.x), y: clamp(-point.z) });
         }}
         onPointerUp={(e: ThreeEvent<PointerEvent>) => {
           e.stopPropagation();
           dragging.current = false;
+          rotating.current = false;
           setDragging(false);
         }}
+        onPointerCancel={() => { dragging.current = false; rotating.current = false; setDragging(false); }}
       >
         {/* พื้นที่จับให้ใหญ่ขึ้นบนจอสัมผัส */}
         <mesh visible={false}>
@@ -561,7 +628,7 @@ function Drone({ drone, onDrone, setDragging, low, live, poseRef, platforms, loa
         </group>
       </group>
       {/* ระนาบรับการลาก/แตะ ครอบทั้งสนามที่ระดับพื้น */}
-      {!live && (
+      {!live && !placement && (
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}
           position={[0, 0.02, 0]}
@@ -799,9 +866,9 @@ function DartModel() {
 }
 
 /** กล้อง: ตั้งตำแหน่งตามมุมที่เลือก แล้วให้ผู้ใช้หมุน/ซูมต่อได้ */
-function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { view: ViewPreset; topH: number; drone: DroneState; dragging: boolean; live: boolean; poseRef?: React.RefObject<LivePose>; highlight?: ShotHighlight }) {
+function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight, placementCenter }: { view: ViewPreset; topH: number; drone: DroneState; dragging: boolean; live: boolean; poseRef?: React.RefObject<LivePose>; highlight?: ShotHighlight; placementCenter?: { x: number; y: number } }) {
   const controls = useRef<React.ComponentRef<typeof OrbitControls>>(null);
-  const { camera, invalidate } = useThree();
+  const { camera, invalidate, size } = useThree();
   const droneRef = useRef(drone);
   const cinematic = useRef<{ view: ViewPreset; position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   droneRef.current = drone;
@@ -810,10 +877,15 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { 
     const c = controls.current;
     if (!c) return;
     const cam = camera as THREE.PerspectiveCamera;
-    if (view === 'top') { cam.position.set(0, topH, 0.01); c.target.set(0, 0, 0); }
+    if (placementCenter) {
+      const height = Math.max(3.3, 2.5 / (2 * Math.tan((cam.fov * Math.PI) / 360) * cam.aspect));
+      cam.position.set(placementCenter.x, height, -placementCenter.y + 0.001);
+      c.target.set(placementCenter.x, 0, -placementCenter.y);
+    }
+    else if (view === 'top') { cam.position.set(0, topH, 0.01); c.target.set(0, 0, 0); }
     c.update();
     invalidate();
-  }, [view, topH, camera, invalidate]);
+  }, [view, topH, placementCenter?.x, placementCenter?.y, camera, invalidate, size.width, size.height]);
 
   // มุม "ตามโดรน" (ขณะแก้ตำแหน่งเอง)
   useEffect(() => {
@@ -907,7 +979,7 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { 
     <OrbitControls
       ref={controls}
       makeDefault
-      enabled={!dragging && !highlight}
+      enabled={!placementCenter && !dragging && !highlight}
       enableDamping={false}
       minDistance={0.8}
       maxDistance={22}
@@ -917,7 +989,7 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { 
   );
 }
 
-export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, walkPoseRef, walkInputRef, walkControlsEnabled = true, onWalk }: Props) {
+export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, walkPoseRef, walkInputRef, walkControlsEnabled = true, onWalk, placement, carryingDrone = false }: Props) {
   const [dragging, setDragging] = useState(false);
   // โจทย์ฝึกบนกริด/พื้นว่าง: วาดวัตถุจาก scene แทนของตามกติกา และให้โดรนมีเข็ม/ลูกดอกตามวัตถุที่วางไว้
   const custom = !!scene && scene.pattern !== 'standard';
@@ -931,6 +1003,7 @@ export default function Field3D({ event, drone, onDrone, view, shot, low, live =
       camera={{ position: [0, 15.5, 0.01], fov: 42, near: 0.05, far: 80 }}
       gl={{ antialias: !low, powerPreference: low ? 'low-power' : 'high-performance', stencil: false }}
       style={{ touchAction: 'none' }}
+      onContextMenu={placement ? event => event.preventDefault() : undefined}
       aria-label="สนามแข่งขัน 3 มิติ"
     >
       <color attach="background" args={['#0b0d12']} />
@@ -941,24 +1014,26 @@ export default function Field3D({ event, drone, onDrone, view, shot, low, live =
       {scene && scene.pattern !== 'standard' ? <PlainMat pattern={scene.pattern} low={low} /> : <Mat low={low} />}
       <Surroundings />
       {lights && <CornerLeds lights={lights} low={low} />}
-      {scene && <SceneLayer3D spec={scene} popped={marks.popped} playheadRef={playheadRef} />}
+      {scene && !placement && <SceneLayer3D spec={scene} popped={marks.popped} playheadRef={playheadRef} />}
       {(() => {
         const pb = custom ? baseAt(scene) : { x: 0, y: 0 };
-        return pb ? <group position={[pb.x, 0, -pb.y]}><Takeoff color={event.field.takeoffColor} hoop={!custom} /></group> : null;
+        return pb ? <group position={[pb.x, 0, -pb.y]}><Takeoff color={event.field.takeoffColor} hoop={!custom && !placement} /></group> : null;
       })()}
-      {!custom && event.field.platforms && <Platforms />}
-      {!custom && event.field.balloons && <Balloons popped={marks.popped} />}
-      {!custom && event.field.targets && (<><Targets /><ShootZones drone={drone} /></>)}
-      <Drone drone={drone} onDrone={onDrone} setDragging={setDragging} low={low} live={live} poseRef={poseRef} platforms={event.field.platforms && !custom} loaded={loaded} dartInventory={hasTargets ? dartInventory : { front: 0, back: 0 }} needle={hasBalloons} />
-      {walkPoseRef && <WalkerMarker poseRef={walkPoseRef} visible={view !== 'walk'} />}
+      {!placement && !custom && event.field.platforms && <Platforms />}
+      {!placement && !custom && event.field.balloons && <Balloons popped={marks.popped} />}
+      {!placement && !custom && event.field.targets && (<><Targets /><ShootZones drone={drone} /></>)}
+      {!carryingDrone && <Drone drone={drone} onDrone={onDrone} onRotate={placement?.onRotate} setDragging={setDragging} low={low} live={live && !placement} placement={!!placement} poseRef={poseRef} platforms={event.field.platforms && !custom} loaded={loaded} dartInventory={hasTargets ? dartInventory : { front: 0, back: 0 }} needle={hasBalloons} />}
+      {carryingDrone && view === 'walk' && <HandDrone low={low} />}
+      {placement && <PlacementMarkers center={placement.center} target={placement.target} drone={drone} aligned={placement.aligned} onRotate={placement.onRotate} scene={scene} />}
+      {walkPoseRef && <WalkerMarker poseRef={walkPoseRef} visible={view !== 'walk' && !placement} />}
       {showDimensions && <FieldDimensions3D scene={scene} fromId={dimensionFrom} toId={dimensionTo} />}
       {measurements.some((item) => item.points.length > 0) && <FieldMeasurements3D measurements={measurements} />}
-      <MarksLayer marks={marks} playheadRef={playheadRef} />
+      {!placement && <MarksLayer marks={marks} playheadRef={playheadRef} />}
       {live && <HoldPulse k={holdKey} poseRef={poseRef} />}
       {shot && <DartFlight key={shot.id ?? 0} shot={shot} />}
       {view === 'walk' && walkPoseRef && walkInputRef
         ? <WalkCameraRig poseRef={walkPoseRef} inputRef={walkInputRef} onWalk={onWalk} scene={scene} enabled={walkControlsEnabled} />
-        : <CameraRig view={view} topH={custom && scene!.pattern === 'grid5' ? 8.4 : 15.5} drone={drone} dragging={dragging} live={live} poseRef={poseRef} highlight={highlight} />}
+        : <CameraRig view={view} topH={custom && scene!.pattern === 'grid5' ? 8.4 : 15.5} drone={drone} dragging={dragging} live={live} poseRef={poseRef} highlight={highlight} placementCenter={placement?.center} />}
     </Canvas>
   );
 }

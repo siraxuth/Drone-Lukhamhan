@@ -34,6 +34,6 @@ export function TouchWalkControls({ inputRef }: { inputRef: React.RefObject<Walk
       onPointerMove={event => { const p = pointer.current; if (!p || p.id !== event.pointerId) return; inputRef.current.lookX += (event.clientX - p.x) * 0.12; inputRef.current.lookY -= (event.clientY - p.y) * 0.12; p.x = event.clientX; p.y = event.clientY; }}
       onPointerUp={() => { pointer.current = null; }} onPointerCancel={() => { pointer.current = null; }} />
     <TouchStick label="จอยเดิน" floating className="pointer-events-auto absolute bottom-4 left-4" onMove={(x, y) => { inputRef.current.right = x; inputRef.current.forward = y; }} />
-    <p className="pointer-events-none absolute bottom-3 right-3 max-w-40 squircle-xl bg-surface/85 px-2 py-1 text-right text-xs text-foreground">จอยซ้ายเดิน · ปัดขวาหันมอง</p>
+    <p className="pointer-events-none absolute bottom-36 left-4 max-w-28 squircle-xl bg-surface/85 px-2 py-1 text-[11px] leading-4 text-foreground">จอยเดิน<br />ปัดจอขวาเพื่อหัน</p>
   </div>;
 }
