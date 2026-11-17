@@ -79,7 +79,7 @@ export function ScenePlanLayer({ pattern, objects, visits = {}, selected, labels
 export function ScenePreview({ config, className }: { config: ScenarioConfig; className?: string }) {
   const standard = config.pattern === 'standard';
   return (
-    <svg viewBox="-5.4 -5.4 10.8 10.8" className={className} role="img" aria-label="ภาพย่อสนามของโจทย์">
+    <svg viewBox="-6.2 -6.2 12.4 12.4" className={className} role="img" aria-label="ภาพย่อสนามของโจทย์">
       <g transform="scale(1,-1)">
         <rect x={-5} y={-5} width={10} height={10} rx={0.3} fill="#171b26" stroke="#ffffff" strokeOpacity={0.15} strokeWidth={0.08} />
         {standard && [[-2.5, 2.5], [2.5, 2.5], [-2.5, -2.5], [2.5, -2.5]].map(([x, y]) => <circle key={`${x}${y}`} cx={x} cy={y} r={0.5} fill="#1d3fae" opacity={0.55} />)}

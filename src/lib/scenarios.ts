@@ -4,7 +4,7 @@ import type { EventId } from '@/rules/types';
 /**
  * โจทย์ฝึกของตัวจำลอง (เก็บในตาราง Challenge ฟิลด์ config เป็น JSON)
  * พิกัดเป็น "เมตร" ตามสนามจริง: x ขวา, y เหนือ (ห่างจากโต๊ะผู้แข่ง), (0,0) = กึ่งกลางแท่น Takeoff
- * โดรนเริ่มที่แท่น Takeoff เสมอ ความสูงเป็นไปตามที่โค้ดสั่งเท่านั้น
+ * จุดเริ่มกำหนดได้ในหน้าแอดมิน และผู้เล่นปรับก่อนบินได้
  */
 export type ScenarioPattern = 'standard' | 'grid5' | 'blank';
 export const PATTERNS: Array<{ id: ScenarioPattern; label: string; text: string }> = [
@@ -50,7 +50,7 @@ export function baseAt(c: StartBase): { x: number; y: number } | null {
   if (b.mode === 'custom') return { x: b.x ?? st.x, y: b.y ?? st.y };
   return { x: st.x, y: st.y };
 }
-export const startOf = (c: StartBase): StartPoint => (c.pattern === 'standard' ? DEFAULT_START : c.start ?? DEFAULT_START);
+export const startOf = (c: StartBase): StartPoint => c.start ?? DEFAULT_START;
 
 export const OBJECT_LABEL: Record<SceneObject['type'], string> = {
   waypoint: 'จุดผ่าน', hoop: 'ห่วง', platform: 'แท่นทิ้งบอล', balloon: 'ลูกโป่ง', target: 'เป้ายิง',
@@ -69,7 +69,7 @@ const configSchema = z.object({
   pattern: z.enum(['standard', 'grid5', 'blank']),
   event: z.enum(['mission', 'aviation', 'innovation']),
   objects: z.array(objectSchema).max(60),
-  start: z.object({ x: num(-4.8, 4.8), y: num(-4.8, 4.8), yaw: num(0, 359) }).optional(),
+  start: z.object({ x: num(-5.8, 5.8), y: num(-5.8, 5.8), yaw: num(0, 359) }).optional(),
   base: z.object({ mode: z.enum(['start', 'custom', 'none']), x: num(-4.8, 4.8).optional(), y: num(-4.8, 4.8).optional() }).optional(),
   pairId: z.string().max(80).optional(),
   variant: z.enum(['A', 'B']).optional(),

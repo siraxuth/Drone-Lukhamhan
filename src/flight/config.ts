@@ -48,11 +48,13 @@ export function buildScenarioConfig(sc: ScenarioConfig): FlightConfig {
   const base = buildConfig(sc.event);
   const free = sc.pattern !== 'standard';
   const cfg: FlightConfig = { ...base };
+  const st = startOf(sc);
+  cfg.start = { x: sx(st.x), y: sy(st.y) };
+  cfg.startYaw = st.yaw;
+  if (!free) cfg.padAt = { x: 500, y: 500 };
   if (free) {
     cfg.free = true;
-    const st = startOf(sc), pb = baseAt(sc);
-    cfg.start = { x: sx(st.x), y: sy(st.y) };
-    cfg.startYaw = st.yaw;
+    const pb = baseAt(sc);
     cfg.padAt = pb ? { x: sx(pb.x), y: sy(pb.y) } : null;
     cfg.hoop = { half: 75, zMin: 0, zMax: 1000 };
     cfg.points = { ...base.points, padThroughHoop: 10, padNoHoop: 10 };

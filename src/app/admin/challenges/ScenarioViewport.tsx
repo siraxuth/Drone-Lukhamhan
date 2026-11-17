@@ -167,18 +167,12 @@ export default function ScenarioViewport({ cfg, selected, snap, onSelect, onMove
           {standard && event?.field.platforms && <Platforms />}
           {standard && event?.field.balloons && <Balloons popped={[]} />}
           {standard && event?.field.targets && <Targets />}
-          {standard ? (
-            <group position={[0, 0.2702, 0]} rotation={[0, Math.PI, 0]}>
+          <SceneItem id="__start" position={start} selected={selected === '__start'} snap={snap} onSelect={onSelect} onMove={onMove}>
+            <group position={[0, base && Math.abs(base.x - start.x) <= 0.75 && Math.abs(base.y - start.y) <= 0.75 ? 0.2702 : 0.0702, 0]} rotation={[0, Math.PI - start.yaw * Math.PI / 180, 0]}>
+              <mesh visible={false}><sphereGeometry args={[0.35, 8, 8]} /></mesh>
               <Suspense fallback={null}><DroneModel low={false} /></Suspense>
             </group>
-          ) : (
-            <SceneItem id="__start" position={start} selected={selected === '__start'} snap={snap} onSelect={onSelect} onMove={onMove}>
-              <group position={[0, base && Math.abs(base.x - start.x) <= 0.75 && Math.abs(base.y - start.y) <= 0.75 ? 0.2702 : 0.0702, 0]} rotation={[0, Math.PI - start.yaw * Math.PI / 180, 0]}>
-                <mesh visible={false}><sphereGeometry args={[0.35, 8, 8]} /></mesh>
-                <Suspense fallback={null}><DroneModel low={false} /></Suspense>
-              </group>
-            </SceneItem>
-          )}
+          </SceneItem>
           {cfg.objects.filter((object) => !standard || object.type === 'waypoint' || object.type === 'hoop').map((object) => (
             <SceneItem key={object.id} id={object.id} position={object} selected={selected === object.id} snap={snap}
               yaw={object.type === 'hoop' ? object.yaw : undefined}

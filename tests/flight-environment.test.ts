@@ -2,7 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildScenarioConfig } from '../src/flight/config';
 import { frameAt, simulate } from '../src/flight/engine';
-import { inLaunchZone, LIGHTS_OFF, LIGHTS_ON, opticalFlowQuality, type FlightEnvironment } from '../src/flight/environment';
+import { CEILING_LIGHTS_ON, inLaunchZone, LIGHTS_OFF, LIGHTS_ON, opticalFlowQuality, type FlightEnvironment } from '../src/flight/environment';
 
 const config = buildScenarioConfig({ pattern: 'blank', event: 'mission', objects: [] });
 const code = `void setup() { drone.onKey1(fly); }
@@ -20,11 +20,24 @@ describe('flight conditions', () => {
     assert.equal(result.finalPosition.y, 300);
   });
 
-  test('medium keeps the existing seeded run', () => {
+  test('implicit difficulty matches medium for the same seed', () => {
     const before = simulate(code, config, 711, 1);
     const after = simulate(code, config, 711, 1, env('medium'));
     assert.deepEqual(after.frames, before.frames);
     assert.equal(after.score, before.score);
+  });
+
+  test('medium needs modest correction while hard overshoots and misses the requested height', () => {
+    const easy = simulate(code, config, 99, 1, env('easy', LIGHTS_ON));
+    const medium = simulate(code, config, 99, 1, env('medium', LIGHTS_ON));
+    const hard = simulate(code, config, 99, 1, { ...env('hard', LIGHTS_ON), ceilingLights: CEILING_LIGHTS_ON });
+    const mediumError = easy.finalPosition.y - medium.finalPosition.y;
+    const hardError = easy.finalPosition.y - hard.finalPosition.y;
+    assert.ok(mediumError > 5 && mediumError < 30);
+    assert.ok(hardError > mediumError * 3);
+    assert.ok(Math.abs(frameAt(medium.frames, 9000).z - 100) < 5);
+    assert.ok(Math.abs(frameAt(hard.frames, 9000).z - 100) > 8);
+    assert.equal(medium.finalPosition.z, 7.02);
   });
 
   test('hard is repeatable and reacts to lamps and a blocking player', () => {
@@ -41,6 +54,9 @@ describe('flight conditions', () => {
     const shadowed = simulate(code, config, seed, 1, env('hard', LIGHTS_ON, blockingActions));
     assert.notDeepEqual(shadowed.finalPosition, lit.finalPosition);
     assert.deepEqual(shadowed.frames, simulate(code, config, seed, 1, env('hard', LIGHTS_ON, blockingActions)).frames);
+    assert.ok(opticalFlowQuality(500, 500, 100, LIGHTS_OFF, undefined, CEILING_LIGHTS_ON) > opticalFlowQuality(500, 500, 100, LIGHTS_OFF));
+    const overhead = simulate(code, config, seed, 1, { ...env('hard', LIGHTS_ON), ceilingLights: CEILING_LIGHTS_ON });
+    assert.notDeepEqual(overhead.finalPosition, lit.finalPosition);
     const weakLights = LIGHTS_OFF.map(light => ({ ...light })) as typeof LIGHTS_OFF;
     weakLights[0] = { enabled: true, color: 'ice', intensity: 0.2 };
     assert.ok(opticalFlowQuality(500, 500, 100, weakLights, { x: -2.5, y: 2.5 }) < opticalFlowQuality(500, 500, 100, weakLights));
@@ -64,6 +80,21 @@ describe('flight conditions', () => {
     assert.ok(flipped.duration > 8500);
     const shortened = simulate(code, config, 123456789, 1, { ...env('hard', LIGHTS_ON), timeLimitMs: 9000 });
     assert.ok(shortened.duration <= 9000);
+  });
+
+  test('emergency landing waits for the ground then leaves the propellers stopped', () => {
+    const program = 'void setup(){drone.onKey1(fly);} void fly(){calibration(); delay(3000); take_off(); delay(3000); set_height(100); delay(6000);}';
+    const landed = simulate(program, config, 1, 1, env('medium', LIGHTS_OFF, [{ t: 7500, type: 'land' }]));
+    assert.equal(landed.frames.at(-1)?.rpm, 0);
+    assert.ok((landed.frames.at(-1)?.z ?? Infinity) <= 27.03);
+  });
+
+  test('a start beside the field can enter the field without hitting the simulation edge', () => {
+    const mission = buildScenarioConfig({ pattern: 'blank', event: 'mission', start: { x: -5.5, y: 0, yaw: 90 }, base: { mode: 'none' }, objects: [] });
+    const program = 'void setup(){drone.onKey1(fly);} void fly(){calibration(); delay(3000); take_off(); delay(3000); set_height(100); move_forward_cm(420);}';
+    const result = simulate(program, mission, 1, 1, env('easy'));
+    assert.equal(result.events.some(event => event.kind === 'error'), false);
+    assert.ok(result.finalPosition.x > 0);
   });
 
   test('launch pose stays within the configured start area', () => {
@@ -105,7 +136,7 @@ describe('flight conditions', () => {
   });
 
   test('hard landing scores the surface touched after descent', () => {
-    const narrowPad = { ...config, pad: { half: 8 } };
+    const narrowPad = { ...config, pad: { half: 20 } };
     const hoverAndLand = code.replace('fw(200); ', '');
     const result = simulate(hoverAndLand, narrowPad, 99, 1, env('hard', LIGHTS_ON));
     const beforeDescent = frameAt(result.frames, 7920);

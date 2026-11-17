@@ -11,6 +11,7 @@ export { parse };
  */
 
 export const FIELD_CM = 1000;
+const SIM_MARGIN_CM = 80;
 export const TIME_LIMIT_MS = 150_000;
 
 /** ms ต่อ 1 ซม. จาก config.hpp — โดรนจริงใช้ dead-reckoning (เวลา × ความเร็ว) แบบเดียวกัน */
@@ -222,7 +223,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
             else if (action.type === 'manual') manual = action.enabled;
             else if (action.type === 'stick') stick = action.value;
             else if (action.type === 'land') { emergency = true; events.push({ t: action.t, kind: 'warn', text: 'สั่งลงฉุกเฉิน · คำสั่งเดิมยังรันอยู่' }); }
-            else if (action.type === 'flip') { powerOff = true; events.push({ t: action.t, kind: 'warn', text: 'จับแบตและพลิกโดรน · ใบพัดหยุด แต่โค้ดเดิมยังรันอยู่' }); }
+            else if (action.type === 'pickup' || action.type === 'flip') { powerOff = true; events.push({ t: action.t, kind: 'warn', text: 'จับแบตเตอรี่แล้วยกโดรนพลิกกลางอากาศ · ใบพัดหยุดแล้ว รอปิดเปิดเครื่องก่อนบินต่อ' }); }
             else if (action.type === 'power') { powerOff = false; emergency = false; manual = false; }
         }
     };
@@ -230,6 +231,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
     const events: SimEvent[] = [...errors];
     const commandTimeline: Result["commandTimeline"] = [];
     const padC = cfg.padAt === undefined ? cfg.start : cfg.padAt; // null = ไม่มีฐาน
+    const hoopCenter = padC ?? cfg.start;
     const onPadAt = (px: number, py: number) => padC !== null && Math.abs(px - padC.x) <= cfg.pad.half && Math.abs(py - padC.y) <= cfg.pad.half;
     let x = environment?.launch?.x ?? cfg.start.x,
         y = environment?.launch?.y ?? cfg.start.y,
@@ -243,8 +245,8 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
     let flying = false,
         crashed = false,
         timedOut = false;
-    let leftHoop = false,
-        throughHoop = true;
+    let leftHoop = Math.abs(x - hoopCenter.x) > cfg.hoop.half || Math.abs(y - hoopCenter.y) > cfg.hoop.half,
+        throughHoop = !leftHoop;
     let stopTime: number | null = null,
         landedOnPad = false;
     const balls = new Map<string, number>(environment?.completed?.balls.map(item => [item.id, item.count])); // แท่น → จำนวนลูกที่ลง
@@ -254,13 +256,15 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
     let shotsMade = 0;
     // ความคลาดค่อย ๆ เพิ่มใน 1 เมตรแรก แล้วคงที่ ไม่ทบเพิ่มทุกคำสั่งหรือทุกวินาที
     let driftProgressCm = 0;
-    let velocityX = 0, velocityY = 0;
+    let velocityX = 0, velocityY = 0, velocityZ = 0;
+    const mediumGain = conditions.seed ? 1.045 + (100 - conditions.batteryPercent) * 0.0012 : 1;
+    const mediumHeightGain = conditions.seed ? 1.025 + (100 - conditions.batteryPercent) * 0.0015 : 1;
 
     /** ตั้งศูนย์/สตาร์ทมอเตอร์ในโค้ดจริงเป็นแค่ "ส่งคำสั่ง" ไม่รอให้เสร็จ: ผู้เขียนต้อง delay เอง */
     const CALIB_MS = 3000, SPINUP_MS = 3000;
     let calibStart: number | null = null; // เวลาที่สั่ง calibration ล่าสุด (null = ยังไม่เคยสั่ง)
     let armedAt: number | null = null; // เวลาที่สั่ง takeOff แต่ยังไม่ยกตัว
-    const rpmNow = () => powerOff ? 0 : (flying ? 1 : armedAt !== null ? Math.min(1, Math.max(0, (t - armedAt) / SPINUP_MS)) : 0);
+    const rpmNow = () => powerOff || (emergency && z <= ((onPadAt(x, y) || cfg.platforms.some(platform => Math.hypot(platform.x - x, platform.y - y) <= platform.r) ? PAD_TOP_CM : 0) + LEG_CM + 0.5)) ? 0 : (flying ? 1 : armedAt !== null ? Math.min(1, Math.max(0, (t - armedAt) / SPINUP_MS)) : 0);
     const push = () => frames.push({ t, x, y, z, yaw, rpm: rpmNow() });
     /** ความเร็วเดินทางล่าสุด (ซม./มิลลิวินาที) ของคำสั่งเดินที่เพิ่งจบ ใช้คำนวณระยะเบรก */
     let cruise: { vx: number; vy: number } | null = null;
@@ -323,13 +327,15 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
             const floorBefore = (onPadAt(x, y) || cfg.platforms.some(platform => Math.hypot(platform.x - x, platform.y - y) <= platform.r) ? PAD_TOP_CM : 0) + LEG_CM;
             const grounded = !flying || (powerOff || emergency) && z <= floorBefore + 0.5;
             const cmdX = dx / duration, cmdY = dy / duration;
-            const desiredX = grounded || powerOff || emergency ? 0 : manual ? (d.x * stick.forward + right.x * stick.right) * 0.09 : cmdX;
-            const desiredY = grounded || powerOff || emergency ? 0 : manual ? (d.y * stick.forward + right.y * stick.right) * 0.09 : cmdY;
-            const q = difficulty === 'hard' ? opticalFlowQuality(x, y, z, environment?.lights ?? LIGHTS_OFF, player) : 1;
+            const q = difficulty === 'hard' ? opticalFlowQuality(x, y, z, environment?.lights ?? LIGHTS_OFF, player, environment?.ceilingLights) : 1;
+            const hardGain = 1.25 + (1 - q) * 0.12 + Math.sin(seed * 0.000017 + t / 2200) * 0.035;
+            const commandGain = difficulty === 'hard' ? hardGain : mediumGain;
+            const desiredX = grounded || powerOff || emergency ? 0 : manual ? (d.x * stick.forward + right.x * stick.right) * 0.09 : cmdX * commandGain;
+            const desiredY = grounded || powerOff || emergency ? 0 : manual ? (d.y * stick.forward + right.y * stick.right) * 0.09 : cmdY * commandGain;
             if (grounded) { velocityX = 0; velocityY = 0; }
             else if (difficulty === 'hard') {
-                const response = 1 - Math.exp(-dt / (125 + (1 - q) * 520));
-                const disturbance = (1 - q) * 0.000045 * dt;
+                const response = 1 - Math.exp(-dt / (175 + (1 - q) * 680));
+                const disturbance = (0.3 + 1 - q) * 0.00004 * dt;
                 velocityX += (desiredX - velocityX) * response + Math.sin(seed * 0.000019 + t / 3400) * disturbance;
                 velocityY += (desiredY - velocityY) * response + Math.cos(seed * 0.000023 + t / 2700) * disturbance;
             } else {
@@ -341,16 +347,23 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
             y += velocityY * dt;
             const intendedZ = powerOff || emergency ? -0.11 : !flying ? 0 : manual ? stick.up * 0.06 : dz / duration;
             const floor = (onPadAt(x, y) || cfg.platforms.some(platform => Math.hypot(platform.x - x, platform.y - y) <= platform.r) ? PAD_TOP_CM : 0) + LEG_CM;
-            z = Math.max(floor, z + intendedZ * dt);
+            if (grounded || powerOff || emergency) velocityZ = intendedZ;
+            else if (difficulty === 'hard') {
+                const responseZ = 1 - Math.exp(-dt / (150 + (1 - q) * 500));
+                const wobble = Math.sin(seed * 0.000029 + t / 410) * (0.25 + 1 - q) * 0.0035;
+                velocityZ += (intendedZ * (1.22 + (1 - q) * 0.15) + wobble - velocityZ) * responseZ;
+            } else velocityZ = intendedZ * mediumHeightGain;
+            z = Math.max(floor, z + velocityZ * dt);
+            if (z === floor && velocityZ < 0) velocityZ = 0;
             yaw += (powerOff || emergency ? 0 : manual ? stick.yaw * 0.06 : dyaw / duration) * dt;
             t += dt;
             push();
-            if (flying && !leftHoop && (Math.abs(x - cfg.start.x) > cfg.hoop.half || Math.abs(y - cfg.start.y) > cfg.hoop.half)) {
+            if (flying && !leftHoop && (Math.abs(x - hoopCenter.x) > cfg.hoop.half || Math.abs(y - hoopCenter.y) > cfg.hoop.half)) {
                 leftHoop = true;
                 throughHoop = throughHoop && z >= cfg.hoop.zMin && z <= cfg.hoop.zMax;
             }
-            if (x < 0 || x > FIELD_CM || y < 0 || y > FIELD_CM) {
-                x = Math.max(0, Math.min(FIELD_CM, x)); y = Math.max(0, Math.min(FIELD_CM, y));
+            if (x < -SIM_MARGIN_CM || x > FIELD_CM + SIM_MARGIN_CM || y < -SIM_MARGIN_CM || y > FIELD_CM + SIM_MARGIN_CM) {
+                x = Math.max(-SIM_MARGIN_CM, Math.min(FIELD_CM + SIM_MARGIN_CM, x)); y = Math.max(-SIM_MARGIN_CM, Math.min(FIELD_CM + SIM_MARGIN_CM, y));
                 frames[frames.length - 1] = { ...frames[frames.length - 1], x, y };
                 ev({ kind: 'error', line, text: `บรรทัด ${line}: โดรนชนขอบสนาม` });
                 crashed = true;
@@ -447,7 +460,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
         }
         return false;
     };
-    const inHoopBox = () => Math.abs(x - cfg.start.x) <= cfg.hoop.half && Math.abs(y - cfg.start.y) <= cfg.hoop.half;
+    const inHoopBox = () => Math.abs(x - hoopCenter.x) <= cfg.hoop.half && Math.abs(y - hoopCenter.y) <= cfg.hoop.half;
 
     /** เดินทางเป็นเส้นตรงต่อเนื่อง ตัดที่เวลาหมด และเช็กการลอดห่วงตอนออกจากกรอบ */
     const travel = (dx: number, dy: number, dz: number, dyaw: number, ms: number, line: number, { shape = false, holdPosition = false } = {}) => {
@@ -462,9 +475,9 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
         driftProgressCm += horizontalCm;
         const after = Math.min(1, driftProgressCm / 100);
         const driftShare = k > 0 ? (after - before) / k : 0;
-        const actualDx = dx + (difficulty === 'easy' ? 0 : conditions.driftX * driftShare);
-        const actualDy = dy + (difficulty === 'easy' ? 0 : conditions.driftY * driftShare);
-        const actualDz = dz;
+        const actualDx = dx * (difficulty === 'medium' ? mediumGain : 1) + (difficulty === 'easy' ? 0 : conditions.driftX * driftShare);
+        const actualDy = dy * (difficulty === 'medium' ? mediumGain : 1) + (difficulty === 'easy' ? 0 : conditions.driftY * driftShare);
+        const actualDz = dz * (difficulty === 'medium' ? mediumHeightGain : 1);
         const actualDyaw = dyaw;
         if (flying && !leftHoop && (dx !== 0 || dy !== 0)) {
             // หาจุดที่ออกจากกรอบห่วงบนเส้นทางนี้ (ตรวจแบบละเอียดทุก 1 ซม.)
@@ -472,7 +485,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
             for (let s = 1; s <= steps; s++) {
                 const px = sx + (actualDx * k * s) / steps,
                     py = sy + (actualDy * k * s) / steps;
-                if (Math.abs(px - cfg.start.x) > cfg.hoop.half || Math.abs(py - cfg.start.y) > cfg.hoop.half) {
+                if (Math.abs(px - hoopCenter.x) > cfg.hoop.half || Math.abs(py - hoopCenter.y) > cfg.hoop.half) {
                     leftHoop = true;
                     const okHoop = z >= cfg.hoop.zMin && z <= cfg.hoop.zMax;
                     throughHoop = throughHoop && okHoop; // ทุกครั้งที่ออกจากแท่นต้องลอดห่วง
@@ -501,7 +514,8 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
         } else cruise = null;
         x += actualDx * fEnd;
         y += actualDy * fEnd;
-        z += actualDz * k;
+        const floor = (onPadAt(x, y) || cfg.platforms.some(platform => Math.hypot(platform.x - x, platform.y - y) <= platform.r) ? PAD_TOP_CM : 0) + LEG_CM;
+        z = Math.max(floor, z + actualDz * k);
         yaw += actualDyaw * k;
         t += ms * k;
         push();
@@ -627,7 +641,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                             : { x: -right.x, y: -right.y };
                 if (!travel(v.x * cm, v.y * cm, 0, 0, cm * MS_PER_CM[base], c.line, { shape: true })) break;
                 brake(c.line);
-                if (x < 0 || x > FIELD_CM || y < 0 || y > FIELD_CM) {
+                if (x < -SIM_MARGIN_CM || x > FIELD_CM + SIM_MARGIN_CM || y < -SIM_MARGIN_CM || y > FIELD_CM + SIM_MARGIN_CM) {
                     ev({
                         kind: "error",
                         line: c.line,
@@ -928,7 +942,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
     }
 
     if (!crashed && !timedOut && armedAt !== null) ev({ kind: "warn", text: "สั่ง takeOff แล้วแต่โปรแกรมจบก่อนโดรนจะยกตัว (ต้อง delay อย่างน้อย 3000 ms หลัง takeOff)" });
-    if (!crashed && !timedOut && flying) ev({ kind: "warn", text: "จบโปรแกรมแล้วโดรนยังบินอยู่ อย่าลืม autoLand()" });
+    if (!crashed && !timedOut && flying && !emergency && !powerOff) ev({ kind: "warn", text: "จบโปรแกรมแล้วโดรนยังบินอยู่ อย่าลืม autoLand()" });
     if (!crashed && !timedOut && !landedOnPad && !flying && calls.length)
         ev({ kind: "warn", text: "ยังไม่ได้ลงจอดบนแท่น Takeoff จึงยังไม่หยุดเวลา" });
 
