@@ -30,6 +30,7 @@ model User {
   attempts      Attempt[]
   skillStats    SkillStat[]
   dailyRuns     DailyRun[]
+  simulatorWorkspace SimulatorWorkspace?
 
   @@map("user")
 }
@@ -140,6 +141,14 @@ model Challenge {
   published Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// โค้ดและมุมมองล่าสุดของตัวจำลอง ซิงก์ระหว่างอุปกรณ์ของบัญชีเดียวกัน
+model SimulatorWorkspace {
+  userId      String   @id
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  data        Json     @default("{}")
+  updatedAt   DateTime @updatedAt
 }
 
 // ---- แพลตฟอร์มเรียน (/learn) ----

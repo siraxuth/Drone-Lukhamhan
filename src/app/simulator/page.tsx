@@ -6,6 +6,9 @@ import { getScenarios } from '@/lib/scenario-data';
 import { JsonLd } from '@/components/JsonLd';
 import { simulatorSchema } from '@/lib/schema';
 import { shareMetadata } from '@/lib/og';
+import { getSession } from '@/lib/auth';
+import { db } from '@/lib/db';
+import { readWorkspace } from '@/flight/workspace';
 
 export const revalidate = 60;
 const title = 'ตัวจำลองการบินโดรน 3 มิติ';
@@ -14,12 +17,15 @@ export const metadata: Metadata = { title, alternates: { canonical: '/simulator'
 
 export default async function Page() {
   const scenarios = await getScenarios();
+  const session = await getSession();
+  const saved = session ? await db.simulatorWorkspace.findUnique({ where: { userId: session.user.id }, select: { data: true } }) : null;
+  const workspace = readWorkspace(saved?.data);
   return (
     <>
       <Header />
       <JsonLd data={simulatorSchema()} />
       <Suspense fallback={<div className="p-24 text-center text-muted-foreground">กำลังโหลด…</div>}>
-        <SimulatorApp scenarios={scenarios} />
+        <SimulatorApp scenarios={scenarios} initialWorkspace={workspace} signedIn={!!session} />
       </Suspense>
     </>
   );
