@@ -54,6 +54,7 @@ type Props = {
   lights?: FieldLights;
   walkPoseRef?: React.RefObject<WalkPose>;
   walkInputRef?: React.RefObject<WalkInput>;
+  walkControlsEnabled?: boolean;
   onWalk?: (pose: WalkPose) => void;
 };
 
@@ -108,10 +109,11 @@ function CornerLeds({ lights, low }: { lights: FieldLights; low: boolean }) {
   })}</>;
 }
 
-function WalkCameraRig({ poseRef, inputRef, onWalk, scene }: { poseRef: React.RefObject<WalkPose>; inputRef: React.RefObject<WalkInput>; onWalk?: (pose: WalkPose) => void; scene?: SceneSpec }) {
+function WalkCameraRig({ poseRef, inputRef, onWalk, scene, enabled }: { poseRef: React.RefObject<WalkPose>; inputRef: React.RefObject<WalkInput>; onWalk?: (pose: WalkPose) => void; scene?: SceneSpec; enabled: boolean }) {
   const { camera, gl } = useThree();
   const keys = useRef(new Set<string>());
   const lastReport = useRef(0);
+  const dragLook = useRef<{ id: number; x: number; y: number } | null>(null);
   const obstacles = useMemo(() => scene?.pattern !== 'standard' && scene
     ? scene.objects.flatMap(o => {
         if (o.type === 'hoop') {
@@ -125,27 +127,46 @@ function WalkCameraRig({ poseRef, inputRef, onWalk, scene }: { poseRef: React.Re
     : [...FIELD.platform.positions.map(([x, y]) => [x, y, 0.58]), ...[-0.5, 0.5].flatMap(x => [-0.5, 0.5].map(y => [x, y, 0.18]))], [scene]);
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
+      if (!enabled) return;
       if (event.target instanceof HTMLElement && event.target.closest('input,textarea,[contenteditable="true"]')) return;
       if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) { keys.current.add(event.code); event.preventDefault(); }
     };
     const up = (event: KeyboardEvent) => keys.current.delete(event.code);
+    const look = (dx: number, dy: number) => {
+      poseRef.current.yaw += dx * 0.12;
+      poseRef.current.pitch = THREE.MathUtils.clamp(poseRef.current.pitch - dy * 0.12, -75, 75);
+    };
     const move = (event: MouseEvent) => {
       if (document.pointerLockElement !== gl.domElement) return;
-      poseRef.current.yaw += event.movementX * 0.12;
-      poseRef.current.pitch = THREE.MathUtils.clamp(poseRef.current.pitch - event.movementY * 0.12, -75, 75);
+      look(event.movementX, event.movementY);
     };
-    const lock = (event: PointerEvent) => { if (event.pointerType === 'mouse') void gl.domElement.requestPointerLock(); };
+    const lock = (event: PointerEvent) => {
+      if (!enabled || event.pointerType !== 'mouse') return;
+      dragLook.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      try { void gl.domElement.requestPointerLock().catch(() => { /* use drag-to-look instead */ }); }
+      catch { /* use drag-to-look instead */ }
+    };
+    const drag = (event: PointerEvent) => {
+      const previous = dragLook.current;
+      if (!enabled || !previous || previous.id !== event.pointerId || document.pointerLockElement === gl.domElement || !event.buttons) return;
+      look(event.clientX - previous.x, event.clientY - previous.y);
+      previous.x = event.clientX; previous.y = event.clientY;
+    };
+    const endDrag = (event: PointerEvent) => { if (dragLook.current?.id === event.pointerId) dragLook.current = null; };
     gl.domElement.addEventListener('pointerdown', lock);
+    gl.domElement.addEventListener('pointermove', drag);
+    gl.domElement.addEventListener('pointerup', endDrag);
+    gl.domElement.addEventListener('pointercancel', endDrag);
     window.addEventListener('keydown', down); window.addEventListener('keyup', up); window.addEventListener('mousemove', move);
-    return () => { gl.domElement.removeEventListener('pointerdown', lock); window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('mousemove', move); if (document.pointerLockElement === gl.domElement) document.exitPointerLock(); };
-  }, [gl, poseRef]);
+    return () => { keys.current.clear(); dragLook.current = null; gl.domElement.removeEventListener('pointerdown', lock); gl.domElement.removeEventListener('pointermove', drag); gl.domElement.removeEventListener('pointerup', endDrag); gl.domElement.removeEventListener('pointercancel', endDrag); window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('mousemove', move); if (document.pointerLockElement === gl.domElement) document.exitPointerLock(); };
+  }, [gl, poseRef, enabled]);
   useFrame((state, delta) => {
     const pose = poseRef.current, input = inputRef.current;
     const dt = Math.min(delta, 0.05);
     pose.yaw += input.lookX; pose.pitch = THREE.MathUtils.clamp(pose.pitch + input.lookY, -75, 75);
     input.lookX = 0; input.lookY = 0;
-    const forward = Math.max(-1, Math.min(1, input.forward + Number(keys.current.has('KeyW')) - Number(keys.current.has('KeyS'))));
-    const right = Math.max(-1, Math.min(1, input.right + Number(keys.current.has('KeyD')) - Number(keys.current.has('KeyA'))));
+    const forward = enabled ? Math.max(-1, Math.min(1, input.forward + Number(keys.current.has('KeyW')) - Number(keys.current.has('KeyS')))) : 0;
+    const right = enabled ? Math.max(-1, Math.min(1, input.right + Number(keys.current.has('KeyD')) - Number(keys.current.has('KeyA')))) : 0;
     const radians = pose.yaw * Math.PI / 180;
     const speed = 2.1 * dt / Math.max(1, Math.hypot(forward, right));
     const nextX = THREE.MathUtils.clamp(pose.x + (Math.sin(radians) * forward + Math.cos(radians) * right) * speed, -4.72, 4.72);
@@ -896,7 +917,7 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight }: { 
   );
 }
 
-export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, walkPoseRef, walkInputRef, onWalk }: Props) {
+export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, walkPoseRef, walkInputRef, walkControlsEnabled = true, onWalk }: Props) {
   const [dragging, setDragging] = useState(false);
   // โจทย์ฝึกบนกริด/พื้นว่าง: วาดวัตถุจาก scene แทนของตามกติกา และให้โดรนมีเข็ม/ลูกดอกตามวัตถุที่วางไว้
   const custom = !!scene && scene.pattern !== 'standard';
@@ -936,7 +957,7 @@ export default function Field3D({ event, drone, onDrone, view, shot, low, live =
       {live && <HoldPulse k={holdKey} poseRef={poseRef} />}
       {shot && <DartFlight key={shot.id ?? 0} shot={shot} />}
       {view === 'walk' && walkPoseRef && walkInputRef
-        ? <WalkCameraRig poseRef={walkPoseRef} inputRef={walkInputRef} onWalk={onWalk} scene={scene} />
+        ? <WalkCameraRig poseRef={walkPoseRef} inputRef={walkInputRef} onWalk={onWalk} scene={scene} enabled={walkControlsEnabled} />
         : <CameraRig view={view} topH={custom && scene!.pattern === 'grid5' ? 8.4 : 15.5} drone={drone} dragging={dragging} live={live} poseRef={poseRef} highlight={highlight} />}
     </Canvas>
   );

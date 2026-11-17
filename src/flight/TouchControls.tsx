@@ -21,7 +21,7 @@ export function TouchStick({ label, onMove, className = '', floating = false }: 
     onPointerMove={event => { if (active.current === event.pointerId) move(event.clientX, event.clientY); }}
     onPointerUp={event => { if (active.current !== event.pointerId) return; active.current = null; setOffset({ x: 0, y: 0 }); onMove(0, 0); }}
     onPointerCancel={() => { active.current = null; setOffset({ x: 0, y: 0 }); onMove(0, 0); }}>
-    <span className="absolute left-1/2 top-1/2 size-11 -translate-x-1/2 -translate-y-1/2 squircle-2xl border border-brand-blue bg-brand-blue shadow-sm" style={{ transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px))` }} />
+    <span className="absolute left-1/2 top-1/2 size-11 squircle-2xl border border-brand-blue bg-brand-blue shadow-sm" style={{ transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px))` }} />
     <span className="sr-only">{label}</span>
   </div>;
 }
@@ -34,6 +34,6 @@ export function TouchWalkControls({ inputRef }: { inputRef: React.RefObject<Walk
       onPointerMove={event => { const p = pointer.current; if (!p || p.id !== event.pointerId) return; inputRef.current.lookX += (event.clientX - p.x) * 0.12; inputRef.current.lookY -= (event.clientY - p.y) * 0.12; p.x = event.clientX; p.y = event.clientY; }}
       onPointerUp={() => { pointer.current = null; }} onPointerCancel={() => { pointer.current = null; }} />
     <TouchStick label="จอยเดิน" floating className="pointer-events-auto absolute bottom-4 left-4" onMove={(x, y) => { inputRef.current.right = x; inputRef.current.forward = y; }} />
-    <p className="pointer-events-none absolute bottom-3 right-3 squircle-xl bg-surface/85 px-2 py-1 text-xs text-foreground">ปัดด้านขวาเพื่อหันมอง</p>
+    <p className="pointer-events-none absolute bottom-3 right-3 max-w-40 squircle-xl bg-surface/85 px-2 py-1 text-right text-xs text-foreground">จอยซ้ายเดิน · ปัดขวาหันมอง</p>
   </div>;
 }

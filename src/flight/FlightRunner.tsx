@@ -8,7 +8,7 @@ import { NO_MARKS, type LivePose, type Marks, type ShotHighlight, type ViewPrese
 import { FieldPlan2D } from '@/field/FieldPlan2D';
 import type { RuleEvent } from '@/rules/types';
 import { detectQuality } from '@/scene/quality';
-import { Footprints, Layers, Maximize2, Minimize2, Pause, Play, RotateCcw, Ruler, Video, Volume2, VolumeX } from 'lucide-react';
+import { CircleHelp, Footprints, Layers, Maximize2, Minimize2, Pause, Play, RotateCcw, Ruler, Video, Volume2, VolumeX } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildConfig, toField } from './config';
@@ -18,6 +18,7 @@ import type { SceneSpec } from '@/field/SceneObjects';
 import { frameAt, parse, simulate, TIME_LIMIT_MS, type Frame, type Result, type SimEvent } from './engine';
 import { inLaunchZone, LIGHTS_OFF, LIGHTS_ON, type FieldLights, type FlightAction, type FlightDifficulty, type FlightEnvironment, type ManualStick } from './environment';
 import { TouchStick, TouchWalkControls } from './TouchControls';
+import { WalkGuide } from './WalkGuide';
 import { FlightAudio } from './sound';
 import { FieldMeasure } from './FieldMeasure';
 import type { Measurement } from './measurements';
@@ -124,6 +125,8 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   const [supports3d, setSupports3d] = useState(false);
   const [mode, setMode] = useState<'pending' | '2d' | '3d'>('pending');
   const [expanded, setExpanded] = useState(false);
+  const [walkGuideOpen, setWalkGuideOpen] = useState(false);
+  const walkGuideSeenRef = useRef(false);
   const [low, setLow] = useState(true);
   const [pose2d, setPose2d] = useState(HOME);
   const [holdKey, setHoldKey] = useState(0);
@@ -163,6 +166,25 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   speedRef.current = speed;
   const { keyBindings, errors: codeErrors } = useMemo(() => parse(code, cfg.style ?? 'any'), [code, cfg.style]);
   const environmentOf = useCallback((actions: FlightAction[] = actionsRef.current): FlightEnvironment => ({ difficulty, lights, actions, launch: launch ?? undefined, timeLimitMs: TIME_LIMIT_MS - timeCarry, completed: completedRef.current }), [difficulty, lights, launch, timeCarry]);
+  const openWalkGuide = useCallback(() => {
+    if (document.pointerLockElement) document.exitPointerLock();
+    walkInputRef.current = { forward: 0, right: 0, lookX: 0, lookY: 0 };
+    setWalkGuideOpen(true);
+  }, []);
+  const closeWalkGuide = useCallback(() => {
+    setWalkGuideOpen(false);
+    walkGuideSeenRef.current = true;
+    try { localStorage.setItem('sim-walk-guide-v1', '1'); } catch { /* storage may be disabled */ }
+  }, []);
+  const chooseView = useCallback((next: ViewPreset) => {
+    if (document.pointerLockElement) document.exitPointerLock();
+    setView(next);
+    if (next !== 'walk' || !fullHeightField) return;
+    setExpanded(true);
+    let seen = walkGuideSeenRef.current;
+    try { seen ||= localStorage.getItem('sim-walk-guide-v1') === '1'; } catch { /* storage may be disabled */ }
+    if (!seen) openWalkGuide();
+  }, [fullHeightField, openWalkGuide]);
 
   useEffect(() => {
     const q = detectQuality();
@@ -182,17 +204,24 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     if (previewKey !== undefined) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (walkGuideOpen) { closeWalkGuide(); return; }
+        if (document.pointerLockElement) { document.exitPointerLock(); return; }
         setExpanded(false);
         return;
       }
+      if (event.target instanceof HTMLElement && event.target.closest('input,textarea,[contenteditable="true"]')) return;
+      if (event.code === 'KeyH' && !event.ctrlKey && !event.metaKey && fullHeightField && mode === '3d') {
+        event.preventDefault(); openWalkGuide(); return;
+      }
       if (event.code === 'KeyX' && event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey) {
         event.preventDefault();
+        if (document.pointerLockElement) document.exitPointerLock();
         setExpanded((current) => !current);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [previewKey]);
+  }, [previewKey, walkGuideOpen, closeWalkGuide, fullHeightField, mode, openWalkGuide]);
 
   const snd = () => (audio.current ??= new FlightAudio());
 
@@ -396,7 +425,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   };
 
   useEffect(() => {
-    if (!remoteManual || !fullHeightField) return;
+    if (!remoteManual || !fullHeightField || walkGuideOpen) return;
     const held = new Set<string>();
     const update = () => updateStick({
       forward: Number(held.has('ArrowUp')) - Number(held.has('ArrowDown')),
@@ -412,7 +441,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     const up = (event: KeyboardEvent) => { if (held.delete(event.code)) update(); };
     window.addEventListener('keydown', down); window.addEventListener('keyup', up);
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
-  }, [remoteManual, fullHeightField, recordAction]);
+  }, [remoteManual, fullHeightField, walkGuideOpen, recordAction]);
 
   const tick = useCallback((ts: number) => {
     const r = resultRef.current;
@@ -705,7 +734,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
         ? 'fixed inset-0 z-[70] h-dvh w-screen overflow-hidden bg-[#0b0d12]'
         : `relative w-full overflow-hidden squircle-2xl border border-line bg-[#0b0d12] ${previewKey ? "aspect-[4/3] max-h-[55dvh] sm:aspect-video" : fullHeightField ? "h-[min(50svh,36rem)] min-h-[18rem]" : "aspect-[4/3] sm:aspect-video xl:aspect-auto xl:h-full xl:min-h-0"}`}>
         {mode === '3d' ? (
-          <Field3D event={event} drone={{ ...pose2d }} onDrone={() => { }} view={view} shot={null} low={low} live={live} poseRef={poseRef} playheadRef={playheadRef} marks={marks} highlight={highlight} dartInventory={{ front: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'front').length), back: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'back').length) }} holdKey={holdKey} loaded={loaded} scene={spec3d} measurements={measurements} showDimensions={!previewKey && showDimensions} dimensionFrom={dimensionFrom.id} dimensionTo={dimensionTo?.id} lights={fullHeightField ? lights : undefined} walkPoseRef={fullHeightField ? walkPoseRef : undefined} walkInputRef={fullHeightField ? walkInputRef : undefined} onWalk={fullHeightField ? onWalk : undefined} />
+          <Field3D event={event} drone={{ ...pose2d }} onDrone={() => { }} view={view} shot={null} low={low} live={live} poseRef={poseRef} playheadRef={playheadRef} marks={marks} highlight={highlight} dartInventory={{ front: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'front').length), back: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'back').length) }} holdKey={holdKey} loaded={loaded} scene={spec3d} measurements={measurements} showDimensions={!previewKey && showDimensions} dimensionFrom={dimensionFrom.id} dimensionTo={dimensionTo?.id} lights={fullHeightField ? lights : undefined} walkPoseRef={fullHeightField ? walkPoseRef : undefined} walkInputRef={fullHeightField ? walkInputRef : undefined} walkControlsEnabled={!walkGuideOpen} onWalk={fullHeightField ? onWalk : undefined} />
         ) : (
           <FieldPlan2D event={event} drone={pose2d} interactive={false} className="size-full p-2" scene={spec2d} measurements={measurements} />
         )}
@@ -713,8 +742,8 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
         {fullHeightField && mode === '3d' && view === 'walk' && <>
           <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 size-2 -translate-x-1/2 -translate-y-1/2 squircle-xl border border-foreground bg-surface/60" />
           <TouchWalkControls inputRef={walkInputRef} />
-          <Button type="button" size="sm" variant="outline" className="absolute right-3 top-14 z-30" aria-expanded={remoteOpen} aria-controls="walk-remote" onClick={() => setRemoteOpen(value => !value)}>{remoteOpen ? 'ปิดรีโมท' : 'เปิดรีโมท'}</Button>
-          {remoteOpen && <div id="walk-remote" className="absolute bottom-14 right-3 top-24 z-30 grid w-[min(20rem,calc(100%-1.5rem))] min-w-0 content-start gap-2 overflow-y-auto overscroll-contain squircle-2xl border border-line bg-surface/95 p-3 text-foreground shadow-xl backdrop-blur">
+          <Button type="button" size="sm" variant="outline" className={`absolute right-3 z-30 ${expanded ? 'top-28 sm:top-14' : 'top-14'}`} aria-expanded={remoteOpen} aria-controls="walk-remote" onClick={() => { if (document.pointerLockElement) document.exitPointerLock(); setRemoteOpen(value => !value); }}>{remoteOpen ? 'ปิดรีโมท' : 'เปิดรีโมท'}</Button>
+          {remoteOpen && <div id="walk-remote" className={`absolute right-3 z-30 grid max-h-[calc(100%-7rem)] w-[min(20rem,calc(100%-1.5rem))] min-w-0 content-start gap-2 overflow-y-auto overscroll-contain squircle-2xl border border-line bg-surface/95 p-3 text-foreground shadow-xl backdrop-blur ${expanded ? 'top-40 max-sm:max-h-[calc(100%-11rem)] sm:top-24' : 'top-24'}`}>
             <h3 className="text-sm font-bold">รีโมท · {remoteManual ? 'manual' : 'coding'}</h3>
             <p role="status" className="text-xs text-muted-foreground">{remoteStatus}</p>
             <div className="grid grid-cols-3 gap-1">{keyBindings.map(binding => <Button key={binding.key} type="button" size="sm" variant="outline" disabled={rescued || !!codeErrors.length || timeCarry >= TIME_LIMIT_MS} onClick={() => pressKey(binding.key)}>KEY {binding.key}</Button>)}</div>
@@ -726,10 +755,11 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
             {started && !done && !rescued && <Button type="button" size="sm" variant="outline" onPointerDown={startRescue} onPointerUp={cancelRescue} onPointerCancel={cancelRescue} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') startRescue(); }} onKeyUp={cancelRescue}>กดค้าง · จับแบตและพลิก</Button>}
             {rescued && <Button type="button" size="sm" onClick={powerCycle}>ปิดเปิดโดรนใหม่</Button>}
           </div>
+          <p className="pointer-events-none absolute bottom-3 left-3 z-20 hidden squircle-xl border border-line bg-surface/90 px-3 py-1.5 text-xs text-foreground lg:block">WASD เดิน · คลิกสนามเพื่อหันมอง หรือคลิกลาก · Esc ปล่อยเมาส์</p>
         </>}
 
         {/* HUD เวลา/คะแนน */}
-        <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap items-center gap-2 text-white">
+        <div className={`pointer-events-none absolute left-3 flex flex-wrap items-center gap-2 text-white ${expanded ? 'top-14 max-w-[calc(100%-8rem)] sm:top-3 sm:max-w-[calc(100%-17rem)] lg:max-w-[calc(100%-32rem)]' : 'top-3'}`}>
           <span className="squircle-sm bg-black/65 px-2.5 py-1 font-mono text-sm">{fmtTime(now + timeCarry)} / {fmtTime(event.durationSec * 1000)}</span>
           {(done && result || scoreCarry > 0) && <span className="squircle-sm bg-brand-blue px-2.5 py-1 text-sm font-semibold">คะแนน {done && result ? result.score : scoreCarry}</span>}
           {manualActive && <span className="squircle-sm bg-black/65 px-2.5 py-1 text-sm font-semibold">พร้อมรอคำสั่ง KEY</span>}
@@ -739,18 +769,16 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
           {rescueStatus && <span role="status" className="squircle-sm bg-black/75 px-2.5 py-1 text-xs">{rescueStatus}</span>}
         </div>
 
-        {!previewKey && mode === '3d' && (
-          <Button
-            type="button"
-            variant="outline"
-            className="absolute right-3 top-3 z-20 h-9 w-9 p-0"
-            aria-label={expanded ? 'ย่อสนาม 3 มิติ' : 'ขยายสนาม 3 มิติ'}
-            title="Ctrl+Shift+X · Esc เพื่อย่อ"
-            onClick={() => setExpanded((current) => !current)}
-          >
+        {!previewKey && mode === '3d' && <div className="absolute right-3 top-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-1 squircle-xl border border-line bg-surface/95 p-1 shadow-lg" aria-label="ควบคุมมุมสนาม">
+          {expanded && <div role="group" aria-label="เลือกมุมมองในเต็มจอ" className="flex items-center gap-1 border-r border-line pr-1">
+            {VIEWS.filter(item => fullHeightField || item.id !== 'walk').map(({ id, label, Icon }) => <Button key={id} type="button" size="sm" variant={view === id ? 'default' : 'ghost'} className="h-9 min-w-9 gap-1 px-2" aria-label={label} aria-pressed={view === id} disabled={replaying && id === 'walk'} onClick={() => chooseView(id)} title={label}><Icon className="size-4" aria-hidden /><span className="hidden lg:inline">{label}</span></Button>)}
+          </div>}
+          {fullHeightField && <Button type="button" size="sm" variant="ghost" className="h-9 min-w-9 gap-1 px-2" aria-label="วิธีเดินและบังคับ" title="วิธีเดินและบังคับ · H" onClick={openWalkGuide}><CircleHelp className="size-4" aria-hidden /><span className="hidden lg:inline">วิธีเดิน</span></Button>}
+          <Button type="button" size="sm" variant="ghost" className="h-9 w-9 p-0" aria-label={expanded ? 'ย่อสนาม 3 มิติ' : 'ขยายสนาม 3 มิติ'} title="Ctrl+Shift+X · Esc เพื่อย่อ" onClick={() => { if (document.pointerLockElement) document.exitPointerLock(); setExpanded(current => !current); }}>
             {expanded ? <Minimize2 className="size-4" aria-hidden /> : <Maximize2 className="size-4" aria-hidden />}
           </Button>
-        )}
+        </div>}
+        {walkGuideOpen && mode === '3d' && fullHeightField && <WalkGuide onClose={closeWalkGuide} />}
         {!previewKey && mode === '3d' && showDimensions && dimensionOptions.length > 1 && <div className="absolute right-3 top-14 z-20 grid max-w-[min(19rem,calc(100%-1.5rem))] gap-1.5 squircle-xl border border-white/25 bg-black/80 p-2 text-xs font-semibold text-white shadow-lg">
           <span>วัดระหว่างจุดในสนาม</span>
           <div className="grid grid-cols-2 gap-1.5">
@@ -900,7 +928,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
           {mode === '3d' && (
             <div role="group" aria-label="เลือกมุมมอง" className="flex gap-1 squircle-xl border border-line bg-surface p-1">
               {VIEWS.filter(item => fullHeightField || item.id !== 'walk').map(({ id, label, Icon }) => (
-                <Button key={id} variant={view === id ? 'default' : 'ghost'} className="h-9 px-3 text-base" aria-pressed={view === id} disabled={replaying && id === 'walk'} onClick={() => setView(id)}><Icon className="size-4" /> <span className="max-sm:hidden">{label}</span><span className="sm:hidden sr-only">{label}</span></Button>
+                <Button key={id} variant={view === id ? 'default' : 'ghost'} className="h-9 px-3 text-base" aria-pressed={view === id} disabled={replaying && id === 'walk'} onClick={() => chooseView(id)}><Icon className="size-4" /> <span className="max-sm:hidden">{label}</span><span className="sm:hidden sr-only">{label}</span></Button>
               ))}
             </div>
           )}
