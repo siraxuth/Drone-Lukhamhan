@@ -17,6 +17,8 @@ import { Tour, type TourStep } from '@/components/Tour';
 import { programs } from './programs';
 import { convertStyle, STYLES, type Style } from './style';
 import type { Result } from './engine';
+import { TuningLab } from './TuningLab';
+import { countsFor, EMPTY_PAYLOAD, PAYLOAD_CHANNELS, type Payload } from './payload';
 import { bindStarterToKey, KEY_FUNCTION_EXAMPLE } from './key-program';
 import { BlockProgramEditor } from './BlockProgramEditor';
 import { generateBlockProgram } from './block-program';
@@ -311,15 +313,16 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
   const [missionSearch, setMissionSearch] = useState('');
   const [missionLevel, setMissionLevel] = useState('ทุกระดับ');
   const [missionType, setMissionType] = useState('ทุกประเภท');
-  const [payloads, setPayloads] = useState<Record<string, { L: number; R: number }>>({});
+  const [payloads, setPayloads] = useState<Record<string, Payload>>({});
   const [canReload, setCanReload] = useState(true);
   const [loadDraft, setLoadDraft] = useState({ L: '20', R: '20' });
   const loadCount = { L: Number(loadDraft.L) || 0, R: Number(loadDraft.R) || 0 };
   const payloadPanel = useRef<HTMLElement>(null);
   const [payloadDialogOpen, setPayloadDialogOpen] = useState(false);
+  const [tuningOpen, setTuningOpen] = useState(false);
   useEffect(() => {
     const open = (event: KeyboardEvent) => {
-      if (!event.shiftKey || event.code !== 'KeyS' || event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
+      if (tuningOpen || !event.shiftKey || event.code !== 'KeyS' || event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
       if (event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
       if (!payloadPanel.current) return;
       event.preventDefault(); event.stopImmediatePropagation();
@@ -329,7 +332,7 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
     };
     window.addEventListener('keydown', open, true);
     return () => window.removeEventListener('keydown', open, true);
-  }, []);
+  }, [tuningOpen]);
   /** คะแนนสูงสุดต่อด่านที่เคยบินจบโดยไม่พัง เก็บในเครื่องนี้ */
   const [progress, setProgress] = useState<Record<string, number>>({});
   const [workspaceReady, setWorkspaceReady] = useState(signedIn);
@@ -342,7 +345,12 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
   const ev = season.events.find((e) => e.id === sc.config.event)!;
   const style: Style = styleSel;
   const commands = useMemo(() => commandsFor(style), [style]);
-  const payload = payloads[sc.slug] ?? { L: 0, R: 0 };
+  const payload = payloads[sc.slug] ?? EMPTY_PAYLOAD;
+  const payloadChannels = countsFor(payload);
+  const requestedChannels = countsFor(loadCount);
+  const requestedLoadReady = PAYLOAD_CHANNELS.every(channel =>
+    payloadChannels[channel] === requestedChannels[channel]
+    && (payload.installed ?? payloadChannels)[channel] === requestedChannels[channel]);
   const config = useMemo(() => ({ ...buildScenarioConfig(sc.config), style, initialPayload: payload }), [sc, style, payload]);
   const converted = useMemo(() => convertStyle(code, style), [code, style]);
   const scene = useMemo(() => (sc.config.pattern !== 'standard' || sc.config.objects.length || sc.config.start ? { pattern: sc.config.pattern, objects: sc.config.objects, start: sc.config.start, base: sc.config.base } : undefined), [sc]);
@@ -507,13 +515,14 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
 
   const payloadControls = <>
 
-            <div className="flex flex-wrap items-center gap-2"><h2 className="mr-auto text-sm font-bold">เตรียมโดรน · Shift+S</h2>{sc.config.requiresPayload && <span className="text-xs text-muted-foreground">บอล ซ้าย {payload.L}/20 · ขวา {payload.R}/20</span>}{sc.config.requiresPayload && <Button size="sm" variant="outline" className="min-h-9" onClick={reloadPayload} disabled={!canReload || (payload.L === loadCount.L && payload.R === loadCount.R)} title={!canReload ? 'ต้องกลับมาลงบนฐานก่อน' : undefined}>{`ใส่บอล ${loadCount.L + loadCount.R} ลูก`}</Button>}</div>
-            {!canReload ? <p className="text-xs text-muted-foreground">เติมบอลได้เมื่อโดรนลงบนฐานแล้ว</p> : payload.L === loadCount.L && payload.R === loadCount.R ? <p className="text-xs text-muted-foreground">ใส่บอลตามจำนวนที่เลือกแล้ว พร้อมบิน</p> : <p className="text-xs text-muted-foreground">ถ้าโจทย์ให้ปล่อยบอล ให้เติมก่อนกด KEY</p>}
+            <div className="flex flex-wrap items-center gap-2"><h2 className="mr-auto text-sm font-bold">เตรียมโดรน · Shift+S</h2>{sc.config.requiresPayload && <span className="text-xs text-muted-foreground">บอล ซ้าย {payload.L}/20 · ขวา {payload.R}/20</span>}{sc.config.requiresPayload && <Button size="sm" variant="outline" className="min-h-9" onClick={reloadPayload} disabled={!canReload || requestedLoadReady} title={!canReload ? 'ต้องกลับมาลงบนฐานก่อน' : undefined}>{`ใส่บอล ${loadCount.L + loadCount.R} ลูก`}</Button>}</div>
+            {!canReload ? <p className="text-xs text-muted-foreground">เติมบอลได้เมื่อโดรนลงบนฐานแล้ว</p> : requestedLoadReady ? <p className="text-xs text-muted-foreground">ใส่บอลตามจำนวนที่เลือกแล้ว พร้อมบิน</p> : <p className="text-xs text-muted-foreground">ถ้าโจทย์ให้ปล่อยบอล ให้เติมก่อนกด KEY</p>}
           <div className="flex flex-wrap gap-3">
               {(['L', 'R'] as const).map(side => <label key={side} className="flex items-center gap-2 text-sm">เติมฝั่ง{side === 'L' ? 'ซ้าย' : 'ขวา'}
                 <input aria-label={`จำนวนบอลฝั่ง${side === 'L' ? 'ซ้าย' : 'ขวา'}`} type="number" min={0} max={20} step={1} disabled={!canReload} value={loadDraft[side]} onFocus={e => e.currentTarget.select()} onChange={e => { const raw = e.target.value; setLoadDraft(c => ({ ...c, [side]: raw === '' ? '' : String(Math.max(0, Math.min(20, Math.trunc(Number(raw) || 0)))) })); }} className="h-9 w-16 squircle-xl border border-line bg-surface px-2" /> ลูก
               </label>)}
             </div>
+            <p className="font-mono text-xs text-muted-foreground">L · CH1 {payloadChannels[1]} / CH3 {payloadChannels[3]} · R · CH4 {payloadChannels[4]} / CH6 {payloadChannels[6]}</p>
             {sc.config.objects.filter((o): o is Extract<SceneObject, { type: 'platform' }> => o.type === 'platform').map(o => <p key={o.id} className="text-xs text-muted-foreground">{o.id}: ต้องใส่ {o.requiredBalls ?? 20} ลูก</p>)}
           
   </>;
@@ -544,7 +553,7 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
             </div>
           </div>
           <div data-tour="sim-stage-canvas" className="min-w-0 squircle-3xl border border-line bg-surface p-2 sm:p-3">
-            <FlightRunner event={ev} code={code} config={config} scene={scene} maxPoints={max} bigPlay={false} fullHeightField controlsBlocked={payloadDialogOpen} onResult={onFlightResult} onCommandProgress={setActiveBlockCommand} onStart={() => setCanReload(false)} onFinish={onFinish} />
+            <FlightRunner event={ev} code={code} config={config} scene={scene} maxPoints={max} bigPlay={false} fullHeightField controlsBlocked={payloadDialogOpen || tuningOpen} onResult={onFlightResult} onCommandProgress={setActiveBlockCommand} onStart={() => setCanReload(false)} onFinish={onFinish} />
           </div>
           {sc.config.requiresPayload && <section ref={payloadPanel} className="grid gap-2 squircle-2xl border border-line bg-surface p-3" aria-label="เตรียมโดรน" aria-keyshortcuts="Shift+S">{payloadControls}</section>}
           <Dialog open={payloadDialogOpen} onOpenChange={setPayloadDialogOpen}>
@@ -579,6 +588,7 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
             </PopoverContent>
           </Popover>
         )}
+        <Button variant="outline" className="min-h-9" onClick={() => setTuningOpen(true)}>ปรับจูนขั้นสูง</Button>
         {editorMode === 'cpp' && style !== 'any' && converted !== code && <Button variant="outline" className="min-h-9" onClick={() => setCode(converted)}>แปลงชื่อคำสั่ง</Button>}
         {edited && <Button variant="outline" onClick={resetCode}><RotateCcw className="size-4" /> คืนโค้ดตั้งต้น</Button>}
             </div>
@@ -601,8 +611,15 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
           </div>
         </div>
       </div>
-      {qs.get('lesson') !== '1' && <Tour id="simulator-guide-v2" steps={SIM_TOUR} autoOpenImmediately trigger="[data-sim-guide]" allowTargetInteraction paused={panel === 'pick'} />}
-      <Tour id="sim-code-course" steps={CODE_COURSE} forceQuery="lesson" autoOpenImmediately startOnFocus="[data-sim-editor] textarea" trigger="[data-sim-course]" allowTargetInteraction />
+      {qs.get('lesson') !== '1' && <Tour id="simulator-guide-v2" steps={SIM_TOUR} autoOpenImmediately trigger="[data-sim-guide]" allowTargetInteraction paused={panel === 'pick' || tuningOpen || payloadDialogOpen} />}
+      <TuningLab open={tuningOpen} onOpenChange={setTuningOpen} config={config} mission={code}
+        onApply={sketch => {
+          setStyleSel('any');
+          setEditorMode('cpp');
+          setCode(sketch);
+          setTuningOpen(false);
+        }} />
+      <Tour id="sim-code-course" steps={CODE_COURSE} forceQuery="lesson" autoOpenImmediately startOnFocus="[data-sim-editor] textarea" trigger="[data-sim-course]" allowTargetInteraction paused={tuningOpen || payloadDialogOpen} />
       <Dialog open={!!pendingBlockImport} onOpenChange={(open) => { if (!open) setPendingBlockImport(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>

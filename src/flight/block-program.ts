@@ -8,7 +8,8 @@ const COMMAND_TEXT: Record<BlockCommand, { name: string; args: number }> = {
   move_forward_time: { name: 'move_forward_time', args: 1 }, move_backward_time: { name: 'move_backward_time', args: 1 },
   move_left_time: { name: 'move_left_time', args: 1 }, move_right_time: { name: 'move_right_time', args: 1 },
   set_yaw: { name: 'set_yaw', args: 2 }, poshold: { name: 'poshold', args: 0 }, turnByHand: { name: 'turnByHand', args: 1 },
-  drop: { name: 'drop', args: 0 }, pop: { name: 'pop', args: 0 }, shoot: { name: 'shoot', args: 0 }, shot_b: { name: 'shot_b', args: 0 },
+  drop: { name: 'drop', args: 0 }, drop_l: { name: 'drop_l', args: 0 }, drop_r: { name: 'drop_r', args: 0 },
+  drop_pair: { name: 'drop_pair', args: 1 }, pop: { name: 'pop', args: 0 }, shoot: { name: 'shoot', args: 0 }, shot_b: { name: 'shoot_b', args: 0 },
 };
 
 export const BLOCK_COMMANDS = COMMAND_TEXT;

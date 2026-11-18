@@ -248,38 +248,46 @@ for i,(sx,sy) in enumerate([(1,-1),(-1,-1),(-1,1),(1,1)],1):
     before=set(bpy.context.scene.objects)
     beam=liftarm('Arm_'+str(i),11,frame)
     beam.location=Vector((d.x*beam_radius,d.y*beam_radius,beam_z))*U; beam.rotation_euler.z=ang
+    # Match the screw head's 1.8 mm height on the four screw seats.
+    for off,face in ((-40,1),(-32,1),(8,-1),(40,-1)):
+        pos=d*(beam_radius+off)
+        subtract(beam,cyl('Flush screw counterbore',(pos.x,pos.y,beam_z+face*3.6),2.85,3.9,seam))
     beam['part']='11-hole-beam'
     tag(new_since(before),f'beam-{i}',(d.x*beam_radius,d.y*beam_radius,beam_z))
-    # Section1: the 3-hole beam hangs under holes 1-3, its pin rises into hole 2
-    # and the cross axle drops from its middle hole as the landing leg.
-    # The 3-hole beam covers holes 2-4 so the outermost motor screw (hole 1) seats directly on the 11-hole beam.
-    lx,ly=x-d.x*8,y-d.y*8
+    # Section 1 covers holes 1–3. Close the exposed bore at hole 1 so the
+    # outer motor screw is concealed behind the 3-hole beam.
+    lx,ly=x,y
     before=set(bpy.context.scene.objects)
     bracket=liftarm('3-hole-beam_'+str(i),3,frame)
     bracket['part']='3-hole-beam'
     bracket.location=Vector((lx,ly,beam_z-7.2))*U; bracket.rotation_euler.z=ang
+    cyl('Outer screw cover',(x+d.x*8,y+d.y*8,beam_z-6.4),2.44,4.5,frame)
     tag(new_since(before),f'bracket-{i}',(lx,ly,beam_z-7.2))
     before=set(bpy.context.scene.objects)
     # Pin 2780 (white) locks the 3-hole beam in its inboard hole 3; the leg's cross axle keeps the middle hole for pin 32054.
     px,py=lx-d.x*8,ly-d.y*8
-    cyl('Pin with bush '+str(i),(px,py,beam_z-3.6),2.35,15.4,white,verts=24)
-    ring('Pin bush '+str(i),(px,py,beam_z-11.65),3.1,.85,1.7,white,24)
-    ring('Pin head '+str(i),(px,py,beam_z+4.35),3.1,.85,1.5,white,24)
+    cyl('Pin with bush '+str(i),(px,py,beam_z-3.6),2.35,13.6,white,verts=24)
+    ring('Pin bush '+str(i),(px,py,beam_z-10.35),3.05,.85,.8,white,24)
+    ring('Pin head '+str(i),(px,py,beam_z+3.15),3.05,.85,.8,white,24)
     tag(new_since(before),f'pin-{i}',(px,py,beam_z-3.6))
     before=set(bpy.context.scene.objects)
     axle=[(-1,-2.4),(1,-2.4),(1,-1),(2.4,-1),(2.4,1),(1,1),(1,2.4),(-1,2.4),(-1,1),(-2.4,1),(-2.4,-1),(-1,-1)]
-    leg=prism('Leg_'+str(i),axle,-59,beam_z-7.2,frame)
+    leg=prism('Leg_'+str(i),axle,-59,beam_z-11.2,frame)
     leg.location=Vector((lx,ly,0))*U; leg.rotation_euler.z=ang
     tag(new_since(before),f'leg-{i}',(lx,ly,beam_z-14))
-    # Pin 32054 crosses the axle just under the 3-hole beam so the leg cannot slide out; stop bush on the outer end.
+    # The pin passes through the centre bore vertically. The axle plugs into its bush from below.
     before=set(bpy.context.scene.objects)
-    tangent=Vector((-d.y,d.x,0))
-    pin_z=beam_z-14
-    cyl('Leg lock pin '+str(i),(lx,ly,pin_z),2.0,14.4,pin_dark,axis=tangent,verts=24)
-    for k in (-4.4,-2.2,2.2,4.4):
-        cyl('Leg lock rib '+str(i),Vector((lx,ly,pin_z))+tangent*k,2.45,.7,pin_dark,axis=tangent,verts=24)
-    cyl('Leg lock bush '+str(i),Vector((lx,ly,pin_z))+tangent*7.6,3.1,1.8,pin_dark,axis=tangent,verts=24)
-    tag(new_since(before),f'leglock-{i}',(lx,ly,pin_z))
+    bush_top=beam_z-10.8
+    bush=cyl('Leg lock bush '+str(i),(lx,ly,bush_top-3.6),3.5,7.2,pin_dark,verts=32)
+    cutter=prism('Cross axle socket',[(u*1.03,v*1.03) for u,v in axle],bush_top-7.8,bush_top-.25,seam)
+    cutter.location=(lx*U,ly*U,0)
+    cutter.rotation_euler.z=ang
+    subtract(bush,cutter)
+    stem_height=14.2
+    cyl('Leg lock pin '+str(i),(lx,ly,bush_top+stem_height/2),2.15,stem_height,pin_dark)
+    for off in (1.2,6.8,8.3,13.2):
+        cyl('Leg lock pin rib '+str(i),(lx,ly,bush_top+off),2.36,.6,pin_dark,verts=24)
+    tag(new_since(before),f'leglock-{i}',(lx,ly,bush_top-3.6))
     # Motor set: motor, shoe and cage. The shoe sits on the beam over holes 1-5.
     before=set(bpy.context.scene.objects)
     shoe_r=beam_radius+24
@@ -310,8 +318,8 @@ for i,(sx,sy) in enumerate([(1,-1),(-1,-1),(-1,1),(1,1)],1):
     motor_parts=new_since(before)
     for o in motor_parts: o['spin']='ccw' if ccw else 'cw'
     tag(motor_parts,f'motor-{i}',(x,y,18))
-    # Two M3 screws come up from below and seat on the 11-hole beam (hole 1 is outboard of the 3-hole beam).
-    for j,(radius,head_z) in enumerate([(shoe_r-16,beam_z-3.7),(shoe_r+16,beam_z-3.7)]):
+    # Both motor screws seat flush on the underside of the 11-hole beam.
+    for j,(radius,head_z) in enumerate([(shoe_r-16,beam_z-2.7),(shoe_r+16,beam_z-2.7)]):
         px,py=d.x*radius,d.y*radius
         before=set(bpy.context.scene.objects)
         head=cyl(f'Motor screw {i}-{j}',(px,py,head_z),2.65,1.8,white,verts=24)
@@ -379,7 +387,7 @@ for i,(sx,sy) in enumerate([(1,-1),(-1,-1),(-1,1),(1,1)],1):
     cyl(f"{'White' if ccw else 'Black'} motor alignment dot {i}",d*48.35+Vector((0,0,.5)),1.2,.4,plugmat,axis=d,verts=20)
     for j,delta in enumerate([-40,-32]):
         r=beam_radius+delta
-        pos=(d.x*r,d.y*r,beam_z+3.7)
+        pos=(d.x*r,d.y*r,beam_z+2.7)
         before=set(bpy.context.scene.objects)
         head=cyl(f'Beam bolt {i}-{j}',pos,2.65,1.8,steel,verts=24)
         subtract(head,cyl('Hex key recess',(pos[0],pos[1],pos[2]+.8),1.3,1.6,seam,verts=6))

@@ -1,5 +1,5 @@
 // Bump whenever the GLBs change: /models assets are cached for seven days.
-const revision = 'rcsa-parts-20261109-y';
+const revision = 'rcsa-parts-flush-legs';
 export const DRONE_MODEL = {
   high: `/models/drone.glb?v=${revision}`,
   low: `/models/drone-lite.glb?v=${revision}`,

@@ -1,3 +1,4 @@
+import { countsFor, DEFAULT_GATE, DROP_PAIRS, EMPTY_PAYLOAD, isPayloadChannel, PAYLOAD_CHANNELS, payloadWithCounts, SIDE_CHANNELS, type ChannelCounts, type GatePositions, type Payload, type PayloadChannel } from "./payload";
 import { parse, type Call } from "./parser";
 import type { Style } from "./style";
 import { LIGHTS_OFF, opticalFlowQuality, type FlightEnvironment, type ManualStick, type PlayerPosition } from './environment';
@@ -72,12 +73,13 @@ export type FlightConfig = {
     hoops?: FreeHoop[];
     waypoints?: Waypoint[];
     /** Payload prepared at the launch pad by the side-panel service control. */
-    initialPayload?: { L: number; R: number };
+    initialPayload?: Payload;
+    servoBench?: boolean;
 };
 
 /** rpm = รอบใบพัด 0–1 (ช่วงสตาร์ทหมุนจากช้าไปเร็วตาม delay หลัง takeOff) */
 export type Frame = { t: number; x: number; y: number; z: number; yaw: number; rpm?: number };
-export type EventKind = "info" | "warn" | "error" | "drop" | "pop" | "shot" | "shot_b" | "land" | "takeoff" | "hold";
+export type EventKind = "info" | "warn" | "error" | "drop" | "pop" | "shot" | "shot_b" | "land" | "takeoff" | "hold" | "servo";
 export type SimEvent = {
     t: number;
     kind: EventKind;
@@ -90,6 +92,9 @@ export type SimEvent = {
     /** จำนวนบอลที่ปล่อย/บรรจุ (ใช้ซิงก์เสียงและภาพ) */ n?: number;
     /** ระยะเวลาของเหตุการณ์ (มิลลิวินาที) */ dur?: number;
     /** จำนวนบอลที่ปล่อยจากแต่ละชุด */ from?: { L: number; R: number };
+    payload?: Payload;
+    gatePositions?: GatePositions;
+    gateDegrees?: GatePositions;
     /** ปลายทางของลูกดอก (สำหรับวาด) */ to?: { x: number; y: number; z: number };
 };
 export type Breakdown = { label: string; points: number };
@@ -109,7 +114,7 @@ export type Result = {
     /** จุดผ่าน/ห่วงที่ทำสำเร็จ พร้อมเวลา (ใช้เปลี่ยนสีวัตถุในสนามตอนเล่น) */
     visits: Array<{ id: string; kind: "waypoint" | "hoop"; t: number; points: number }>;
     conditions: FlightConditions;
-    payloadRemaining: { L: number; R: number };
+    payloadRemaining: Payload;
     finalPosition: { x: number; y: number; z: number; yaw: number };
 };
 
@@ -240,7 +245,14 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
             ? REST_CM : LEG_CM, // เริ่มบนแท่น (สูง 20 ซม.) หรือบนพื้น
         yaw = environment?.launch?.yaw ?? cfg.startYaw ?? 0,
         t = 0;
-    const mag = { L: cfg.initialPayload?.L ?? 0, R: cfg.initialPayload?.R ?? 0 }; // เติมจากแผงเตรียมโดรน
+    const mag = countsFor(cfg.initialPayload ?? EMPTY_PAYLOAD);
+    const installed = cfg.initialPayload?.installed ?? { ...mag };
+    const gateCalibration: Partial<Record<PayloadChannel, typeof DEFAULT_GATE>> = {};
+    const gatePositions: GatePositions = {};
+    const gateDegrees: GatePositions = {};
+    const nextBall: GatePositions = {};
+    let ballInterval = MS_PER_BALL;
+    let distanceScale = 1, heightScale = 1, holdMs = HOLD_MS;
     const frames: Frame[] = [{ t, x, y, z, yaw }];
     let flying = false,
         crashed = false,
@@ -536,10 +548,91 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
         return !timedOut;
     };
 
+    const release = (amounts: ChannelCounts, time: number, duration: number, line: number) => {
+        const from = { L: amounts[1] + amounts[3], R: amounts[4] + amounts[6] };
+        const n = from.L + from.R;
+        if (!n) return;
+        for (const channel of PAYLOAD_CHANNELS) mag[channel] -= amounts[channel];
+
+        const at = time === t ? { x, y, z } : frameAt(frames, time);
+        const platform = cfg.platforms.find(p => Math.hypot(p.x - at.x, p.y - at.y) <= p.r && at.z > PAD_TOP_CM);
+        const event = { t: time, kind: "drop" as const, line, n, dur: duration, from, at, payload: payloadWithCounts(mag, installed) };
+        if (cfg.servoBench) {
+            events.push({ ...event, text: `ชุดทดสอบปล่อยบอล ${n} ลูก` });
+            return;
+        }
+        if (!platform) {
+            events.push({ ...event, ok: false, text: `ปล่อยบอล ${n} ลูก แต่ไม่ตกในแท่น` });
+            return;
+        }
+        const cap = platform.requiredBalls ?? cfg.ballCap;
+        const before = balls.get(platform.id) ?? 0;
+        const total = before + n;
+        balls.set(platform.id, total);
+        events.push({
+            ...event, id: platform.id, ok: true,
+            text: `บอล ${n} ลูกลงแท่น "${platform.id}" (รวม ${total}/${cap} ลูก)${total > cap ? " · เกินจำนวน" : ""}`,
+            points: (Math.min(total, cap) - Math.min(before, cap)) * cfg.points.ball,
+        });
+    };
+
+    const setGate = (channel: PayloadChannel, angle: number, time: number) => {
+        const { closed, open } = gateCalibration[channel] ?? DEFAULT_GATE;
+        const wasOpen = (gatePositions[channel] ?? 0) >= 1;
+        const ratio = (angle - closed) / (open - closed);
+        const position = Math.abs(angle - open) < 0.1 ? 1 : Math.max(0, Math.min(1, ratio));
+        gateDegrees[channel] = angle;
+        gatePositions[channel] = position;
+        if (position < 1) delete nextBall[channel];
+        else if (!wasOpen) nextBall[channel] = time + ballInterval;
+    };
+    const gateEvent = (line: number, time: number, text: string) =>
+        events.push({ t: time, kind: "servo", line, text, gatePositions: { ...gatePositions }, gateDegrees: { ...gateDegrees } });
+
+    const drainOpenGates = (elapsedAt: number, line: number) => {
+        if ((!flying && !cfg.servoBench) || powerOff || emergency) return;
+        while (true) {
+            const due = Math.min(...PAYLOAD_CHANNELS.map(channel => mag[channel] ? nextBall[channel] ?? Infinity : Infinity));
+            if (due > elapsedAt) return;
+            const amounts = countsFor(EMPTY_PAYLOAD);
+            for (const channel of PAYLOAD_CHANNELS) {
+                if (nextBall[channel] !== due || !mag[channel]) continue;
+                amounts[channel] = Math.min(mag[channel], Math.ceil(installed[channel] / 5));
+                nextBall[channel] = due + ballInterval;
+            }
+            release(amounts, due, ballInterval, line);
+        }
+    };
+
+    const dropChannels = (name: string, arg: number | undefined): readonly PayloadChannel[] | null => {
+        switch (name) {
+            case "drop": {
+                const bothSides = mag[1] + mag[3] > 0 && mag[4] + mag[6] > 0;
+                return DROP_PAIRS.find(pair => bothSides
+                    ? pair.every(channel => mag[channel] > 0)
+                    : pair.some(channel => mag[channel] > 0)) ?? [];
+            }
+            case "droppair": return arg === 1 || arg === 2 ? DROP_PAIRS[arg - 1] : null;
+            case "openpairch1ch4": return DROP_PAIRS[0];
+            case "openpairch2ch3": return DROP_PAIRS[1]; // compatibility with older sketches
+            case "dropall":
+            case "droppayload":
+            case "openallballgate": return PAYLOAD_CHANNELS;
+            default: {
+                const side = name === "dropl" || name === "dropleft" ? "L" : "R";
+                const channels: readonly PayloadChannel[] = SIDE_CHANNELS[side];
+                if (arg !== undefined) return channels.some(channel => channel === arg) ? [arg as PayloadChannel] : null;
+                const next = channels.find(channel => mag[channel] > 0);
+                return next === undefined ? [] : [next];
+            }
+        }
+    };
+
     for (let ci = 0; ci < calls.length; ci++) {
         const c = calls[ci];
         if (crashed || timedOut) break;
         const commandStart = t;
+        const wasFlying = flying;
         consumeActions(t);
         const a = c.args[0];
         const name = canon(c.name);
@@ -613,7 +706,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
             case "sh":
             case "setheight": {
                 if (!needFly(`${c.name}()`)) break;
-                const target = Math.max(15, Math.min(250, a ?? z));
+                const target = Math.max(15, Math.min(250, a === undefined ? z : a * heightScale));
                 if (inHoopBox() && !leftHoop && target > cfg.hoop.zMax)
                     ev({
                         kind: "warn",
@@ -634,7 +727,8 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                 if (!needFly(`${c.name}()`)) break;
                 // fwt/bwt/mlt/mrt: ระบุเป็นเวลา (ms) บินด้วยความเร็วเดียวกับแบบซม. ระยะ = เวลา ÷ มิลลิวินาทีต่อซม.
                 const base = name.slice(0, 2) as "fw" | "bw" | "ml" | "mr";
-                const cm = name.length === 3 ? Math.abs(a ?? 0) / MS_PER_CM[base] : Math.abs(a ?? 0);
+                const requestedCm = name.length === 3 ? Math.abs(a ?? 0) / MS_PER_CM[base] : Math.abs(a ?? 0);
+                const cm = requestedCm * distanceScale;
                 if (cm > SPEED_LIMIT_CM)
                     ev({ kind: "warn", line: c.line, text: `ระยะ ${cm} ซม. ไกลมากในคำสั่งเดียว ลองแบ่งเป็นหลายช่วง` });
                 const d = dirOf(yaw),
@@ -686,7 +780,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
             case "poshold":
             case "hold": {
                 if (!needFly(`${c.name}()`)) break;
-                const ms = a !== undefined && a > 0 ? a : HOLD_MS;
+                const ms = a !== undefined && a > 0 ? a : holdMs;
                 ev({ kind: "hold", line: c.line, text: "poshold: หยุดนิ่ง ล็อกตำแหน่ง", at: { x, y, z }, dur: ms });
                 if (dynamic) travel(0, 0, 0, 0, ms, c.line);
                 else { t += ms; push(); }
@@ -871,81 +965,112 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                 push();
                 break;
             }
-            default: {
-                const dropSides: Record<string, Array<"L" | "R">> = {
-                    openpairch1ch4: ["L"],
-                    dropleft: ["L"],
-                    openpairch2ch3: ["R"],
-                    dropright: ["R"],
-                    openallballgate: ["L", "R"],
-                    dropall: ["L", "R"],
-                    droppayload: ["L", "R"],
-                };
-                if (name === "drop" || name in dropSides) {
-                    if (!needFly(`${c.name}()`)) break;
-                    // drop() = ปล่อยชุดถัดไป (ซ้ายก่อน แล้วขวา)
-                    const sides = name === "drop" ? [mag.L > 0 ? "L" : ("R" as "L" | "R")] : dropSides[name];
-                    const per = sides.map(sd => mag[sd]);
-                    const n = per.reduce((s2, v) => s2 + v, 0);
-                    if (n <= 0) {
-                        ev({
-                            kind: "warn",
-                            line: c.line,
-                            text: `บรรทัด ${c.line}: ไม่มีสัมภาระให้ปล่อย กลับไปเติมที่แผงเตรียมโดรนบนฐานก่อนบิน`,
-                        });
-                        break;
-                    }
-                    sides.forEach(sd => {
-                        mag[sd] = 0;
-                    });
-                    const dur = Math.max(600, Math.max(...per) * MS_PER_BALL);
-                    const near = cfg.platforms.find(p => Math.hypot(p.x - x, p.y - y) <= p.r);
-                    const startT = t;
-                    t += dur;
-                    push();
-                    const here = { x, y, z };
-                    const mk = (e: Omit<SimEvent, "t">) => events.push({ t: startT, ...e });
-                    if (!near)
-                        mk({
-                            kind: "drop",
-                            line: c.line,
-                            n,
-                            dur,
-                            from: {
-                                L: sides.includes("L") ? per[sides.indexOf("L")] : 0,
-                                R: sides.includes("R") ? per[sides.indexOf("R")] : 0,
-                            },
-                            text: `ปล่อยบอล ${n} ลูกที่ (${Math.round(x)}, ${Math.round(y)}) แต่ไม่ตกในแท่น`,
-                            at: here,
-                            ok: false,
-                        });
-                    else {
-                        const cap = near.requiredBalls ?? cfg.ballCap;
-                        const total = (balls.get(near.id) ?? 0) + n;
-                        balls.set(near.id, total);
-                        mk({
-                            kind: "drop",
-                            line: c.line,
-                            n,
-                            dur,
-                            from: {
-                                L: sides.includes("L") ? per[sides.indexOf("L")] : 0,
-                                R: sides.includes("R") ? per[sides.indexOf("R")] : 0,
-                            },
-                            text: `บอล ${n} ลูกลงแท่น "${near.id}" (รวม ${total}/${cap} ลูก)${total > cap ? ` · เกิน ${cap} ลูก จะถูกหักคะแนน` : ""}`,
-                            at: here,
-                            id: near.id,
-                            ok: true,
-                            points:
-                                Math.min(total, cap) * cfg.points.ball -
-                                Math.min(total - n, cap) * cfg.points.ball,
-                        });
-                    }
+            case "flightconfig": {
+                const [distance, height, hold] = c.args;
+                if (c.args.length !== 3 || ![distance, height].every(value => value >= 0.5 && value <= 1.5) || !(hold >= 100 && hold <= 5000)) {
+                    ev({ kind: "error", line: c.line, text: "flight_config(ระยะ, ความสูง, เวลาล็อก) ใช้ตัวคูณ 0.5–1.5 และเวลาล็อก 100–5000 ms" });
                 } else {
-                    ev({ kind: "error", line: c.line, text: `บรรทัด ${c.line}: ไม่รู้จักคำสั่ง ${c.name}()` });
+                    distanceScale = distance;
+                    heightScale = height;
+                    holdMs = hold;
                 }
+                break;
+            }
+            case "servoconfig": {
+                const [channel, closed, open] = c.args;
+                if (c.args.length !== 3 || !isPayloadChannel(channel) || ![closed, open].every(v => v >= 0 && v <= 180) || closed === open) {
+                    ev({ kind: "error", line: c.line, text: "servo_config(ช่อง, มุมปิด, มุมเปิด) ใช้ช่อง 1, 3, 4, 6 และมุมที่ต่างกันในช่วง 0–180°" });
+                    break;
+                }
+                gateCalibration[channel] = { closed, open };
+                setGate(channel, closed, t);
+                gateEvent(c.line, t, `ช่อง ${channel} ตั้งมุมปิด ${closed}° / เปิด ${open}°`);
+                break;
+            }
+            case "servorate":
+                if (c.args.length !== 1 || !(a >= 20 && a <= 1000)) {
+                    ev({ kind: "error", line: c.line, text: "servo_rate() ต้องอยู่ในช่วง 20–1000 ms ต่อลูก" });
+                } else ballInterval = a;
+                break;
+            case "servowrite":
+            case "servowritepair":
+            case "servopulse":
+            case "releaseservoangle":
+            case "releaseservodegree":
+            case "releasedualservodegree": {
+                if (powerOff || emergency) break;
+                const pulse = name === "servopulse" || name === "releaseservoangle";
+                const pair = name === "servowritepair" || name === "releasedualservodegree";
+                const [channel, value, extraA, extraB] = c.args;
+                const pulseMin = extraA ?? 490, pulseMax = extraB ?? 2550;
+                const angle = pulse ? (value - pulseMin) * 180 / (pulseMax - pulseMin) : value;
+                const countValid = pulse ? c.args.length === 2 || c.args.length === 4 : c.args.length === (pair ? 4 : 2);
+                if (!countValid || !isPayloadChannel(channel) || !(angle >= 0 && angle <= 180)
+                    || (pair && (!isPayloadChannel(extraA) || extraA === channel || !(extraB >= 0 && extraB <= 180)))) {
+                    ev({ kind: "error", line: c.line, text: `${c.name}() ใช้ช่อง 1, 3, 4, 6 และมุม 0–180° หรือพัลส์ในช่วงที่ตั้งไว้` });
+                    break;
+                }
+                setGate(channel, angle, t);
+                if (pair && isPayloadChannel(extraA)) setGate(extraA, extraB, t);
+                gateEvent(c.line, t, `เซอร์โวช่อง ${channel} → ${Number(angle.toFixed(1))}°${pair ? ` · ช่อง ${extraA} → ${extraB}°` : ""}`);
+                break;
+            }
+            case "drop":
+            case "dropl":
+            case "dropr":
+            case "dropleft":
+            case "dropright":
+            case "droppair":
+            case "dropall":
+            case "droppayload":
+            case "openallballgate":
+            case "openpairch1ch4":
+            case "openpairch2ch3": {
+                if (powerOff || emergency || (!cfg.servoBench && !needFly(`${c.name}()`))) break;
+                const channels = dropChannels(name, a);
+                const canChooseChannel = ["dropl", "dropr", "dropleft", "dropright", "droppair"].includes(name);
+                if (!channels || c.args.length > (canChooseChannel ? 1 : 0)) {
+                    ev({ kind: "error", line: c.line, text: "ใช้ drop_l(1 หรือ 3), drop_r(4 หรือ 6) หรือ drop_pair(1 หรือ 2)" });
+                    break;
+                }
+                const amounts = countsFor(EMPTY_PAYLOAD);
+                for (const channel of channels) amounts[channel] = mag[channel];
+                const balanced = ["droppair", "openpairch1ch4", "openpairch2ch3"].includes(name)
+                    || (name === "drop" && mag[1] + mag[3] > 0 && mag[4] + mag[6] > 0);
+                if (balanced && channels.length === 2) {
+                    const common = Math.min(...channels.map(channel => amounts[channel]));
+                    for (const channel of channels) amounts[channel] = common;
+                }
+                const perChute = Math.max(...PAYLOAD_CHANNELS.map(channel =>
+                    installed[channel] > 0 ? Math.ceil(amounts[channel] / Math.ceil(installed[channel] / 5)) : 0));
+                if (!perChute) {
+                    ev({ kind: "warn", line: c.line, text: balanced
+                        ? "ไม่มีบอลครบทั้งคู่ในช่องที่เลือก ใช้ drop_l() หรือ drop_r() เพื่อปล่อยแยกฝั่ง"
+                        : "ช่องที่เลือกไม่มีบอลเหลือ เติมได้ที่แผงเตรียมโดรนบนฐาน" });
+                    break;
+                }
+                const start = t;
+                const duration = Math.max(600, perChute * ballInterval);
+                for (const channel of channels) {
+                    setGate(channel, (gateCalibration[channel] ?? DEFAULT_GATE).open, start);
+                    delete nextBall[channel]; // preset handles this batch as one event
+                }
+                gateEvent(c.line, start, `เปิดชุดปล่อยช่อง ${channels.join(" + ")}`);
+                release(amounts, start, duration, c.line);
+                travel(0, 0, 0, 0, duration, c.line);
+                for (const channel of channels) setGate(channel, (gateCalibration[channel] ?? DEFAULT_GATE).closed, t);
+                gateEvent(c.line, t, `ปิดชุดปล่อยช่อง ${channels.join(" + ")}`);
+                break;
+            }
+            default:
+                ev({ kind: "error", line: c.line, text: `บรรทัด ${c.line}: ไม่รู้จักคำสั่ง ${c.name}()` });
+        }
+        if (!wasFlying && flying) {
+            for (const channel of PAYLOAD_CHANNELS) {
+                if (nextBall[channel] !== undefined) nextBall[channel] = t + ballInterval;
             }
         }
+        drainOpenGates(t, c.line);
         commandTimeline.push({ start: commandStart, end: t, line: c.line });
     }
 
@@ -1006,10 +1131,10 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
         landedOnPad,
         throughHoop,
         timedOut,
-        ok: !crashed && !errors.length,
+        ok: !crashed && !events.some(event => event.kind === "error"),
         visits: extra.visits,
         conditions,
-        payloadRemaining: { ...mag },
+        payloadRemaining: payloadWithCounts(mag, installed),
         finalPosition: { x, y, z, yaw },
     };
 }
