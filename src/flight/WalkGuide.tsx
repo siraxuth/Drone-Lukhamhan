@@ -24,7 +24,7 @@ export function WalkGuide({ onClose }: { onClose: () => void }) {
         <section className="squircle-2xl border border-line bg-surface-2 p-3">
           <h3 className="font-bold">คอมพิวเตอร์</h3>
           <p className="mt-1"><Key>W</Key> <Key>A</Key> <Key>S</Key> <Key>D</Key> เดิน · คลิกสนามแล้วขยับเมาส์เพื่อหันมอง ถ้าเบราว์เซอร์ไม่จับเมาส์ ให้คลิกลากในสนาม</p>
-          <p className="mt-1"><Key>F</Key> จัดจุดวาง · <Key>K</Key> เลือก KEY · เลข <Key>1</Key>–<Key>9</Key> สั่ง KEY · <Key>E</Key> ลงฉุกเฉิน · <Key>G</Key> จับโดรน · <Key>P</Key> เปิดใหม่ · <Key>R</Key> เริ่มเที่ยวบินใหม่</p>
+          <p className="mt-1"><Key>F</Key> วางโดรน · <Key>K</Key> เลือก KEY · เลข <Key>1</Key>–<Key>9</Key> สั่ง KEY · <Key>G</Key> จับโดรนกลางอากาศ · <Key>E</Key> ลงฉุกเฉิน · <Key>R</Key> เริ่มเที่ยวบินใหม่</p>
           <p className="mt-1"><Key>Esc</Key> ปล่อยเมาส์ที่ถูกจับอยู่ กดอีกครั้งเพื่อย่อเต็มจอ ถ้าใช้วิธีคลิกลาก กดครั้งเดียวก็ย่อได้</p>
         </section>
         <section className="squircle-2xl border border-line bg-surface-2 p-3">
@@ -40,7 +40,7 @@ export function WalkGuide({ onClose }: { onClose: () => void }) {
         <section className="squircle-2xl border border-line bg-surface-2 p-3">
           <h3 className="font-bold">บังคับและกู้โดรน</h3>
           <p className="mt-1">สลับเป็น manual แล้วใช้ปุ่มลูกศรบังคับแนวราบ <Key>I</Key>/<Key>K</Key> ขึ้นลง <Key>J</Key>/<Key>L</Key> หมุนหัว หรือใช้ก้านบนจอ</p>
-          <p className="mt-1">กด <Key>E</Key> เพื่อลงฉุกเฉิน รอใบพัดหยุด เดินเข้าใกล้โดรนไม่เกิน 1.5 ม. แล้วกด <Key>G</Key> หรือปุ่ม “จับแล้วพลิก” เพื่อหยิบตรงแบตเตอรี่และพลิกกลางอากาศ รอพลิกเสร็จแล้วกด <Key>P</Key> ปิดเปิดใหม่ จากนั้นกด <Key>F</Key> เพื่อวางอีกครั้ง</p>
+          <p className="mt-1">ขณะโดรนกำลังบิน เดินเข้าใกล้ไม่เกิน 1.5 ม. แล้วกด <Key>G</Key> หรือปุ่ม “จับแล้วพลิก” เพื่อจับตรงแบตเตอรี่ ระบบจะหยุดใบพัดและพลิกโดรนในมือ พอพลิกเสร็จ กด <Key>F</Key> เพื่อวางใกล้ตัวแล้วบินต่อได้</p>
         </section>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 text-sm">

@@ -223,7 +223,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
             else if (action.type === 'manual') manual = action.enabled;
             else if (action.type === 'stick') stick = action.value;
             else if (action.type === 'land') { emergency = true; events.push({ t: action.t, kind: 'warn', text: 'สั่งลงฉุกเฉิน · คำสั่งเดิมยังรันอยู่' }); }
-            else if (action.type === 'pickup' || action.type === 'flip') { powerOff = true; events.push({ t: action.t, kind: 'warn', text: 'จับแบตเตอรี่แล้วยกโดรนพลิกกลางอากาศ · ใบพัดหยุดแล้ว รอปิดเปิดเครื่องก่อนบินต่อ' }); }
+            else if (action.type === 'pickup' || action.type === 'flip') { powerOff = true; events.push({ t: action.t, kind: 'warn', text: 'จับแบตเตอรี่แล้วพลิกโดรนกลางอากาศ · ใบพัดหยุดแล้ว วางใหม่ก่อนบินต่อ' }); }
             else if (action.type === 'power') { powerOff = false; emergency = false; manual = false; }
         }
     };

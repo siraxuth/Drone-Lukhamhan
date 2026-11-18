@@ -110,7 +110,6 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   const [lightsOpen, setLightsOpen] = useState(false);
   const [rescued, setRescued] = useState(false);
   const [rescuePose, setRescuePose] = useState<LivePose | null>(null);
-  const [flipComplete, setFlipComplete] = useState(false);
   const [emergencyRequested, setEmergencyRequested] = useState(false);
   const [emergencyLanded, setEmergencyLanded] = useState(false);
   const [needsPlacementAfterRecovery, setNeedsPlacementAfterRecovery] = useState(false);
@@ -296,7 +295,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     lastWalkRef.current = { x: 0, y: -4.45 };
     setWalkPosition(lastWalkRef.current);
     replayRef.current = false;
-    setLaunch(null); setRemoteManual(false); setRemoteOpen(false); setLightsOpen(false); setRescued(false); setRescuePose(null); setFlipComplete(false); setEmergencyRequested(false); setEmergencyLanded(false); setNeedsPlacementAfterRecovery(false); setRescueStatus(''); setHazard(''); setScoreCarry(0); setTimeCarry(0); setStandby(false); setReplaying(false); setPlacing(false); setDraftLaunch(null); setKeyPickerOpen(false);
+    setLaunch(null); setRemoteManual(false); setRemoteOpen(false); setLightsOpen(false); setRescued(false); setRescuePose(null); setEmergencyRequested(false); setEmergencyLanded(false); setNeedsPlacementAfterRecovery(false); setRescueStatus(''); setHazard(''); setScoreCarry(0); setTimeCarry(0); setStandby(false); setReplaying(false); setPlacing(false); setDraftLaunch(null); setKeyPickerOpen(false);
   }, [onCommandProgress, onResult]);
   useEffect(() => {
     if (!fullHeightField || previewKey !== undefined || walkGuideOpen) return;
@@ -621,7 +620,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
 
   const play = useCallback((key?: number, replayActions?: FlightAction[], fresh = false) => {
     setRescueStatus('');
-    setRescued(false); setRescuePose(null); setFlipComplete(false);
+    setRescued(false); setRescuePose(null);
     if (fresh) {
       completedRef.current = { balls: [], balloons: [], platforms: [], boards: [], visits: [] };
       actionHistoryRef.current = [];
@@ -698,37 +697,29 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   };
 
   const pickUpDrone = () => {
-    const crashed = done && result?.events.some(event => event.kind === 'error' && /ชน|ตก|นอกสนาม/.test(event.text));
-    if (!resultRef.current || rescued || (!emergencyLanded && !crashed)) return;
+    if (!resultRef.current || rescued || replayRef.current) return;
     const drone = poseRef.current;
     const person = walkPoseRef.current;
     if (Math.hypot(person.x - drone.x, person.y - drone.y) > PICKUP_DISTANCE_M) {
       setRescueStatus('เดินเข้าใกล้โดรนให้ห่างไม่เกิน 1.5 ม. ก่อนจับ');
       return;
     }
-    const droneX = 500 + drone.x * 100, droneY = 500 - drone.y * 100;
-    if (drone.spin > 0.01 || drone.alt > groundAltitudeAt(droneX, droneY) + 0.04) {
-      setRescueStatus('รอให้โดรนลงพื้นและใบพัดหยุดก่อน');
-      return;
-    }
-    recordAction({ t: 0, type: 'pickup' });
+    recordAction({ t: 0, type: 'pickup' }, false);
+    cancelAnimationFrame(run.current.raf);
+    clearInterval(run.current.count);
+    setPlaying(false);
     setRescuePose({ ...drone, spin: 0 });
     setRescued(true);
-    setFlipComplete(false);
     setPose2d({ x: person.x, y: person.y, yaw: drone.yaw, alt: 1.2 });
     run.current.airborne = false;
     run.current.spin = 0;
     poseRef.current.spin = 0;
     audio.current?.stopMotor();
     setRescueStatus('กำลังจับแบตเตอรี่และพลิกโดรนกลางอากาศ…');
-    later(() => {
-      setFlipComplete(true);
-      setRescueStatus('พลิกโดรนแล้ว · กด P ปิดเปิดเครื่อง จากนั้นกด F จัดจุดวาง');
-    }, 1000);
+    later(() => finishRecovery(), 1000);
   };
 
-  const powerCycle = () => {
-    if (!rescued || !flipComplete) return;
+  const finishRecovery = () => {
     const current = resultRef.current;
     if (!current) return;
     const balls = new Map(completedRef.current.balls.map(item => [item.id, item.count]));
@@ -736,7 +727,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     const platforms = new Set(completedRef.current.platforms);
     const boards = new Map(completedRef.current.boards.map(item => [item.id, item.points]));
     const visits = new Set(completedRef.current.visits);
-    for (const event of log) {
+    for (const event of current.events.filter(event => event.t <= run.current.t)) {
       if (event.kind === 'drop' && event.ok && event.id) balls.set(event.id, (balls.get(event.id) ?? 0) + (event.n ?? 0));
       if (event.kind === 'pop' && event.ok && event.id) balloons.add(event.id);
       if (event.kind === 'land' && event.ok && event.id && event.id !== 'pad' && event.id !== 'rest') platforms.add(event.id);
@@ -759,16 +750,16 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     const pose = { ...captured, alt: groundedAlt, pitch: 0, roll: 0, spin: 0 };
     setLaunch(null); setNeedsPlacementAfterRecovery(true); poseRef.current = pose; setPose2d({ x: pose.x, y: pose.y, yaw: pose.yaw, alt: groundedAlt });
     setTimeCarry(value => Math.min(TIME_LIMIT_MS, value + run.current.t)); setStandby(true);
-    resultRef.current = null; setResult(null); setPlannedResult(null); setPlaying(false); setDone(false); setNow(0); setRemoteManual(false); setRescued(false); setRescuePose(null); setFlipComplete(false); setEmergencyRequested(false); setEmergencyLanded(false); setManualActive(true); setActiveKey(null); setHazard('');
+    resultRef.current = null; setResult(null); setPlannedResult(null); setPlaying(false); setDone(false); setNow(0); setRemoteManual(false); setRescued(false); setRescuePose(null); setEmergencyRequested(false); setEmergencyLanded(false); setManualActive(true); setActiveKey(null); setHazard('');
     activeKeyRef.current = null; commandFocusRef.current = null; onCommandProgress?.(null);
-    setRescueStatus('เปิดเครื่องใหม่แล้ว · กด F เพื่อจัดจุดวาง ไม่มีการตั้งศูนย์อัตโนมัติ');
+    setRescueStatus('จับแบตพลิกแล้ว · ถือโดรนอยู่ กด F วางใกล้ตัว');
   };
 
   const pressKey = (key: number) => {
     if (needsPlacementAfterRecovery && !launch) { setRescueStatus('กด F จัดจุดวางโดรนก่อนบินต่อ'); return; }
     if (fullHeightField && view === 'walk' && !launch) { setRescueStatus('กด F เพื่อจัดจุดวางโดรนก่อน'); return; }
     if (timeCarry >= TIME_LIMIT_MS) { setRescueStatus('หมดเวลาภารกิจ · เริ่มเที่ยวบินใหม่'); return; }
-    if (resultRef.current && !done) { setRescueStatus(`KEY ${activeKey} ยังรันอยู่ · รอให้จบหรือปิดเปิดโดรนใหม่`); return; }
+    if (resultRef.current && !done) { setRescueStatus(`KEY ${activeKey} ยังรันอยู่ · เข้าใกล้โดรนแล้วกด G เพื่อจับพลิกและวางใหม่`); return; }
     if (remoteManual) { setRescueStatus('สลับกลับโหมด coding ก่อนกด KEY'); return; }
     play(key);
   };
@@ -814,7 +805,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   const started = !!result;
   const flightError = result?.events.find((event) => event.kind === 'error');
   const flightInProgress = started && !done;
-  const canRecover = emergencyLanded || !!(done && result?.events.some(event => event.kind === 'error' && /ชน|ตก|นอกสนาม/.test(event.text)));
+  const canRecover = started && !rescued && !replaying;
   const emergencyLand = () => {
     if (!flightInProgress || rescued) return;
     recordAction({ t: 0, type: 'land' });
@@ -836,10 +827,8 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
         if (placing) confirmPlacement(); else openPlacement();
       } else if (event.code === 'KeyE' && flightInProgress && !rescued) {
         event.preventDefault(); emergencyLand();
-      } else if (event.code === 'KeyG' && canRecover && !rescued) {
+      } else if (event.code === 'KeyG' && canRecover) {
         event.preventDefault(); pickUpDrone();
-      } else if (event.code === 'KeyP' && rescued && flipComplete) {
-        event.preventDefault(); powerCycle();
       } else if (event.code === 'KeyK' && expanded && !placing && !remoteManual) {
         event.preventDefault(); setLightsOpen(false); setKeyPickerOpen(current => !current);
       } else if (expanded && !placing && !remoteManual && /^(Digit|Numpad)[0-9]$/.test(event.code)) {
@@ -849,13 +838,12 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     };
     window.addEventListener('keydown', onFieldKey);
     return () => window.removeEventListener('keydown', onFieldKey);
-  }, [fullHeightField, mode, view, walkGuideOpen, placing, expanded, remoteManual, keyPickerOpen, keyBindings, flightInProgress, rescued, flipComplete, emergencyRequested, canRecover, recordAction, draftLaunch]);
+  }, [fullHeightField, mode, view, walkGuideOpen, placing, expanded, remoteManual, keyPickerOpen, keyBindings, flightInProgress, rescued, emergencyRequested, canRecover, recordAction, draftLaunch]);
   const pickupNearby = Math.hypot(walkPosition.x - poseRef.current.x, walkPosition.y - poseRef.current.y) <= PICKUP_DISTANCE_M;
-  const remoteStatus = rescued ? flipComplete ? 'พลิกโดรนกลางอากาศแล้ว · กด P ปิดเปิดเครื่อง' : 'กำลังจับแบตเตอรี่และพลิกโดรนกลางอากาศ'
-    : canRecover ? pickupNearby ? 'ใบพัดหยุดแล้ว · กด G หรือปุ่มจับแล้วพลิก' : view === 'walk' ? 'เดินเข้าใกล้โดรนไม่เกิน 1.5 ม. เพื่อจับแล้วพลิก' : 'เปลี่ยนเป็นมุมเดิน แล้วเข้าใกล้โดรนไม่เกิน 1.5 ม.'
-    : emergencyRequested && !rescued ? 'กำลังลงฉุกเฉิน · รอใบพัดหยุด'
+  const remoteStatus = rescued ? 'กำลังจับแบตเตอรี่และพลิกโดรนกลางอากาศ'
+    : canRecover ? pickupNearby ? 'อยู่ใกล้โดรน · กด G จับพลิก แล้วกด F วางใหม่' : view === 'walk' ? 'เดินเข้าใกล้โดรนไม่เกิน 1.5 ม. แล้วกด G จับ' : 'เปลี่ยนเป็นมุมเดิน แล้วเข้าใกล้โดรนเพื่อจับ'
     : flightInProgress
-    ? playing ? `KEY ${activeKey} กำลังทำงาน · กด KEY อื่นได้เมื่อคำสั่งจบหรือปิดเปิดโดรนใหม่` : 'หยุดชั่วคราว กดเล่นต่อหรือรีเซ็ตเที่ยวบิน'
+    ? playing ? `KEY ${activeKey} กำลังทำงาน · เข้าใกล้โดรนแล้วกด G เพื่อจับพลิก` : 'หยุดชั่วคราว กดเล่นต่อหรือจับพลิกโดรน'
     : needsPlacementAfterRecovery && !launch ? 'กด F จัดจุดวางโดรนก่อนบินต่อ'
     : timeCarry >= TIME_LIMIT_MS ? 'หมดเวลา 2 นาที 30 วินาที · เริ่มเที่ยวบินใหม่'
     : codeErrors.length ? codeErrors[0].text
@@ -908,7 +896,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
             <h3 className="text-sm font-bold">รีโมท · {remoteManual ? 'manual' : 'coding'}</h3>
             <p role="status" className="text-xs text-muted-foreground">{remoteStatus}</p>
             <div className="grid grid-cols-3 gap-1">{keyBindings.map(binding => <Button key={binding.key} type="button" size="sm" variant="outline" disabled={rescued || !!codeErrors.length || timeCarry >= TIME_LIMIT_MS} onClick={() => pressKey(binding.key)}>KEY {binding.key}</Button>)}</div>
-            <div className="flex flex-wrap gap-1"><Button type="button" size="sm" variant={remoteManual ? 'default' : 'outline'} disabled={!started || done || rescued} onClick={toggleManual}>{remoteManual ? 'กลับ coding' : 'เข้า manual'}</Button><Button type="button" size="sm" variant="outline" disabled={!flightInProgress || rescued || emergencyRequested} onClick={emergencyLand}>ลงฉุกเฉิน · E</Button>{canRecover && !rescued && <Button type="button" size="sm" disabled={!pickupNearby} onClick={pickUpDrone}>จับแล้วพลิก</Button>}{rescued && <Button type="button" size="sm" disabled={!flipComplete} onClick={powerCycle}>เปิดใหม่ · P</Button>}</div>
+            <div className="flex flex-wrap gap-1"><Button type="button" size="sm" variant={remoteManual ? 'default' : 'outline'} disabled={!started || done || rescued} onClick={toggleManual}>{remoteManual ? 'กลับ coding' : 'เข้า manual'}</Button><Button type="button" size="sm" variant="outline" disabled={!flightInProgress || rescued || emergencyRequested} onClick={emergencyLand}>ลงฉุกเฉิน · E</Button>{canRecover && <Button type="button" size="sm" disabled={!pickupNearby} onClick={pickUpDrone}>จับแล้วพลิก · G</Button>}</div>
             {remoteManual && <div className="flex flex-wrap gap-2"><TouchStick label="บังคับแนวราบ" onMove={(x, y) => updateStick({ right: x, forward: y })} /><TouchStick label="ขึ้นลงและหมุน" onMove={(x, y) => updateStick({ yaw: x, up: y })} /></div>}
           </div>}
           <div className="absolute bottom-3 right-3 z-20 grid w-40 gap-1.5 lg:inset-x-0 lg:bottom-3 lg:w-auto lg:flex lg:justify-center lg:px-3">
@@ -922,14 +910,13 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
             </div>
             {remoteManual && <Button type="button" size="sm" variant="outline" className="min-h-10 bg-surface/95 lg:hidden" aria-expanded={remoteOpen} aria-controls="walk-remote" onClick={() => setRemoteOpen(value => !value)}>{remoteOpen ? 'ปิดก้านโดรน' : 'เปิดก้านโดรน'}</Button>}
             {!started && <Button type="button" size="sm" className="min-h-10" onClick={openPlacement}>{launch ? 'ปรับจุดวาง · F' : 'จัดจุดวาง · F'}</Button>}
-            {canRecover && !rescued && <Button type="button" size="sm" className="min-h-10" disabled={!pickupNearby} onClick={pickUpDrone}>จับแบตแล้วพลิก · G</Button>}
-            {rescued && <Button type="button" size="sm" className="min-h-10" disabled={!flipComplete} onClick={powerCycle}>ปิดเปิดเครื่อง · P</Button>}
+            {canRecover && <Button type="button" size="sm" className="min-h-10" disabled={!pickupNearby} onClick={pickUpDrone}>จับแบตแล้วพลิก · G</Button>}
           </div>
-          <p className="pointer-events-none absolute bottom-3 left-3 z-20 hidden max-w-48 squircle-xl border border-line bg-surface/90 px-2 py-1 text-[11px] leading-5 text-foreground lg:block">WASD เดิน · F จัดวาง · K เลือก KEY<br />E ฉุกเฉิน · G จับ · P เปิดใหม่ · R เริ่มใหม่</p>
+          <p className="pointer-events-none absolute bottom-3 left-3 z-20 hidden max-w-48 squircle-xl border border-line bg-surface/90 px-2 py-1 text-[11px] leading-5 text-foreground lg:block">WASD เดิน · G จับโดรนกลางอากาศ<br />F วางใหม่ · E ฉุกเฉิน · R เริ่มใหม่</p>
         </>}
 
         {fullHeightField && !previewKey && mode === '3d' && view !== 'walk' && !placing && !started && <Button type="button" size="sm" className="absolute bottom-3 right-3 z-20 min-h-11 shadow-lg" onClick={openPlacement}>{launch ? 'ปรับจุดวาง' : 'จัดจุดวาง'}</Button>}
-        {expanded && fullHeightField && view !== 'walk' && !placing && <p className="pointer-events-none absolute bottom-3 left-3 z-20 hidden squircle-xl border border-line bg-surface/90 px-2 py-1 text-[11px] text-foreground lg:block">1–9 สั่ง KEY · K เลือก KEY · E ฉุกเฉิน · G จับโดรน · P เปิดใหม่ · R เริ่มใหม่ · Esc ย่อ</p>}
+        {expanded && fullHeightField && view !== 'walk' && !placing && <p className="pointer-events-none absolute bottom-3 left-3 z-20 hidden squircle-xl border border-line bg-surface/90 px-2 py-1 text-[11px] text-foreground lg:block">1–9 สั่ง KEY · K เลือก KEY · G จับโดรน · F วางใหม่ · R เริ่มใหม่ · Esc ย่อ</p>}
 
         {placing && draftLaunch && <div className="absolute left-3 top-14 z-40 grid w-[min(20rem,calc(100%-1.5rem))] gap-1.5 squircle-2xl border border-line bg-surface/95 p-2.5 text-sm text-foreground shadow-xl md:w-80" role="dialog" aria-label="จัดจุดวางโดรน">
           <div className="flex items-center justify-between gap-2"><h3 className="font-bold">จัดจุดวางโดรน</h3><span className="shrink-0 text-xs font-semibold">หัว {Math.round(draftLaunch.yaw)}°</span></div>
@@ -1068,7 +1055,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
           const renderKey = (key: number) => {
             const binding = keyBindings.find((entry) => entry.key === key);
             const disabled = !binding || codeErrors.length > 0 || rescued || needsPlacementAfterRecovery && !launch || timeCarry >= TIME_LIMIT_MS;
-            const status = !binding ? 'ยังไม่ผูก' : rescued ? 'เปิดเครื่องก่อน' : timeCarry >= TIME_LIMIT_MS ? 'หมดเวลา' : flightInProgress ? 'งานเดิมยังรัน' : remoteManual ? 'โหมด manual' : codeErrors.length ? 'แก้โค้ดก่อน' : 'พร้อมกด';
+            const status = !binding ? 'ยังไม่ผูก' : rescued ? 'กำลังพลิกโดรน' : timeCarry >= TIME_LIMIT_MS ? 'หมดเวลา' : flightInProgress ? 'งานเดิมยังรัน' : remoteManual ? 'โหมด manual' : codeErrors.length ? 'แก้โค้ดก่อน' : 'พร้อมกด';
             return (
               <Button key={key} type="button" variant={disabled || flightInProgress || remoteManual ? 'outline' : 'default'}
                 className="h-auto min-h-11 min-w-0 flex-col items-start gap-0.5 px-1.5 py-1 text-left disabled:border-line disabled:bg-surface-2 disabled:text-muted-foreground disabled:opacity-100"
@@ -1097,7 +1084,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
           </>;
         })()}
         {fullHeightField && <div className="grid gap-2 border-t border-line pt-2">
-          <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant={remoteManual ? 'default' : 'outline'} aria-pressed={remoteManual} disabled={!started || rescued || done} onClick={toggleManual}>{remoteManual ? 'กลับโหมด coding' : 'สลับเป็น manual'}</Button><Button type="button" size="sm" variant="outline" disabled={!flightInProgress || rescued || emergencyRequested} onClick={emergencyLand}>ลงฉุกเฉิน · E</Button>{canRecover && !rescued && <Button type="button" size="sm" disabled={!pickupNearby} onClick={pickUpDrone}>จับแล้วพลิก · G</Button>}{rescued && <Button type="button" size="sm" disabled={!flipComplete} onClick={powerCycle}>ปิดเปิดเครื่อง · P</Button>}</div>
+          <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant={remoteManual ? 'default' : 'outline'} aria-pressed={remoteManual} disabled={!started || rescued || done} onClick={toggleManual}>{remoteManual ? 'กลับโหมด coding' : 'สลับเป็น manual'}</Button><Button type="button" size="sm" variant="outline" disabled={!flightInProgress || rescued || emergencyRequested} onClick={emergencyLand}>ลงฉุกเฉิน · E</Button>{canRecover && <Button type="button" size="sm" disabled={!pickupNearby} onClick={pickUpDrone}>จับแล้วพลิก · G</Button>}</div>
           {remoteManual && <div className="flex flex-wrap items-center gap-4"><TouchStick label="ก้านเดินหน้าและด้านข้าง" onMove={(x, y) => updateStick({ right: x, forward: y })} /><TouchStick label="ก้านขึ้นลงและหมุนหัว" onMove={(x, y) => updateStick({ yaw: x, up: y })} /><p className="max-w-56 text-xs leading-5 text-muted-foreground">คีย์บอร์ด: ลูกศรบังคับหน้า–หลัง–ซ้าย–ขวา · I/K ขึ้นลง · J/L หมุนหัว</p></div>}
         </div>}
       </section>}

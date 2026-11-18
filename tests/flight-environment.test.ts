@@ -82,6 +82,15 @@ describe('flight conditions', () => {
     assert.ok(shortened.duration <= 9000);
   });
 
+  test('grabbing a flying drone stops its propellers immediately', () => {
+    const airborne = simulate(code, config, 123456789, 1, env('hard', LIGHTS_ON));
+    const grabbed = simulate(code, config, 123456789, 1, env('hard', LIGHTS_ON, [{ t: 8500, type: 'pickup' }]));
+    assert.ok(frameAt(airborne.frames, 8400).z > 50);
+    assert.ok((frameAt(airborne.frames, 8400).rpm ?? 0) > 0);
+    assert.equal(frameAt(grabbed.frames, 8600).rpm, 0);
+    assert.equal(grabbed.events.some(event => event.text.includes('พลิกโดรนกลางอากาศ')), true);
+  });
+
   test('emergency landing waits for the ground then leaves the propellers stopped', () => {
     const program = 'void setup(){drone.onKey1(fly);} void fly(){calibration(); delay(3000); take_off(); delay(3000); set_height(100); delay(6000);}';
     const landed = simulate(program, config, 1, 1, env('medium', LIGHTS_OFF, [{ t: 7500, type: 'land' }]));
