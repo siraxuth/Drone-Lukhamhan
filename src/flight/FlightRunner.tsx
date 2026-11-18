@@ -76,13 +76,14 @@ type Props = {
   maxPoints?: number | null;
   /** ขยายสนามจริงให้สูงประมาณครึ่งจอในหน้า Simulator */
   fullHeightField?: boolean;
+  controlsBlocked?: boolean;
 };
 
 /**
  * เครื่องเล่นการบินจำลอง: รันโค้ดผ่าน engine แล้วเล่นบนสนาม 3 มิติ พร้อมเสียง
  * ใช้ทั้งหน้า /field (เดโมโค้ดตัวอย่าง) และ /simulator (โค้ดที่ผู้ใช้เขียนเอง)
  */
-export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandProgress, onStart, onFinish, playLabel = 'เริ่มจำลองการบิน', config, scene, maxPoints, previewKey, remoteKeys, initialView, focusPlay, fullHeightField = false }: Props) {
+export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandProgress, onStart, onFinish, playLabel = 'เริ่มจำลองการบิน', config, scene, maxPoints, previewKey, remoteKeys, initialView, focusPlay, fullHeightField = false, controlsBlocked = false }: Props) {
   const cfg = useMemo(() => config ?? buildConfig(event.id), [config, event.id]);
   const initialPayload = cfg.initialPayload;
   const payloadL = initialPayload?.L ?? 0;
@@ -142,11 +143,10 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   const [supports3d, setSupports3d] = useState(false);
   const [mode, setMode] = useState<'pending' | '2d' | '3d'>('pending');
   const [expanded, setExpanded] = useState(false);
+
   useEffect(() => {
-    const prepare = () => setExpanded(false);
-    window.addEventListener('simulator:prepare-drone', prepare);
-    return () => window.removeEventListener('simulator:prepare-drone', prepare);
-  }, []);
+    if (controlsBlocked) walkInputRef.current = { forward: 0, right: 0, lookX: 0, lookY: 0 };
+  }, [controlsBlocked]);
   const [walkGuideOpen, setWalkGuideOpen] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [draftLaunch, setDraftLaunch] = useState<LaunchPose | null>(null);
@@ -821,6 +821,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   useEffect(() => {
     if (!fullHeightField || mode !== '3d' || walkGuideOpen) return;
     const onFieldKey = (event: KeyboardEvent) => {
+      if (document.querySelector('[data-payload-dialog]')) return;
       if (event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
       if (event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
       if (placing && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyQ', 'KeyE'].includes(event.code)) {
@@ -889,7 +890,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
         ? 'fixed inset-0 z-[100] h-dvh w-screen overflow-hidden bg-surface'
         : `relative w-full overflow-hidden squircle-2xl border border-line bg-surface ${previewKey ? "aspect-[4/3] max-h-[55dvh] sm:aspect-video" : fullHeightField ? "h-[min(64svh,36rem)] min-h-[22rem] sm:h-[min(50svh,36rem)] sm:min-h-[18rem]" : "aspect-[4/3] sm:aspect-video xl:aspect-auto xl:h-full xl:min-h-0"}`}>
         {mode === '3d' ? (
-          <Field3D event={event} drone={{ ...pose2d }} onDrone={placing ? movePlacementDrone : () => { }} view={view} shot={null} low={low} live={live} poseRef={poseRef} playheadRef={playheadRef} marks={marks} highlight={highlight} dartInventory={{ front: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'front').length), back: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'back').length) }} holdKey={holdKey} loaded={loaded} scene={spec3d} measurements={measurements} showDimensions={!previewKey && showDimensions} dimensionFrom={dimensionFrom.id} dimensionTo={dimensionTo?.id} lights={fullHeightField ? lights : undefined} ceilingLights={fullHeightField ? ceilingLights : undefined} walkPoseRef={fullHeightField ? walkPoseRef : undefined} walkInputRef={fullHeightField ? walkInputRef : undefined} walkControlsEnabled={!walkGuideOpen && !keyPickerOpen} onWalk={fullHeightField ? onWalk : undefined} placement={placing ? { center: toField(cfg.start.x, cfg.start.y), target: toField(placementTarget.x, placementTarget.y), aligned: placementAligned, onRotate: yaw => setDraftLaunch(current => current ? { ...current, yaw } : current) } : undefined} carryingDrone={fullHeightField && !launch && !placing && !started} rescuePose={rescued ? rescuePose : null} />
+          <Field3D event={event} drone={{ ...pose2d }} onDrone={placing ? movePlacementDrone : () => { }} view={view} shot={null} low={low} live={live} poseRef={poseRef} playheadRef={playheadRef} marks={marks} highlight={highlight} dartInventory={{ front: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'front').length), back: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'back').length) }} holdKey={holdKey} loaded={loaded} scene={spec3d} measurements={measurements} showDimensions={!previewKey && showDimensions} dimensionFrom={dimensionFrom.id} dimensionTo={dimensionTo?.id} lights={fullHeightField ? lights : undefined} ceilingLights={fullHeightField ? ceilingLights : undefined} walkPoseRef={fullHeightField ? walkPoseRef : undefined} walkInputRef={fullHeightField ? walkInputRef : undefined} walkControlsEnabled={!controlsBlocked && !walkGuideOpen && !keyPickerOpen} onWalk={fullHeightField ? onWalk : undefined} placement={placing ? { center: toField(cfg.start.x, cfg.start.y), target: toField(placementTarget.x, placementTarget.y), aligned: placementAligned, onRotate: yaw => setDraftLaunch(current => current ? { ...current, yaw } : current) } : undefined} carryingDrone={fullHeightField && !launch && !placing && !started} rescuePose={rescued ? rescuePose : null} />
         ) : (
           <FieldPlan2D event={event} drone={pose2d} interactive={false} className="size-full p-2" scene={spec2d} measurements={measurements} />
         )}
