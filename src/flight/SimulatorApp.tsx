@@ -316,16 +316,16 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
   const [loadDraft, setLoadDraft] = useState({ L: '20', R: '20' });
   const loadCount = { L: Number(loadDraft.L) || 0, R: Number(loadDraft.R) || 0 };
   const payloadPanel = useRef<HTMLElement>(null);
+  const [payloadDialogOpen, setPayloadDialogOpen] = useState(false);
   useEffect(() => {
     const open = (event: KeyboardEvent) => {
       if (!event.shiftKey || event.code !== 'KeyS' || event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
       if (event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
       if (!payloadPanel.current) return;
       event.preventDefault(); event.stopImmediatePropagation();
-      window.dispatchEvent(new Event('simulator:prepare-drone'));
+      setPayloadDialogOpen(true);
       if (document.pointerLockElement) document.exitPointerLock();
-      payloadPanel.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      payloadPanel.current.querySelector<HTMLInputElement>('input:not(:disabled)')?.focus({ preventScroll: true });
+
     };
     window.addEventListener('keydown', open, true);
     return () => window.removeEventListener('keydown', open, true);
@@ -505,6 +505,18 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
   };
 
 
+  const payloadControls = <>
+
+            <div className="flex flex-wrap items-center gap-2"><h2 className="mr-auto text-sm font-bold">เตรียมโดรน · Shift+S</h2>{sc.config.requiresPayload && <span className="text-xs text-muted-foreground">บอล ซ้าย {payload.L}/20 · ขวา {payload.R}/20</span>}{sc.config.requiresPayload && <Button size="sm" variant="outline" className="min-h-9" onClick={reloadPayload} disabled={!canReload || (payload.L === loadCount.L && payload.R === loadCount.R)} title={!canReload ? 'ต้องกลับมาลงบนฐานก่อน' : undefined}>{`ใส่บอล ${loadCount.L + loadCount.R} ลูก`}</Button>}</div>
+            {!canReload ? <p className="text-xs text-muted-foreground">เติมบอลได้เมื่อโดรนลงบนฐานแล้ว</p> : payload.L === loadCount.L && payload.R === loadCount.R ? <p className="text-xs text-muted-foreground">ใส่บอลตามจำนวนที่เลือกแล้ว พร้อมบิน</p> : <p className="text-xs text-muted-foreground">ถ้าโจทย์ให้ปล่อยบอล ให้เติมก่อนกด KEY</p>}
+          <div className="flex flex-wrap gap-3">
+              {(['L', 'R'] as const).map(side => <label key={side} className="flex items-center gap-2 text-sm">เติมฝั่ง{side === 'L' ? 'ซ้าย' : 'ขวา'}
+                <input aria-label={`จำนวนบอลฝั่ง${side === 'L' ? 'ซ้าย' : 'ขวา'}`} type="number" min={0} max={20} step={1} disabled={!canReload} value={loadDraft[side]} onFocus={e => e.currentTarget.select()} onChange={e => { const raw = e.target.value; setLoadDraft(c => ({ ...c, [side]: raw === '' ? '' : String(Math.max(0, Math.min(20, Math.trunc(Number(raw) || 0)))) })); }} className="h-9 w-16 squircle-xl border border-line bg-surface px-2" /> ลูก
+              </label>)}
+            </div>
+            {sc.config.objects.filter((o): o is Extract<SceneObject, { type: 'platform' }> => o.type === 'platform').map(o => <p key={o.id} className="text-xs text-muted-foreground">{o.id}: ต้องใส่ {o.requiredBalls ?? 20} ลูก</p>)}
+          
+  </>;
   return (
     <main className="flex min-h-svh w-full min-w-0 flex-col pt-[4.75rem] xl:h-svh xl:overflow-hidden">
       <header className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-3 py-2 sm:flex sm:flex-wrap sm:gap-3 sm:px-6">
@@ -532,18 +544,16 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
             </div>
           </div>
           <div data-tour="sim-stage-canvas" className="min-w-0 squircle-3xl border border-line bg-surface p-2 sm:p-3">
-            <FlightRunner event={ev} code={code} config={config} scene={scene} maxPoints={max} bigPlay={false} fullHeightField onResult={onFlightResult} onCommandProgress={setActiveBlockCommand} onStart={() => setCanReload(false)} onFinish={onFinish} />
+            <FlightRunner event={ev} code={code} config={config} scene={scene} maxPoints={max} bigPlay={false} fullHeightField controlsBlocked={payloadDialogOpen} onResult={onFlightResult} onCommandProgress={setActiveBlockCommand} onStart={() => setCanReload(false)} onFinish={onFinish} />
           </div>
-          {sc.config.requiresPayload && <section ref={payloadPanel} className="grid gap-2 squircle-2xl border border-line bg-surface p-3" aria-label="เตรียมโดรน" aria-keyshortcuts="Shift+S">
-            <div className="flex flex-wrap items-center gap-2"><h2 className="mr-auto text-sm font-bold">เตรียมโดรน · Shift+S</h2>{sc.config.requiresPayload && <span className="text-xs text-muted-foreground">บอล ซ้าย {payload.L}/20 · ขวา {payload.R}/20</span>}{sc.config.requiresPayload && <Button size="sm" variant="outline" className="min-h-9" onClick={reloadPayload} disabled={!canReload || (payload.L === loadCount.L && payload.R === loadCount.R)} title={!canReload ? 'ต้องกลับมาลงบนฐานก่อน' : undefined}>{`ใส่บอล ${loadCount.L + loadCount.R} ลูก`}</Button>}</div>
-            {!canReload ? <p className="text-xs text-muted-foreground">เติมบอลได้เมื่อโดรนลงบนฐานแล้ว</p> : payload.L === loadCount.L && payload.R === loadCount.R ? <p className="text-xs text-muted-foreground">ใส่บอลตามจำนวนที่เลือกแล้ว พร้อมบิน</p> : <p className="text-xs text-muted-foreground">ถ้าโจทย์ให้ปล่อยบอล ให้เติมก่อนกด KEY</p>}
-          <div className="flex flex-wrap gap-3">
-              {(['L', 'R'] as const).map(side => <label key={side} className="flex items-center gap-2 text-sm">เติมฝั่ง{side === 'L' ? 'ซ้าย' : 'ขวา'}
-                <input aria-label={`จำนวนบอลฝั่ง${side === 'L' ? 'ซ้าย' : 'ขวา'}`} type="number" min={0} max={20} step={1} disabled={!canReload} value={loadDraft[side]} onFocus={e => e.currentTarget.select()} onChange={e => { const raw = e.target.value; setLoadDraft(c => ({ ...c, [side]: raw === '' ? '' : String(Math.max(0, Math.min(20, Math.trunc(Number(raw) || 0)))) })); }} className="h-9 w-16 squircle-xl border border-line bg-surface px-2" /> ลูก
-              </label>)}
-            </div>
-            {sc.config.objects.filter((o): o is Extract<SceneObject, { type: 'platform' }> => o.type === 'platform').map(o => <p key={o.id} className="text-xs text-muted-foreground">{o.id}: ต้องใส่ {o.requiredBalls ?? 20} ลูก</p>)}
-          </section>}
+          {sc.config.requiresPayload && <section ref={payloadPanel} className="grid gap-2 squircle-2xl border border-line bg-surface p-3" aria-label="เตรียมโดรน" aria-keyshortcuts="Shift+S">{payloadControls}</section>}
+          <Dialog open={payloadDialogOpen} onOpenChange={setPayloadDialogOpen}>
+            <DialogContent data-payload-dialog overlayClassName="z-[150]" className="z-[151] sm:max-w-md" onKeyDown={event => event.stopPropagation()}>
+              <DialogHeader><DialogTitle>เตรียมโดรน</DialogTitle><DialogDescription>กำหนดจำนวนบอลซ้าย–ขวา แล้วกดใส่บอล</DialogDescription></DialogHeader>
+              <div className="grid gap-3">{payloadControls}</div>
+              <Button onClick={() => setPayloadDialogOpen(false)}>เสร็จแล้ว กลับสนาม</Button>
+            </DialogContent>
+          </Dialog>
         </section>
         <aside className="order-2 grid min-h-0 min-w-0 content-start gap-2 xl:order-1 xl:grid-rows-[minmax(0,1fr)] xl:overflow-hidden xl:pr-1">
           <section className="grid min-h-[28rem] min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden squircle-3xl border border-line bg-surface xl:min-h-0" data-tour="sim-code" aria-label="โค้ดภารกิจ">
