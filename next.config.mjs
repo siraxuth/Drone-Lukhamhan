@@ -39,6 +39,8 @@ const config = {
   },
   async redirects() {
     return [
+      { source: '/simulator/battle', destination: '/battle', permanent: true },
+      { source: '/simulator/battle/:code', destination: '/battle/:code', permanent: true },
       { source: '/docs/code/write-a-mission', destination: '/docs/code/first-flight', permanent: true },
       { source: '/docs/protocol/layers', destination: '/docs/advanced/protocol', permanent: true },
     ];

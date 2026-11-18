@@ -1,6 +1,14 @@
 import type { NextRequest } from 'next/server';
 import { actorFor, failure, readAction, remember, response } from '@/battle/http';
-import { createInput, createRoom } from '@/battle/server';
+import { createInput, createRoom, listBattleRooms } from '@/battle/server';
+
+export async function GET() {
+  try {
+    return response({ rooms: await listBattleRooms() });
+  } catch (error) {
+    return failure(error);
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {

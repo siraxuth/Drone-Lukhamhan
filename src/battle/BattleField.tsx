@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { FieldPlan2D } from '@/field/FieldPlan2D';
 import type { LivePose, Marks, ViewPreset } from '@/field/Field3D';
 import { toField } from '@/flight/config';
@@ -73,7 +74,7 @@ export function BattleField({ scenario, settings, flight, title }: {
     visits: Object.fromEntries(data.visits.map(visit => [visit.id, visit.t])),
   }), [scenario, data.visits]);
 
-  return <section aria-label={title} className="min-w-0 overflow-hidden squircle-2xl border border-line bg-surface">
+  return <Card role="region" aria-label={title} className="min-w-0 gap-0 overflow-hidden squircle-2xl p-0">
     <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line p-2">
       <div><h3 className="text-sm font-bold">{title}</h3><p className="tabular-nums text-sm">{data.score} คะแนน{data.live ? ' · กำลังบิน' : ''}</p></div>
       {quality !== 'off' && <div className="flex flex-wrap gap-1">
@@ -89,20 +90,26 @@ export function BattleField({ scenario, settings, flight, title }: {
             gatePositions={data.events.findLast(event => event.gatePositions)?.gatePositions} />
         : <FieldPlan2D event={event} drone={data.live ? flatPose : drone} interactive={false} className="size-full p-2" scene={scene} />}
     </div>
-  </section>;
+  </Card>;
 }
 
-export function TapePlayer({ tape, scenario, settings, title }: { tape: Tape; scenario: ScenarioView; settings: Settings; title: string }) {
+export function useTapeTime(duration: number, replay = 0) {
   const [offset, setOffset] = useState(0);
   useEffect(() => {
     const start = performance.now();
+    setOffset(0);
     const timer = window.setInterval(() => {
       const elapsed = performance.now() - start;
-      setOffset(Math.min(elapsed, tape.duration));
-      if (elapsed >= tape.duration) clearInterval(timer);
+      setOffset(Math.min(elapsed, duration));
+      if (elapsed >= duration) clearInterval(timer);
     }, 100);
     return () => clearInterval(timer);
-  }, [tape]);
+  }, [duration, replay]);
+  return offset;
+}
+
+export function TapePlayer({ tape, scenario, settings, title }: { tape: Tape; scenario: ScenarioView; settings: Settings; title: string }) {
+  const offset = useTapeTime(tape.duration);
   // A short local window keeps the same renderer as the live room.
   const flight = flightWindow(tape, offset, false);
   return <BattleField scenario={scenario} settings={settings} flight={flight} title={title} />;

@@ -43,6 +43,7 @@ export type Seat = { member: string; opensAt: number | null; flightId: string | 
 export type Match = { id: string; seats: Seat[]; seed: number; round: number; wheelAt: number | null; finishedAt: number | null; rating: number[] | null };
 export type Room = {
   owner: string;
+  listed?: boolean;
   status: 'lobby' | 'active' | 'complete' | 'archived' | 'closed';
   settings: Settings;
   scenario: ScenarioView;
@@ -87,4 +88,19 @@ export type RoomView = {
   history: Match[];
   standings: { member: string; rank: number; finish: Finish }[];
   playback: Record<string, FlightView>;
+};
+
+export type ListedRoom = {
+  code: string;
+  title: string;
+  host: string;
+  status: 'lobby' | 'active';
+  flight: Settings['flight'];
+  format: Settings['format'];
+  difficulty: Settings['difficulty'];
+  ranked: boolean;
+  pilots: number;
+  watchers: number;
+  pilotLimit: number;
+  canCompete: boolean;
 };

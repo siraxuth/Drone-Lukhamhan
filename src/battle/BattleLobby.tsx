@@ -1,119 +1,169 @@
 'use client';
 
-import { useMemo, useState, type FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { ArrowUpRight, Box, KeyRound, Plus, Radio, RefreshCw, Search, Trophy, Users } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
+import { Field, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { ScenarioView } from '@/lib/scenarios';
-import { LIGHTS_OFF, CEILING_LIGHTS_ON } from '@/flight/environment';
-import { TapePlayer } from './BattleField';
-import { battleApi, battleRequest, inputClass, panelClass } from './client';
-import { makeTape } from './flight';
-import { CLOCKS, FORMATS, type Settings } from './types';
+import { battleApi, battleRequest, flightLabel } from './client';
+import { battleLevels, CreateBattleDialog, type SetupTab } from './CreateBattleDialog';
+import { FORMATS, type ListedRoom } from './types';
 
-const defaults: Settings = {
-  format: 'duel', flight: 'parallel', clock: 'fixed', minutes: 10, practices: 10,
-  difficulty: 'medium', lights: LIGHTS_OFF, ceilingLights: CEILING_LIGHTS_ON, ranked: false,
-};
-const levels = { easy: 'ง่าย · บินตามระยะที่สั่ง', medium: 'ปานกลาง · ต้องเผื่อระยะเบรก', hard: 'ยาก · แสงและความสูงมีผล' };
-const corners = ['หน้าซ้าย', 'หน้าขวา', 'หลังซ้าย', 'หลังขวา'];
-const colors = { cyan: 'ฟ้า', blue: 'น้ำเงิน', ice: 'ขาวอมฟ้า' };
-
-export function BattleLobby({ scenarios, signedIn, ranked, scores }: {
-  scenarios: ScenarioView[]; signedIn: boolean; ranked: boolean; scores: { name: string; rating: number; games: number }[];
-}) {
+function JoinDialog({ signedIn }: { signedIn: boolean }) {
   const router = useRouter();
-  const [settings, setSettings] = useState<Settings>(defaults);
-  const [slug, setSlug] = useState(scenarios[0]?.slug ?? '');
-  const [name, setName] = useState('');
-  const [role, setRole] = useState<'pilot' | 'watch'>('watch');
   const [code, setCode] = useState('');
-  const [preview, setPreview] = useState(0);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState('');
-  const scenario = scenarios.find(item => item.slug === slug);
-  const example = useMemo(() => scenario && ({
-    ...scenario, config: { ...scenario.config, pattern: 'blank', objects: [], start: { x: 0, y: 0, yaw: 0 }, base: { mode: 'start' }, requiresPayload: false },
-  } satisfies ScenarioView), [scenario]);
-  const tape = useMemo(() => example && preview > 0 ? makeTape({ scenario: example, settings }, 'calibration(); delay(3000); takeOff(); delay(3000); sh(90); fw(180); bw(180); autoLand();', undefined, 148) : null, [example, preview, settings]);
-
-  function change<K extends keyof Settings>(key: K, value: Settings[K]) {
-    setSettings(current => ({ ...current, [key]: value }));
-  }
-
-  async function create(event: FormEvent) {
+  function join(event: FormEvent) {
     event.preventDefault();
-    setPending(true);
-    setError('');
-    try {
-      const roomSettings = settings.clock === 'open' ? { ...settings, minutes: defaults.minutes } : settings;
-      const result = await battleRequest<{ code: string }>(battleApi, { name, role, scenario: slug, settings: roomSettings });
-      router.push(`/simulator/battle/${result.code}`);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'สร้างห้องไม่สำเร็จ');
-    } finally {
-      setPending(false);
-    }
+    router.push('/battle/' + code.trim().toUpperCase());
+  }
+  return <Dialog>
+    <DialogTrigger render={<Button variant="outline" size="lg" />}><KeyRound data-icon="inline-start" /> เข้าด้วยรหัส</DialogTrigger>
+    <DialogContent overlayClassName="bg-black/35 backdrop-blur-md" className="squircle-3xl p-5">
+      <DialogHeader>
+        <DialogTitle>เข้าห้องด้วยรหัส</DialogTitle>
+        <DialogDescription>ใช้รหัส 8 ตัวจากคนที่สร้างห้อง</DialogDescription>
+      </DialogHeader>
+      <form onSubmit={join} className="grid gap-3">
+        <Field>
+          <FieldLabel htmlFor="battle-room-code">รหัสห้อง</FieldLabel>
+          <Input id="battle-room-code" className="font-mono uppercase" autoComplete="off" required pattern="[0-9a-fA-F]{8}" maxLength={8} value={code} onChange={event => setCode(event.target.value)} />
+        </Field>
+        <Button type="submit">เปิดห้อง</Button>
+      </form>
+      {!signedIn && <Link href="/login?next=/battle" className="text-muted-foreground underline underline-offset-4">ล็อกอินเพื่อเก็บแต้มอันดับ Battle</Link>}
+    </DialogContent>
+  </Dialog>;
+}
+
+function RoomCard({ room }: { room: ListedRoom }) {
+  const live = room.status === 'active';
+  return <Card className="min-w-0 squircle-2xl">
+    <CardHeader>
+      <div className="mb-1 flex flex-wrap items-center gap-1.5">
+        <Badge variant={live ? 'default' : 'secondary'}>{live && <Radio aria-hidden="true" />}{live ? 'กำลังแข่ง' : 'รอแข่ง'}</Badge>
+        {room.ranked && <Badge variant="outline">เก็บแต้ม</Badge>}
+      </div>
+      <CardTitle className="text-lg">{room.title}</CardTitle>
+      <CardDescription className="break-words">{room.host} · {FORMATS[room.format]}</CardDescription>
+    </CardHeader>
+    <CardContent className="grid gap-2">
+      <p className="text-muted-foreground">{flightLabel[room.flight]} · ระดับ{battleLevels[room.difficulty]}</p>
+      <p className="flex flex-wrap items-center gap-x-2 text-muted-foreground"><Users className="size-4" aria-hidden="true" /> ผู้แข่ง {room.pilots}/{room.pilotLimit} · ผู้ชม {room.watchers}</p>
+    </CardContent>
+    <CardFooter className="mt-auto justify-between gap-2 border-t py-3">
+      <span className="font-mono text-xs text-muted-foreground">{room.code}</span>
+      <Button size="sm" variant="outline" nativeButton={false} render={<Link href={'/battle/' + room.code + (room.canCompete ? '' : '?role=watch')} />}>
+        {room.canCompete ? 'เข้าห้อง' : live ? 'ดูสด' : 'เข้าดู'} <ArrowUpRight data-icon="inline-end" />
+      </Button>
+    </CardFooter>
+  </Card>;
+}
+
+export function BattleLobby({ scenarios, signedIn, ranked, scores, initialRooms }: {
+  scenarios: ScenarioView[]; signedIn: boolean; ranked: boolean; scores: { name: string; rating: number; games: number }[];
+  initialRooms: ListedRoom[] | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<SetupTab>('scenario');
+  const [rooms, setRooms] = useState(initialRooms ?? []);
+  const [failed, setFailed] = useState(initialRooms === null);
+  const [filter, setFilter] = useState('all');
+  const [query, setQuery] = useState('');
+
+  function openSetup(next: SetupTab) {
+    setTab(next);
+    setOpen(true);
   }
 
-  return <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-    <form onSubmit={create} className={panelClass + ' grid content-start gap-4'}>
-      <h2 className="text-xl font-bold">สร้างห้องแข่ง</h2>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label>ชื่อในห้อง<input className={inputClass} required maxLength={36} value={name} onChange={event => setName(event.target.value)} /></label>
-        <label>บทบาทของคุณ<select className={inputClass} value={role} onChange={event => setRole(event.target.value === 'pilot' ? 'pilot' : 'watch')}><option value="watch">เจ้าของห้อง นั่งดู</option><option value="pilot">เจ้าของห้อง ลงแข่งด้วย</option></select></label>
-        <label className="sm:col-span-2">โจทย์ที่ใช้ร่วมกัน<select required className={inputClass} value={slug} onChange={event => setSlug(event.target.value)}>{scenarios.map(item => <option key={item.slug} value={item.slug}>{item.title}</option>)}</select></label>
-        <label>จัดการแข่งขันแบบไหน<select className={inputClass} value={settings.format} onChange={event => change('format', event.target.value as Settings['format'])}>{Object.entries(FORMATS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
-        <label>บินแบบไหน<select className={inputClass} value={settings.flight} onChange={event => change('flight', event.target.value as Settings['flight'])}><option value="parallel">บินพร้อมกัน</option><option value="turns">บินทีละคน</option></select></label>
-        <label>เวลาเขียนโค้ด<select className={inputClass} value={settings.clock} onChange={event => {
-          const clock = event.target.value as Settings['clock'];
-          setSettings(previous => ({ ...previous, clock, minutes: clock === 'stopwatch' ? Math.min(previous.minutes, 30) : previous.minutes }));
-        }}>{Object.entries(CLOCKS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
-        {settings.clock !== 'open' && <label>เวลาเขียนสูงสุด (นาที)<input type="number" required min={1} max={settings.clock === 'stopwatch' ? 30 : 60} className={inputClass} value={settings.minutes || ''} onChange={event => change('minutes', event.target.valueAsNumber || 0)} /></label>}
-        <label>จำนวนรอบทดลองบินต่อคน<input type="number" required min={0} max={10} className={inputClass} value={settings.practices} onChange={event => change('practices', event.target.valueAsNumber || 0)} /></label>
-        <label>ระดับการบิน<select className={inputClass} value={settings.difficulty} onChange={event => change('difficulty', event.target.value as Settings['difficulty'])}>{Object.entries(levels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
-      </div>
-      <fieldset className="grid gap-3 border-t border-line pt-3">
-        <legend className="font-semibold">ไฟในสนาม</legend>
-        <label><input type="checkbox" checked={settings.ceilingLights.some(Boolean)} onChange={event => {
-          const enabled = event.target.checked;
-          change('ceilingLights', [enabled, enabled, enabled, enabled]);
-        }} /> เปิดไฟเพดาน</label>
-        <div className="grid grid-cols-2 gap-2">
-          {settings.lights.map((light, index) => <div key={index} className="grid gap-1">
-            <label><input type="checkbox" checked={light.enabled} onChange={event => {
-              const lights = [...settings.lights] as Settings['lights'];
-              lights[index] = { ...light, enabled: event.target.checked };
-              change('lights', lights);
-            }} /> ไฟ{corners[index]}</label>
-            <select aria-label={`สีไฟ${corners[index]}`} className={inputClass} value={light.color} disabled={!light.enabled} onChange={event => {
-              const lights = [...settings.lights] as Settings['lights'];
-              lights[index] = { ...light, color: event.target.value as typeof light.color };
-              change('lights', lights);
-            }}>{Object.entries(colors).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
-          </div>)}
+  const refresh = useCallback(async () => {
+    try {
+      const result = await battleRequest<{ rooms: ListedRoom[] }>(battleApi);
+      setRooms(result.rooms);
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 7000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+
+  const search = query.trim().toLocaleLowerCase();
+  const visible = rooms.filter(room => (filter === 'all' || room.status === filter)
+    && [room.title, room.host, room.code].some(value => value.toLocaleLowerCase().includes(search)));
+
+  return <>
+    <Card className="relative isolate min-w-0 overflow-hidden squircle-3xl bg-surface-2 p-0">
+      <div className="grid items-center md:grid-cols-[1.25fr_1fr]">
+        <CardHeader className="relative z-10 gap-4 px-6 py-9 sm:px-10 md:py-14 lg:px-14">
+          <div className="grid gap-1">
+            <h1 className="font-display text-5xl font-extrabold tracking-tight sm:text-7xl">Battle</h1>
+            <p className="text-xl font-semibold sm:text-2xl">ห้องแข่งโดรน</p>
+          </div>
+          <CardDescription className="max-w-md text-base">เลือกโจทย์เดียวกัน เขียนโค้ดแข่ง หรือเข้าดูเพื่อนบินสดได้เลย</CardDescription>
+          <div className="flex flex-wrap gap-2">
+            <Button size="lg" onClick={() => openSetup('scenario')}><Plus data-icon="inline-start" /> สร้างห้อง</Button>
+            <JoinDialog signedIn={signedIn} />
+          </div>
+          <div><Button variant="ghost" onClick={() => openSetup('preview')} disabled={!scenarios.length}><Box data-icon="inline-start" /> ลองเทียบการบิน 3D</Button></div>
+        </CardHeader>
+        <div aria-hidden="true" className="relative hidden h-full min-h-72 md:block">
+          <div className="absolute inset-y-[12%] left-[12%] aspect-square max-w-[76%] rounded-full border border-line" />
+          <div className="absolute inset-y-[20%] left-[20%] aspect-square max-w-[60%] rounded-full border border-line" />
+          <Image src="/docs/drone-iso.webp" alt="" fill priority sizes="(max-width: 768px) 1px, 40vw" className="object-contain p-6 lg:p-10" />
         </div>
-      </fieldset>
-      {settings.format === 'duel' && ranked && <label><input type="checkbox" checked={settings.ranked} onChange={event => change('ranked', event.target.checked)} /> เก็บแต้ม Battle เมื่อผู้แข่งทั้งคู่ล็อกอิน</label>}
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={pending || !scenario}>{pending ? 'กำลังสร้าง…' : 'สร้างห้อง'}</Button>
-        <Button type="button" variant="outline" onClick={() => setPreview(value => value + 1)}>ดูตัวอย่างบิน 3D</Button>
       </div>
-      {error && <p role="alert" className="text-destructive">{error}</p>}
-    </form>
-    <aside className="grid content-start gap-4">
-      <form className={panelClass + ' grid gap-3'} onSubmit={event => { event.preventDefault(); router.push(`/simulator/battle/${code.trim().toUpperCase()}`); }}>
-        <h2 className="text-xl font-bold">เข้าห้องด้วยรหัส</h2>
-        <label>รหัสห้อง<input autoComplete="off" className={inputClass + ' font-mono uppercase'} required pattern="[0-9a-fA-F]{8}" maxLength={8} value={code} onChange={event => setCode(event.target.value)} /></label>
-        <Button type="submit">เปิดห้อง</Button>
-        <p className="text-sm text-muted-foreground">{signedIn ? 'เข้าห้องในฐานะผู้ใช้ที่ล็อกอินแล้ว' : <Link href="/login?next=/simulator/battle" className="underline">ล็อกอินเพื่อเก็บแต้มอันดับ Battle</Link>}</p>
-      </form>
-      {tape && example && <TapePlayer key={preview} tape={tape} scenario={example} settings={settings} title="ตัวอย่างเที่ยวบิน" />}
-      <section className={panelClass} aria-label="อันดับ Battle">
-        <h2 className="font-bold">อันดับ Battle</h2>
-        {scores.length ? <ol className="divide-y divide-line">{scores.map((score, index) => <li key={index} className="flex justify-between gap-2 py-2 text-sm"><span>{index + 1}. {score.name}</span><b className="tabular-nums">{score.rating} แต้ม</b></li>)}</ol>
-          : <p className="mt-2 text-sm text-muted-foreground">ยังไม่มีผลแข่งเก็บแต้ม</p>}
+    </Card>
+    <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_17rem]">
+      <section aria-labelledby="battle-directory" className="grid min-w-0 content-start gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><h2 id="battle-directory" className="text-2xl font-bold">ห้องที่เข้าได้</h2><p className="text-sm text-muted-foreground">เลือกห้องสาธารณะเพื่อเข้าแข่งหรือดูสด</p></div>
+          <Button variant="outline" size="icon" aria-label="อัปเดตรายชื่อห้อง" onClick={() => void refresh()}><RefreshCw /></Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Tabs value={filter} onValueChange={setFilter} aria-label="สถานะห้อง">
+            <TabsList className="h-auto flex-wrap">
+              <TabsTrigger value="all">ทั้งหมด</TabsTrigger>
+              <TabsTrigger value="lobby">รอแข่ง</TabsTrigger>
+              <TabsTrigger value="active">กำลังแข่ง</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <InputGroup className="w-full sm:ml-auto sm:w-64">
+            <InputGroupAddon><Search aria-hidden="true" /></InputGroupAddon>
+            <InputGroupInput aria-label="ค้นหาห้อง" placeholder="ค้นหาโจทย์ ชื่อคนสร้าง หรือรหัส" value={query} onChange={event => setQuery(event.target.value)} />
+          </InputGroup>
+        </div>
+        {failed && <Alert variant="destructive"><AlertDescription>อัปเดตรายชื่อห้องไม่ได้ ลองกดรีเฟรชอีกครั้ง</AlertDescription></Alert>}
+        {visible.length > 0 ? <div className="grid min-w-0 gap-3 sm:grid-cols-2">{visible.map(room => <RoomCard key={room.code} room={room} />)}</div>
+          : !failed && <Empty className="squircle-2xl border border-dashed border-line">
+            <EmptyHeader>
+              <EmptyMedia variant="icon"><Radio /></EmptyMedia>
+              <EmptyTitle>{search || filter !== 'all' ? 'ไม่พบห้องที่ตรงกัน' : 'ยังไม่มีห้องสาธารณะ'}</EmptyTitle>
+              <EmptyDescription>{search || filter !== 'all' ? 'ลองเปลี่ยนคำค้นหรือเลือกสถานะห้องอื่น' : 'สร้างห้องใหม่ หรือกรอกรหัสที่เพื่อนส่งมา'}</EmptyDescription>
+            </EmptyHeader>
+          </Empty>}
       </section>
-    </aside>
-  </div>;
+      <Card className="self-start squircle-2xl" aria-label="อันดับ Battle">
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Trophy className="size-4" aria-hidden="true" /> อันดับ Battle</CardTitle></CardHeader>
+        <CardContent>
+          {scores.length ? <ol className="divide-y divide-line">{scores.map((score, index) => <li key={index} className="flex justify-between gap-2 py-2 text-sm"><span className="break-words">{index + 1}. {score.name}</span><b className="shrink-0 tabular-nums">{score.rating} แต้ม</b></li>)}</ol>
+            : <p className="text-sm text-muted-foreground">ยังไม่มีผลแข่งเก็บแต้ม</p>}
+        </CardContent>
+      </Card>
+    </div>
+    <CreateBattleDialog open={open} onOpenChange={setOpen} tab={tab} onTabChange={setTab} scenarios={scenarios} ranked={ranked} />
+  </>;
 }

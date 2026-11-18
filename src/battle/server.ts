@@ -8,7 +8,7 @@ import { getScenarios } from '@/lib/scenario-data';
 import { activeMatch, canEdit, canPractice, chooseFinalists, compareFinish, dnf, elo, MAX_CODE, MAX_MATCHES, MAX_PILOTS, MAX_WATCHERS, pairUp, RuleError, START_WINDOW, table } from './rules';
 import { advance, bracketRound, makeMatch, writingTime } from './state';
 import { compileBattle, flightWindow, makeTape } from './flight';
-import { CLOCKS, FORMATS, type FlightView, type Member, type Room, type RoomView, type Settings, type Tape } from './types';
+import { CLOCKS, FORMATS, type FlightView, type Member, type Room, type RoomView, type ListedRoom, type Settings, type Tape } from './types';
 
 type Actor = { userId: string | null; token?: string };
 type Tx = Prisma.TransactionClient;
@@ -35,7 +35,7 @@ const settings = z.object({
   ranked: z.boolean(),
 }).refine(data => data.clock !== 'stopwatch' || data.minutes <= 30, 'จับเวลาเขียนได้สูงสุด 30 นาที');
 
-export const createInput = z.object({ name, role, scenario: z.string().max(100), settings });
+export const createInput = z.object({ name, role, scenario: z.string().max(100), listed: z.boolean().optional(), settings });
 export const actionInput = z.discriminatedUnion('action', [
   z.object({ action: z.literal('join'), name, role }),
   z.object({ action: z.literal('ready'), value: z.boolean() }),
@@ -81,7 +81,7 @@ export async function createRoom(actor: Actor, input: z.infer<typeof createInput
   const token = randomBytes(32).toString('hex');
   const owner = newMember({ scenario }, actor, input, token);
   const room: Room = {
-    owner: owner.id, status: 'lobby', settings: adjusted(input.settings), scenario,
+    owner: owner.id, listed: input.listed ?? false, status: 'lobby', settings: adjusted(input.settings), scenario,
     members: [owner], prepAt: null, selected: [], round: 1, queue: [], advancing: [], matches: [],
   };
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -90,6 +90,39 @@ export async function createRoom(actor: Actor, input: z.infer<typeof createInput
     if (inserted.count) return { code, token };
   }
   throw new RuleError('สร้างรหัสห้องไม่ได้ ลองใหม่อีกครั้ง', 503);
+}
+
+export async function listBattleRooms(): Promise<ListedRoom[]> {
+  return db.$queryRaw<ListedRoom[]>`
+    WITH candidates AS (
+      SELECT code, state, "createdAt"
+      FROM "BattleRoom"
+      WHERE state->>'listed' = 'true' AND state->>'status' IN ('lobby', 'active')
+    ), rooms AS (
+      SELECT code, state, "createdAt",
+        state->>'status' AS status,
+        state->'settings'->>'format' AS format,
+        CASE WHEN state->'settings'->>'format' = 'duel' THEN 2 ELSE ${MAX_PILOTS}::int END AS "pilotLimit",
+        counts.host, counts.pilots, counts.watchers
+      FROM candidates
+      CROSS JOIN LATERAL (
+        SELECT
+          MAX(member->>'name') FILTER (WHERE member->>'id' = state->>'owner') AS host,
+          COUNT(*) FILTER (WHERE member->>'role' = 'pilot')::int AS pilots,
+          COUNT(*) FILTER (WHERE member->>'role' = 'watch')::int AS watchers
+        FROM jsonb_array_elements(state->'members') AS member
+      ) counts
+    )
+    SELECT code, state->'scenario'->>'title' AS title, COALESCE(host, '') AS host, status, format,
+      state->'settings'->>'flight' AS flight,
+      state->'settings'->>'difficulty' AS difficulty,
+      (state->'settings'->>'ranked')::boolean AND ${rankedEnabled()} AS ranked,
+      pilots, watchers, "pilotLimit", status = 'lobby' AND pilots < "pilotLimit" AS "canCompete"
+    FROM rooms
+    WHERE watchers < ${MAX_WATCHERS} OR (status = 'lobby' AND pilots < "pilotLimit")
+    ORDER BY (status = 'lobby') DESC, "createdAt" DESC
+    LIMIT 60
+  `;
 }
 
 function shuffle<T>(ids: T[]) {
