@@ -15,7 +15,7 @@ const TOOLBOX = `<xml xmlns="https://developers.google.com/blockly/xml">
     <block type="flight_set_height"/><block type="flight_move_forward"/><block type="flight_move_backward"/><block type="flight_move_left"/><block type="flight_move_right"/><block type="flight_move_forward_time"/><block type="flight_move_backward_time"/><block type="flight_move_left_time"/><block type="flight_move_right_time"/><block type="flight_set_yaw"/><block type="flight_poshold"/>
   </category>
   <category name="MISSION" colour="#D78320">
-    <block type="flight_turn_by_hand"/><block type="flight_drop"/><block type="flight_pop"/><block type="flight_shoot"/><block type="flight_shot_b"/>
+    <block type="flight_turn_by_hand"/><block type="flight_drop"/><block type="flight_drop_l"/><block type="flight_drop_r"/><block type="flight_drop_pair"/><block type="flight_pop"/><block type="flight_shoot"/><block type="flight_shot_b"/>
   </category>
 </xml>`;
 
@@ -38,9 +38,12 @@ const COMMAND_BLOCKS: Array<{ type: string; command: BlockCommand; message: stri
   { type: 'flight_poshold', command: 'poshold', message: 'poshold()' },
   { type: 'flight_turn_by_hand', command: 'turnByHand', message: 'turnByHand(%1°)', fields: [{ name: 'VALUE', value: 180, min: 1, max: 360 }] },
   { type: 'flight_drop', command: 'drop', message: 'drop()' },
+  { type: 'flight_drop_l', command: 'drop_l', message: 'drop_l()' },
+  { type: 'flight_drop_r', command: 'drop_r', message: 'drop_r()' },
+  { type: 'flight_drop_pair', command: 'drop_pair', message: 'drop_pair(%1)', fields: [{ name: 'VALUE', value: 1, min: 1, max: 2 }] },
   { type: 'flight_pop', command: 'pop', message: 'pop()' },
   { type: 'flight_shoot', command: 'shoot', message: 'shoot()' },
-  { type: 'flight_shot_b', command: 'shot_b', message: 'shot_b()' },
+  { type: 'flight_shot_b', command: 'shot_b', message: 'shoot_b()' },
 ];
 
 function defineBlocks(Blockly: BlocklyApi) {

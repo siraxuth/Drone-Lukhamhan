@@ -1,3 +1,5 @@
+import { SERVO_COMMANDS } from './payload';
+
 /**
  * โหมดการเขียนโค้ดของตัวจำลอง
  * full = ชื่อเต็มไม่ย่อ (ค่าเริ่มต้น): set_height, move_left, take_off ... ตัวพิมพ์เล็ก+ขีดล่าง เขียนเปล่าหรือมี pArduino-> นำหน้าก็ได้
@@ -30,7 +32,9 @@ export const PARDUINO_NAMES = new Set([
 /** ชื่อเต็มของโหมด full = ชื่อแบบ pArduino-> บวกชื่อที่ไม่มี _cm (move_left แทน move_left_cm) */
 export const FULL_NAMES = new Set([...PARDUINO_NAMES, 'move_forward', 'move_backward', 'move_left', 'move_right']);
 /** เขียนเปล่าๆ ได้ในทุกโหมด: ฟังก์ชัน Arduino และคำสั่งภารกิจของตัวจำลอง (บรรจุ/ปล่อย/แตะ/ยิง) */
-export const BARE_OK = new Set(['delay', 'turnByHand', 'drop', 'pop', 'shoot', 'shot_b']);
+export const BARE_OK = new Set(['delay', 'turnByHand', 'drop', 'drop_l', 'drop_r', 'drop_pair', 'drop_all', 'drop_left', 'drop_right', 'drop_payload',
+  'open_pair_ch1_ch4', 'open_pair_ch2_ch3', 'open_all_ball_gate',
+  'flight_config', 'pop', 'shoot', 'shoot_b', 'shot_b', 'shootb', 'shotb', ...SERVO_COMMANDS]);
 
 const canonOf = (n: string) => n.toLowerCase().replace(/_/g, '');
 

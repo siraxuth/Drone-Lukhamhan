@@ -24,10 +24,10 @@ void setup() {
   move_forward(250);
   move_left(250);  // ถึงแท่นซ้ายบน
   poshold();  // หยุดนิ่ง ล็อกตำแหน่ง
-  drop();  // ปล่อยชุดซ้าย 20 ลูก
+  drop();  // ปล่อยคู่ช่อง 1 + 4
   move_right(500);  // ข้ามไปแท่นขวาบน
   poshold();
-  drop();  // ปล่อยชุดขวา 20 ลูก
+  drop();  // ปล่อยคู่ช่อง 3 + 6
   move_left(250);
   move_backward(250);
   auto_land();  // กลับมาลงบนแท่นเขียว
@@ -147,12 +147,12 @@ void setup() {
   move_left(250);  // ลอดห่วง
   set_height(140);  // ความสูงเท่ากึ่งกลางเป้า
   poshold(); shoot();  // เป้าซ้ายบน
-  poshold(); shot_b();  // เป้าขวาบน
+  poshold(); shoot_b();  // เป้าขวาบน
   set_height(90);  // ความสูงเท่ากึ่งกลางเป้า
   move_right(500);
   set_height(140);  // ความสูงเท่ากึ่งกลางเป้า
   poshold(); shoot();  // เป้าขวาล่าง
-  poshold(); shot_b();  // เป้าซ้ายล่าง
+  poshold(); shoot_b();  // เป้าซ้ายล่าง
   set_height(90);  // ความสูงเท่ากึ่งกลางเป้า
   move_left(250);
   auto_land();

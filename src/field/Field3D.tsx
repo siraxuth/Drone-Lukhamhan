@@ -1,5 +1,7 @@
 'use client';
 
+import { PayloadRig } from './PayloadRig';
+import type { GatePositions, Payload } from '@/flight/payload';
 import { DRONE_MODEL } from '@/lib/drone-assets';
 
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
@@ -44,7 +46,8 @@ type Props = {
   /** เปลี่ยนค่าทุกครั้งที่เกิด poshold → เล่นเอฟเฟกต์วงล็อกตำแหน่ง */
   holdKey?: number;
   /** บอลที่บรรจุอยู่บนตัวโดรน (ชุดซ้าย/ขวา) */
-  loaded?: { L: number; R: number };
+  loaded?: Payload;
+  gatePositions?: GatePositions;
   /** โจทย์ฝึก: ลายสนามและวัตถุ (ไม่ใส่ = สนามแข่งจริงตามประเภท) */
   scene?: SceneSpec;
   measurements?: Measurement[];
@@ -584,7 +587,7 @@ export function DroneModel({ low, propsRef }: { low: boolean; propsRef?: React.M
   return <primitive object={model} scale={0.16} />;
 }
 
-function HandDrone({ low }: { low: boolean }) {
+function HandDrone({ low, loaded, gatePositions }: { low: boolean; loaded: Payload; gatePositions: GatePositions }) {
   const { camera } = useThree();
   const group = useRef<THREE.Group>(null);
   useFrame(() => {
@@ -593,7 +596,7 @@ function HandDrone({ low }: { low: boolean }) {
     group.current.quaternion.copy(camera.quaternion);
   });
   return <group ref={group}>
-    <group rotation={[0.45, -0.4, -0.2]} scale={0.6}><DroneModel low={low} /><GripHand /></group>
+    <group rotation={[0.45, -0.4, -0.2]} scale={0.6}><DroneModel low={low} /><PayloadRig payload={loaded} gates={gatePositions} /><GripHand /></group>
   </group>;
 }
 
@@ -618,17 +621,8 @@ function GripHand() {
   </group>;
 }
 
-function PayloadServo() {
-  const wires = useMemo(() => ['#543b29', '#d34a36', '#e6aa35'].map((color, i) => ({ color, curve: new THREE.CatmullRomCurve3([new THREE.Vector3(0.014, 0, i * 0.003), new THREE.Vector3(0.035, 0.012, 0.025), new THREE.Vector3(0.025, 0.025, 0.055), new THREE.Vector3(0, 0.015, 0.07)]) })), []);
-  return <group>
-    <mesh><boxGeometry args={[0.024, 0.025, 0.013]} /><meshStandardMaterial color="#254871" roughness={0.4} /></mesh>
-    <mesh position={[0, 0.016, 0]}><boxGeometry args={[0.034, 0.004, 0.006]} /><meshStandardMaterial color="#e0ded5" /></mesh>
-    {wires.map(w => <mesh key={w.color}><tubeGeometry args={[w.curve, 12, 0.0012, 5, false]} /><meshStandardMaterial color={w.color} roughness={0.7} /></mesh>)}
-  </group>;
-}
-
 /** ยกจากพื้น จับบริเวณแบตเตอรี่ แล้วพลิกทั้งตัวโดรนในมือ */
-function RescueDrone({ low, start, walker, view }: { low: boolean; start: LivePose; walker: React.RefObject<WalkPose>; view: ViewPreset }) {
+function RescueDrone({ low, start, walker, view, loaded, gatePositions }: { low: boolean; start: LivePose; walker: React.RefObject<WalkPose>; view: ViewPreset; loaded: Payload; gatePositions: GatePositions }) {
   const { camera } = useThree();
   const carrier = useRef<THREE.Group>(null);
   const grip = useRef<THREE.Group>(null);
@@ -651,6 +645,7 @@ function RescueDrone({ low, start, walker, view }: { low: boolean; start: LivePo
   return <group ref={carrier} position={origin} quaternion={yaw}>
     <group ref={grip} scale={1.4}>
       <DroneModel low={low} />
+      <PayloadRig payload={loaded} gates={gatePositions} />
       <GripHand />
     </group>
   </group>;
@@ -663,7 +658,7 @@ function groundY(x: number, y: number, platforms: boolean) {
   return 0.016;
 }
 
-function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, poseRef, platforms, loaded, dartInventory, dartRack, needle }: { drone: DroneState; onDrone: Props['onDrone']; onRotate?: (yaw: number) => void; setDragging: (v: boolean) => void; low: boolean; live: boolean; placement?: boolean; poseRef?: React.RefObject<LivePose>; platforms: boolean; loaded: { L: number; R: number }; dartInventory: { front: number; back: number }; dartRack: boolean; needle: boolean }) {
+function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, poseRef, platforms, loaded, gatePositions, dartInventory, dartRack, needle }: { drone: DroneState; onDrone: Props['onDrone']; onRotate?: (yaw: number) => void; setDragging: (v: boolean) => void; low: boolean; live: boolean; placement?: boolean; poseRef?: React.RefObject<LivePose>; platforms: boolean; loaded: Payload; gatePositions: GatePositions; dartInventory: { front: number; back: number }; dartRack: boolean; needle: boolean }) {
   const dragging = useRef(false);
   const rotating = useRef(false);
   const lim = placement ? 5.8 : FIELD.size / 2 - 0.15;
@@ -751,7 +746,7 @@ function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, po
         <pointLight position={[0, 0.5, 0.2]} intensity={2.2} distance={3} color="#cfe0ff" />
         <group ref={tiltGroup}>
           <DroneModel low={low} propsRef={propNodes} />
-          <DroneBalls loaded={loaded} />
+          <PayloadRig payload={loaded} gates={gatePositions} />
           {dartRack && <DroneDartRack inventory={dartInventory} />}
           {needle && <DroneNeedle />}
         </group>
@@ -849,14 +844,6 @@ function DroneNeedle() {
   );
 }
 
-/** Central top-loading hopper with a servo-operated outlet beneath the funnel. */
-function DroneBalls({ loaded }: { loaded: { L: number; R: number } }) {
-  return <group>{(['L', 'R'] as const).map(side => <group key={side} position={[side === 'L' ? 0.048 : -0.048, 0.07, 0]}>
-    <group scale={[0.64, 1.25, 0.64]}><BallHopper count={Math.min(20, loaded[side])} /></group>
-    <group position={[0, -0.045, 0]} rotation={[0, Math.PI / 2, 0]}><MountRail /></group>
-  </group>)}</group>;
-}
-
 function MountRail() {
   const shape = useMemo(() => {
     const outline = new THREE.Shape();
@@ -869,32 +856,6 @@ function MountRail() {
   return <group rotation={[-Math.PI / 2, 0, 0]}>
     <mesh><extrudeGeometry args={[shape, { depth: 0.003, bevelEnabled: true, bevelSize: 0.0005, bevelThickness: 0.0005, bevelSegments: 2, steps: 1, curveSegments: 12 }]} /><meshStandardMaterial color="#344954" metalness={0.45} roughness={0.5} /></mesh>
     {[-0.044, 0.044].map(x => <mesh key={x} position={[x, 0, 0.004]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.0035, 0.0035, 0.004, 12]} /><meshStandardMaterial color="#adb8be" metalness={0.75} roughness={0.3} /></mesh>)}
-  </group>;
-}
-
-function BallHopper({ count }: { count: number }) {
-  const previous = useRef(count);
-  const opening = useRef(0);
-  const gate = useRef<THREE.Group>(null);
-  useFrame((_, dt) => {
-    if (count < previous.current) opening.current = 0.8;
-    previous.current = count;
-    opening.current = Math.max(0, opening.current - dt);
-    if (gate.current) gate.current.rotation.y = THREE.MathUtils.damp(gate.current.rotation.y, opening.current > 0.25 ? 1.6 : 0, 14, dt);
-  });
-  const profile = useMemo(() => [new THREE.Vector2(0.014, -0.045), new THREE.Vector2(0.014, -0.028), new THREE.Vector2(0.05, 0.015), new THREE.Vector2(0.05, 0.13), new THREE.Vector2(0.047, 0.13), new THREE.Vector2(0.047, 0.017), new THREE.Vector2(0.011, -0.027), new THREE.Vector2(0.011, -0.045)], []);
-  return <group position={[0, 0.025, 0]}>
-    <mesh><latheGeometry args={[profile, 40]} /><meshStandardMaterial color="#b8d4dd" transparent opacity={0.28} depthWrite={false} roughness={0.22} side={THREE.DoubleSide} /></mesh>
-    {[0.015, 0.13].map(y => <mesh key={y} position={[0, y, 0]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[0.049, 0.003, 8, 40]} /><meshStandardMaterial color="#526772" metalness={0.45} roughness={0.45} /></mesh>)}
-    {Array.from({ length: count }, (_, i) => {
-      const slot = i % 7, layer = Math.floor(i / 7), angle = slot * Math.PI / 3;
-      return <mesh key={i} position={[slot === 6 ? 0 : Math.cos(angle) * 0.026, 0.028 + layer * 0.02, slot === 6 ? 0 : Math.sin(angle) * 0.026]}><sphereGeometry args={[0.0095, 12, 10]} /><meshStandardMaterial color="#f1cd44" roughness={0.65} /></mesh>;
-    })}
-    <group position={[0.028, -0.043, 0]} rotation={[0, 0, Math.PI / 2]}><PayloadServo /></group>
-    <group ref={gate} position={[0.028, -0.047, 0]}>
-      <mesh position={[-0.014, 0, 0]} rotation={[0, 0, Math.PI / 2]}><capsuleGeometry args={[0.003, 0.024, 4, 10]} /><meshStandardMaterial color="#d0d8da" metalness={0.6} roughness={0.35} /></mesh>
-      <mesh position={[-0.028, 0, 0]}><cylinderGeometry args={[0.016, 0.016, 0.003, 28]} /><meshStandardMaterial color="#526772" metalness={0.5} roughness={0.4} /></mesh>
-    </group>
   </group>;
 }
 
@@ -1166,7 +1127,7 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight, plac
   );
 }
 
-export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, ceilingLights, walkPoseRef, walkInputRef, walkControlsEnabled = true, onWalk, placement, carryingDrone = false, rescuePose = null }: Props) {
+export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, gatePositions = {}, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, ceilingLights, walkPoseRef, walkInputRef, walkControlsEnabled = true, onWalk, placement, carryingDrone = false, rescuePose = null }: Props) {
   const [dragging, setDragging] = useState(false);
   // โจทย์ฝึกบนกริด/พื้นว่าง: วาดวัตถุจาก scene แทนของตามกติกา และให้โดรนมีเข็ม/ลูกดอกตามวัตถุที่วางไว้
   const custom = !!scene && scene.pattern !== 'standard';
@@ -1200,9 +1161,9 @@ export default function Field3D({ event, drone, onDrone, view, shot, low, live =
       {!placement && !custom && event.field.platforms && <Platforms />}
       {!placement && !custom && event.field.balloons && <Balloons popped={marks.popped} />}
       {!placement && !custom && event.field.targets && (<><Targets /><ShootZones drone={drone} /></>)}
-      {!carryingDrone && !rescuePose && <Drone drone={drone} onDrone={onDrone} onRotate={placement?.onRotate} setDragging={setDragging} low={low} live={live && !placement} placement={!!placement} poseRef={poseRef} platforms={event.field.platforms && !custom} loaded={loaded} dartInventory={hasTargets ? dartInventory : { front: 0, back: 0 }} dartRack={hasTargets} needle={hasBalloons} />}
-      {rescuePose && walkPoseRef && <RescueDrone low={low} start={rescuePose} walker={walkPoseRef} view={view} />}
-      {carryingDrone && view === 'walk' && <HandDrone low={low} />}
+      {!carryingDrone && !rescuePose && <Drone drone={drone} onDrone={onDrone} onRotate={placement?.onRotate} setDragging={setDragging} low={low} live={live && !placement} placement={!!placement} poseRef={poseRef} platforms={event.field.platforms && !custom} loaded={loaded} gatePositions={gatePositions} dartInventory={hasTargets ? dartInventory : { front: 0, back: 0 }} dartRack={hasTargets} needle={hasBalloons} />}
+      {rescuePose && walkPoseRef && <RescueDrone low={low} start={rescuePose} walker={walkPoseRef} view={view} loaded={loaded} gatePositions={gatePositions} />}
+      {carryingDrone && view === 'walk' && <HandDrone low={low} loaded={loaded} gatePositions={gatePositions} />}
       {placement && <PlacementMarkers center={placement.center} target={placement.target} drone={drone} aligned={placement.aligned} onRotate={placement.onRotate} scene={scene} />}
       {walkPoseRef && <WalkerMarker poseRef={walkPoseRef} visible={view !== 'walk' && !placement} />}
       {showDimensions && <FieldDimensions3D scene={scene} fromId={dimensionFrom} toId={dimensionTo} />}

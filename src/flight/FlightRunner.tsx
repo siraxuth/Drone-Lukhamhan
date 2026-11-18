@@ -1,5 +1,6 @@
 'use client';
 
+import { countsFor, EMPTY_PAYLOAD, PAYLOAD_CHANNELS, type GatePositions, type Payload } from './payload';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FieldLegend, FieldSet } from '@/components/ui/field';
@@ -86,8 +87,6 @@ type Props = {
 export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandProgress, onStart, onFinish, playLabel = 'เริ่มจำลองการบิน', config, scene, maxPoints, previewKey, remoteKeys, initialView, focusPlay, fullHeightField = false, controlsBlocked = false }: Props) {
   const cfg = useMemo(() => config ?? buildConfig(event.id), [config, event.id]);
   const initialPayload = cfg.initialPayload;
-  const payloadL = initialPayload?.L ?? 0;
-  const payloadR = initialPayload?.R ?? 0;
   const payloadRef = useRef(initialPayload);
   payloadRef.current = initialPayload;
   // จุดวางโดรนตอนเริ่ม (ตามโจทย์) · สูงเท่าแท่น 20 ซม. ถ้าเริ่มบนฐาน ไม่งั้นเริ่มบนพื้น
@@ -154,7 +153,8 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   const [low, setLow] = useState(true);
   const [pose2d, setPose2d] = useState(HOME);
   const [holdKey, setHoldKey] = useState(0);
-  const [loaded, setLoaded] = useState({ L: 0, R: 0 });
+  const [loaded, setLoaded] = useState<Payload>(initialPayload ?? EMPTY_PAYLOAD);
+  const [gatePositions, setGatePositions] = useState<GatePositions>({});
   const [holding, setHolding] = useState(false);
   const [manualActive, setManualActive] = useState(true);
   const [activeKey, setActiveKey] = useState<number | null>(null);
@@ -185,8 +185,8 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   const resultRef = useRef<Result | null>(null);
   const finishedResultRef = useRef<Result | null>(null);
   const seedRef = useRef(0);
-  const replayPayloadRef = useRef<{ L: number; R: number } | null>(null);
-  const remainingPayloadRef = useRef<{ L: number; R: number } | null>(null);
+  const replayPayloadRef = useRef<Payload | null>(null);
+  const remainingPayloadRef = useRef<Payload | null>(null);
   const speedRef = useRef(1);
   speedRef.current = speed;
   const { keyBindings, errors: codeErrors } = useMemo(() => parse(code, cfg.style ?? 'any'), [code, cfg.style]);
@@ -285,7 +285,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     shotSequence.current = 0;
     popSequence.current = 0;
     landingSequence.current = 0;
-    setPose2d(HOME); setResult(null); setPlannedResult(null); setPlaying(false); setDone(false); setNow(0); setMarks(NO_MARKS); setHighlight(null); setShotCallout(null); setPopCallout(null); setDropCallout(null); setLandingCallout(null); setLog([]); setHolding(false); setLoaded(payloadRef.current ?? { L: 0, R: 0 }); setManualActive(true); setActiveKey(null);
+    setPose2d(HOME); setResult(null); setPlannedResult(null); setPlaying(false); setDone(false); setNow(0); setMarks(NO_MARKS); setHighlight(null); setShotCallout(null); setPopCallout(null); setDropCallout(null); setLandingCallout(null); setLog([]); setHolding(false); setLoaded(payloadRef.current ?? EMPTY_PAYLOAD); setGatePositions({}); setManualActive(true); setActiveKey(null);
     activeKeyRef.current = null;
     commandFocusRef.current = null;
     onCommandProgress?.(null);
@@ -324,7 +324,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   }, [event.id, code, scene, reset]);
 
   // สะท้อนจำนวนสัมภาระที่เตรียมจากแผงด้านข้าง โดยไม่ล้างผลเที่ยวบินที่เพิ่งจบ
-  useEffect(() => { setLoaded({ L: payloadL, R: payloadR }); }, [payloadL, payloadR]);
+  useEffect(() => { setLoaded(initialPayload ?? EMPTY_PAYLOAD); }, [initialPayload]);
 
   useEffect(() => {
     if (!standby) return;
@@ -366,13 +366,16 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
       setHoldKey((k) => k + 1); setHolding(true);
       later(() => setHolding(false), (e.dur ?? 1200) / sp);
     }
+    else if (e.kind === 'servo') {
+      setGatePositions(e.gatePositions ?? {});
+    }
     else if (e.kind === 'drop') {
+      if (e.payload) setLoaded(e.payload);
       if (!e.ok || !e.at) { a?.sfx('miss'); return; }
       // ปล่อยบอลทีละลูกตลอดช่วงเวลาที่ปล่อย: ลูกละหนึ่ง "ติ๊ง" ไล่โน้ตขึ้น (ค่อยๆ เบาเมื่อลูกเยอะ)
       const p = cfg.platforms.find((q) => q.id === e.id);
       const c = p ? toField(p.x, p.y) : toField(e.at.x, e.at.y);
       const n = e.n ?? 1, gap = (e.dur ?? 300) / Math.max(1, n);
-      const fromL = e.from?.L ?? 0;
       // คะแนนเด้งเมื่อบอลชุดนี้ตกถึงแท่นครบ
       later(() => {
         const id = ++dropSequence.current;
@@ -380,7 +383,6 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
         later(() => setDropCallout((current) => current?.id === id ? null : current), 1300 / sp);
       }, ((n - 1) * gap + 300) / sp);
       for (let i = 0; i < n; i++) {
-        later(() => setLoaded((l) => (i < fromL ? { ...l, L: Math.max(0, l.L - 1) } : { ...l, R: Math.max(0, l.R - 1) })), (i * gap) / sp);
         later(() => {
           const ang = (i / Math.max(1, n)) * Math.PI * 7;
           const rr = 0.08 + 0.3 * Math.sqrt((i % 20) / 20);
@@ -639,9 +641,11 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     cancelAnimationFrame(run.current.raf);
     timers.current.forEach(clearTimeout); timers.current = [];
     if (!seedRef.current) seedRef.current = Math.max(1, Math.floor(Math.random() * 2_147_483_647));
-    const available = cfg.initialPayload ?? { L: 0, R: 0 };
+    const available = cfg.initialPayload ?? EMPTY_PAYLOAD;
     const previousRemaining = remainingPayloadRef.current;
-    const replaying = !!previousRemaining && previousRemaining.L === available.L && previousRemaining.R === available.R;
+    const availableChannels = countsFor(available);
+    const previousChannels = previousRemaining && countsFor(previousRemaining);
+    const replaying = (replayActions || fresh || (bigPlay && done)) && previousChannels && PAYLOAD_CHANNELS.every(channel => availableChannels[channel] === previousChannels[channel]);
     const startPayload = replaying ? (replayPayloadRef.current ?? available) : available;
     replayPayloadRef.current = startPayload;
     remainingPayloadRef.current = null;
@@ -681,6 +685,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     setNow(0);
     setPose2d(start ? { x: start.x, y: start.y, yaw: launchPose!.yaw, alt: startAlt } : HOME);
     setLoaded(startPayload);
+    setGatePositions({});
     let n = 3;
     a.sfx('count');
     const iv = setInterval(() => {
@@ -690,7 +695,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     }, 600);
     run.current.count = iv;
     if (r.frames.length < 2) { clearInterval(iv); setPlaying(false); setDone(true); }
-  }, [cfg, code, HOME, IDLE, keyBindings, muted, onCommandProgress, onFinish, onResult, onStart, tick, environmentOf, launch, timeCarry, groundAltitudeAt, ceilingLights]);
+  }, [cfg, code, HOME, IDLE, keyBindings, muted, onCommandProgress, onFinish, onResult, onStart, tick, environmentOf, launch, timeCarry, groundAltitudeAt, ceilingLights, bigPlay, done]);
 
   const toggleManual = () => {
     const next = !remoteManual;
@@ -890,7 +895,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
         ? 'fixed inset-0 z-[100] h-dvh w-screen overflow-hidden bg-surface'
         : `relative w-full overflow-hidden squircle-2xl border border-line bg-surface ${previewKey ? "aspect-[4/3] max-h-[55dvh] sm:aspect-video" : fullHeightField ? "h-[min(64svh,36rem)] min-h-[22rem] sm:h-[min(50svh,36rem)] sm:min-h-[18rem]" : "aspect-[4/3] sm:aspect-video xl:aspect-auto xl:h-full xl:min-h-0"}`}>
         {mode === '3d' ? (
-          <Field3D event={event} drone={{ ...pose2d }} onDrone={placing ? movePlacementDrone : () => { }} view={view} shot={null} low={low} live={live} poseRef={poseRef} playheadRef={playheadRef} marks={marks} highlight={highlight} dartInventory={{ front: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'front').length), back: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'back').length) }} holdKey={holdKey} loaded={loaded} scene={spec3d} measurements={measurements} showDimensions={!previewKey && showDimensions} dimensionFrom={dimensionFrom.id} dimensionTo={dimensionTo?.id} lights={fullHeightField ? lights : undefined} ceilingLights={fullHeightField ? ceilingLights : undefined} walkPoseRef={fullHeightField ? walkPoseRef : undefined} walkInputRef={fullHeightField ? walkInputRef : undefined} walkControlsEnabled={!controlsBlocked && !walkGuideOpen && !keyPickerOpen} onWalk={fullHeightField ? onWalk : undefined} placement={placing ? { center: toField(cfg.start.x, cfg.start.y), target: toField(placementTarget.x, placementTarget.y), aligned: placementAligned, onRotate: yaw => setDraftLaunch(current => current ? { ...current, yaw } : current) } : undefined} carryingDrone={fullHeightField && !launch && !placing && !started} rescuePose={rescued ? rescuePose : null} />
+          <Field3D event={event} drone={{ ...pose2d }} onDrone={placing ? movePlacementDrone : () => { }} view={view} shot={null} low={low} live={live} poseRef={poseRef} playheadRef={playheadRef} marks={marks} highlight={highlight} dartInventory={{ front: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'front').length), back: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'back').length) }} holdKey={holdKey} loaded={loaded} gatePositions={gatePositions} scene={spec3d} measurements={measurements} showDimensions={!previewKey && showDimensions} dimensionFrom={dimensionFrom.id} dimensionTo={dimensionTo?.id} lights={fullHeightField ? lights : undefined} ceilingLights={fullHeightField ? ceilingLights : undefined} walkPoseRef={fullHeightField ? walkPoseRef : undefined} walkInputRef={fullHeightField ? walkInputRef : undefined} walkControlsEnabled={!controlsBlocked && !walkGuideOpen && !keyPickerOpen} onWalk={fullHeightField ? onWalk : undefined} placement={placing ? { center: toField(cfg.start.x, cfg.start.y), target: toField(placementTarget.x, placementTarget.y), aligned: placementAligned, onRotate: yaw => setDraftLaunch(current => current ? { ...current, yaw } : current) } : undefined} carryingDrone={fullHeightField && !launch && !placing && !started} rescuePose={rescued ? rescuePose : null} />
         ) : (
           <FieldPlan2D event={event} drone={pose2d} interactive={false} className="size-full p-2" scene={spec2d} measurements={measurements} />
         )}

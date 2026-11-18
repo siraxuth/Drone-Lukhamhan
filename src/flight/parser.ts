@@ -1,3 +1,4 @@
+import { servoDegreeToPulse } from './payload';
 import type { SimEvent } from './engine';
 import { convertStyle, styleError, type Style } from './style';
 
@@ -36,7 +37,7 @@ const IGNORE = [
 ];
 const TYPES = "(?:static\\s+)?(?:const\\s+)?(?:u?int(?:8|16|32|64)?_t|int|long|unsigned\\s+long|unsigned\\s+int|short|float|double|byte|bool|uint16_t)";
 const DECL = new RegExp(`^${TYPES}\\s+(\\w+)\\s*(?:=\\s*([\\s\\S]+))?$`);
-const FUNC = /^void\s+(\w+)\s*\(([^)]*)\)$/;
+const FUNC = /^(?:static\s+)?void\s+(\w+)\s*\(([^)]*)\)$/;
 const MAX_CALLS = 4000;
 const MAX_DEPTH = 24;
 /** loop() วนซ้ำสูงสุดกี่รอบในตัวจำลอง (โดรนจริงวนไม่รู้จบ) */
@@ -57,7 +58,20 @@ function evalExpr(src: string, env: Map<string, number>): number {
         const m = /^(?:\d+\.?\d*|\.\d+)/.exec(s.slice(i)) ?? /^[A-Za-z_]\w*/.exec(s.slice(i));
         if (!m) return NaN;
         i += m[0].length;
-        if (/^[A-Za-z_]/.test(m[0])) return env.has(m[0]) ? (env.get(m[0]) as number) : NaN;
+        if (/^[A-Za-z_]/.test(m[0])) {
+            const name = m[0];
+            if (s[i] !== "(") return env.get(name) ?? NaN;
+            i++;
+            const args = [add()];
+            while (s[i] === ",") { i++; args.push(add()); }
+            if (s[i] !== ")" || args.some(value => !Number.isFinite(value))) return NaN;
+            i++;
+            if (name === "servo_degree_to_pulse" && args.length === 1) return servoDegreeToPulse(args[0]);
+            if (name === "servo_degree_to_pulse_custom" && args.length === 3) {
+                return servoDegreeToPulse(args[0], args[1], args[2]);
+            }
+            return NaN;
+        }
         return Number(m[0]);
     };
     const mul = (): number => {
@@ -129,7 +143,7 @@ function tokenize(code: string, errors: SimEvent[]): Tok[] {
         const t = cur.trim();
         if (t && depth === 0) {
             const rest = lines.slice(li + 1).join("\n").replace(/\/\/.*$/gm, "").trimStart();
-            const headerLike = /^(?:void\s+\w+\s*\([^)]*\)|for\s*\(.*\)|else|do)$/s.test(t);
+            const headerLike = /^(?:(?:static\s+)?void\s+\w+\s*\([^)]*\)|(?:for|if)\s*\(.*\)|else|do)$/s.test(t);
             if (!(headerLike && rest.startsWith("{"))) flushMissing(line);
         }
     });
@@ -145,7 +159,7 @@ export type BlockCommand =
     | "calibration" | "delay" | "take_off" | "auto_land" | "stop_motor"
     | "set_height" | "move_forward" | "move_backward" | "move_left" | "move_right"
     | "move_forward_time" | "move_backward_time" | "move_left_time" | "move_right_time"
-    | "set_yaw" | "poshold" | "turnByHand" | "drop" | "pop" | "shoot" | "shot_b";
+    | "set_yaw" | "poshold" | "turnByHand" | "drop" | "drop_l" | "drop_r" | "drop_pair" | "pop" | "shoot" | "shot_b";
 export type BlockStatement = { kind: "command"; command: BlockCommand; args: number[] };
 export type BlockProgram = { selectedKey: number; scripts: Partial<Record<number, BlockStatement[]>> };
 type ParsedBlockStatement =
@@ -182,7 +196,7 @@ export function parseBlockProgram(code: string): { program: BlockProgram; skippe
         movelefttime: "move_left_time", move_left_time: "move_left_time", moverighttime: "move_right_time", move_right_time: "move_right_time",
         fwt: "move_forward_time", bwt: "move_backward_time", mlt: "move_left_time", mrt: "move_right_time",
         setyaw: "set_yaw", set_yaw: "set_yaw", poshold: "poshold", hold: "poshold",
-        turnbyhand: "turnByHand", turn_by_hand: "turnByHand", drop: "drop", pop: "pop", shoot: "shoot", shot_b: "shot_b",
+        turnbyhand: "turnByHand", turn_by_hand: "turnByHand", drop: "drop", drop_l: "drop_l", drop_r: "drop_r", dropl: "drop_l", dropr: "drop_r", drop_pair: "drop_pair", droppair: "drop_pair", pop: "pop", shoot: "shoot", shot_b: "shot_b", shootb: "shot_b", shotb: "shot_b",
     };
     const argsOf = (text: string) => splitArgs(text).map((arg) => {
         const value = evalExpr(arg, new Map());
@@ -207,7 +221,7 @@ export function parseBlockProgram(code: string): { program: BlockProgram; skippe
             const command = commandNames[name] ?? commandNames[canonicalName];
             if (command) {
                 const args = argsOf(call[4]);
-                const expected = command === "set_yaw" ? 2 : ["delay", "stop_motor", "set_height", "move_forward", "move_backward", "move_left", "move_right", "move_forward_time", "move_backward_time", "move_left_time", "move_right_time", "turnByHand"].includes(command) ? 1 : 0;
+                const expected = command === "set_yaw" ? 2 : ["delay", "drop_pair", "stop_motor", "set_height", "move_forward", "move_backward", "move_left", "move_right", "move_forward_time", "move_backward_time", "move_left_time", "move_right_time", "turnByHand"].includes(command) ? 1 : 0;
                 if (args.length !== expected || args.some((value) => !Number.isFinite(value))) { skipped++; continue; }
                 out.push({ kind: "command", command, args });
                 continue;
@@ -290,7 +304,7 @@ function buildTree(toks: Tok[], errors: SimEvent[]): Node[] {
  * รองรับโครง C++ ของสเก็ตช์จริง: void setup() (รันครั้งเดียว) · void loop() (วนซ้ำ ตัวจำลองวนสูงสุด LOOP_REPEATS รอบ
  * หรือหยุดเมื่อเจอ while (true) {}) · ฟังก์ชันของผู้ใช้ (มีพารามิเตอร์ตัวเลขได้) · int x = 5; (นิพจน์ + - * / ได้) ·
  * for (int i = 0; i < n; i++) ที่ขอบเขตคำนวณได้ (คลี่ให้) · คอมเมนต์ // และ /* *​/
- * ยังไม่รองรับ if / while ที่มีเงื่อนไข
+ * รองรับ if/else แบบมีปีกกาและเงื่อนไขตัวเลข · ยังไม่รองรับ while ที่มีเงื่อนไข
  * โหมด 'any' ยอมให้เขียนคำสั่งนอกฟังก์ชันได้ (โค้ดแบบเก่า) โหมดอื่นต้องอยู่ใน setup()/loop()/ฟังก์ชัน
  */
 export type KeyBinding = { key: number; functionName: string };
@@ -338,10 +352,34 @@ export function parse(code: string, style: Style = "any", selectedKey?: number):
 
     /** รันบล็อกคำสั่ง (คลี่เป็น calls) ด้วยตัวแปรเฉพาะที่ env */
     const run = (body: Node[], env: Map<string, number>, depth: number): void => {
-        for (const n of body) {
+        for (let index = 0; index < body.length; index++) {
+            const n = body[index];
             if (halted || budget <= 0) return;
             if (n.kind === "block") {
                 const h = n.header;
+                const condition = /^if\s*\(([\s\S]*)\)$/.exec(h);
+                if (condition) {
+                    const comparison = /^(.+?)\s*(==|!=|<=|>=|<|>)\s*(.+)$/.exec(condition[1]);
+                    const lhs = evalExpr(comparison?.[1] ?? condition[1], env);
+                    const rhs = comparison ? evalExpr(comparison[3], env) : 0;
+                    if (!Number.isFinite(lhs) || !Number.isFinite(rhs)) {
+                        once(n.line, "อ่านเงื่อนไข if ไม่ออก");
+                        continue;
+                    }
+                    const op = comparison?.[2] ?? "!=";
+                    const ok = op === "==" ? lhs === rhs : op === "!=" ? lhs !== rhs : op === "<=" ? lhs <= rhs : op === ">=" ? lhs >= rhs : op === "<" ? lhs < rhs : lhs > rhs;
+                    const next = body[index + 1];
+                    const alternative = next?.kind === "block" && next.header === "else" ? next : undefined;
+                    if (alternative) index++;
+                    const branch = ok ? n : alternative;
+                    if (branch) {
+                        const local = new Map(env);
+                        run(branch.body, local, depth);
+                        for (const key of env.keys()) env.set(key, local.get(key)!);
+                        if (local.get("__return") === 1) { env.set("__return", 1); return; }
+                    }
+                    continue;
+                }
                 const f = /^for\s*\(([\s\S]*)\)$/.exec(h);
                 if (f) { forLoop(f[1], n, env, depth); continue; }
                 if (/^while\s*\(\s*(?:true|1)\s*\)$/.test(h) && n.body.length === 0) { halted = true; return; }
@@ -376,6 +414,7 @@ export function parse(code: string, style: Style = "any", selectedKey?: number):
             const ok = cond[2] === "<" ? cur < bound : cond[2] === "<=" ? cur <= bound : cond[2] === ">" ? cur > bound : cond[2] === ">=" ? cur >= bound : cur !== bound;
             if (!ok) return;
             run(n.body, local, depth);
+            for (const key of env.keys()) if (key !== v) env.set(key, local.get(key)!);
             if (halted || budget <= 0 || local.get("__return") === 1) { if (local.get("__return") === 1) env.set("__return", 1); return; }
             cur += delta;
             if (k === 499) once(n.line, "for วนเกิน 500 รอบ ตัวจำลองหยุดคลี่");
@@ -399,7 +438,7 @@ export function parse(code: string, style: Style = "any", selectedKey?: number):
         const m = /^(?:(drone)\s*\.\s*|(pArduino)\s*(?:->|\.)\s*)?([A-Za-z_]\w*)\s*\(([\s\S]*)\)$/.exec(text);
         if (!m) {
             if (/^(?:drone\s*\.\s*|pArduino\s*->\s*)?[A-Za-z_]\w*$/.test(text)) once(line, `"${text}" ลืมวงเล็บ () (ถ้าเป็นคำสั่งต้องเขียน ${text}();)`);
-            else once(line, `อ่านคำสั่งไม่ออก "${text}" (ลืมวงเล็บหรือเปล่า?) · ตัวจำลองยังไม่รองรับ if / while ที่มีเงื่อนไข`);
+            else once(line, `อ่านคำสั่งไม่ออก "${text}" (ลืมวงเล็บหรือเปล่า?) · เขียน if แบบมีปีกกาได้ ส่วน while แบบมีเงื่อนไขยังไม่รองรับ`);
             return;
         }
         const rawName = m[3];
@@ -450,6 +489,12 @@ export function parse(code: string, style: Style = "any", selectedKey?: number):
             if (calls.length === before) break; // loop ว่าง/ไม่มีคำสั่ง ไม่ต้องวน
         }
     }
+    // An Arduino-style sketch can start with a single void handler and grow helper functions later.
+    if (!setup && !loop && !topCalls.length) {
+        const entry = [...funcs].find(([name, fn]) => name === "runMission" && !fn.params.length)
+            ?? [...funcs].find(([, fn]) => !fn.params.length);
+        if (entry) keyHandlers.set(1, { functionName: entry[0], line: entry[1].line });
+    }
     if (selectedKey !== undefined) {
         const binding = keyHandlers.get(selectedKey);
         if (!binding) once(1, `KEY ${selectedKey} ยังไม่ได้ผูกกับฟังก์ชันใน void setup()`);
@@ -458,6 +503,6 @@ export function parse(code: string, style: Style = "any", selectedKey?: number):
             if (fn) run(fn.body, new Map(globals), 0);
         }
     }
-    if (strict && tree.length > 0 && !setup && !loop && errors.length === 0) err(1, "ไม่พบ void setup() ใส่คำสั่งไว้ในฟังก์ชันนี้ เช่น void setup() { ... }");
+    if (strict && tree.length > 0 && !setup && !loop && !keyHandlers.size && errors.length === 0) err(1, "ไม่พบ void setup() ใส่คำสั่งไว้ในฟังก์ชันนี้ เช่น void setup() { ... }");
     return { calls, errors, keyBindings: [...keyHandlers].map(([key, binding]) => ({ key, functionName: binding.functionName })) };
 }
