@@ -824,7 +824,7 @@ function DroneDartRack({ inventory }: { inventory: { front: number; back: number
   return <group>
     <mesh position={[0, 0.048, 0]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[0.052, 0.004, 8, 32]} /><meshStandardMaterial color="#344954" metalness={0.45} roughness={0.45} /></mesh>
     {(['front', 'back'] as const).flatMap(side => [0, 1].map(i => <group key={`${side}-${i}`} position={[(i - 0.5) * 0.075, 0.077, side === 'front' ? 0.085 : -0.085]} rotation={[side === 'front' ? Math.PI / 2 : -Math.PI / 2, 0, 0]}>
-      <SpringLauncher loaded={i < Math.min(2, inventory[side])} />
+      <SpringLauncher loaded={i < Math.min(2, inventory[side])} /><group position={[0, -0.015, 0.023]} rotation={[Math.PI / 2, 0, 0]}><MountRail /></group>
     </group>))}
   </group>;
 }
@@ -851,7 +851,28 @@ function DroneNeedle() {
 
 /** Central top-loading hopper with a servo-operated outlet beneath the funnel. */
 function DroneBalls({ loaded }: { loaded: { L: number; R: number } }) {
-  const count = Math.min(40, loaded.L + loaded.R);
+  return <group>{(['L', 'R'] as const).map(side => <group key={side} position={[side === 'L' ? 0.048 : -0.048, 0.07, 0]}>
+    <group scale={[0.64, 1.25, 0.64]}><BallHopper count={Math.min(20, loaded[side])} /></group>
+    <group position={[0, -0.045, 0]} rotation={[0, Math.PI / 2, 0]}><MountRail /></group>
+  </group>)}</group>;
+}
+
+function MountRail() {
+  const shape = useMemo(() => {
+    const outline = new THREE.Shape();
+    outline.moveTo(-0.06, -0.006); outline.lineTo(0.06, -0.006);
+    outline.absarc(0.06, 0, 0.006, -Math.PI / 2, Math.PI / 2, false);
+    outline.lineTo(-0.06, 0.006); outline.absarc(-0.06, 0, 0.006, Math.PI / 2, Math.PI * 1.5, false);
+    for (let i = 0; i < 11; i++) { const hole = new THREE.Path(); hole.absarc((i - 5) * 0.011, 0, 0.0023, 0, Math.PI * 2, true); outline.holes.push(hole); }
+    return outline;
+  }, []);
+  return <group rotation={[-Math.PI / 2, 0, 0]}>
+    <mesh><extrudeGeometry args={[shape, { depth: 0.003, bevelEnabled: true, bevelSize: 0.0005, bevelThickness: 0.0005, bevelSegments: 2, steps: 1, curveSegments: 12 }]} /><meshStandardMaterial color="#344954" metalness={0.45} roughness={0.5} /></mesh>
+    {[-0.044, 0.044].map(x => <mesh key={x} position={[x, 0, 0.004]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.0035, 0.0035, 0.004, 12]} /><meshStandardMaterial color="#adb8be" metalness={0.75} roughness={0.3} /></mesh>)}
+  </group>;
+}
+
+function BallHopper({ count }: { count: number }) {
   const previous = useRef(count);
   const opening = useRef(0);
   const gate = useRef<THREE.Group>(null);

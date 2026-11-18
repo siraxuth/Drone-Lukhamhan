@@ -142,6 +142,11 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   const [supports3d, setSupports3d] = useState(false);
   const [mode, setMode] = useState<'pending' | '2d' | '3d'>('pending');
   const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    const prepare = () => setExpanded(false);
+    window.addEventListener('simulator:prepare-drone', prepare);
+    return () => window.removeEventListener('simulator:prepare-drone', prepare);
+  }, []);
   const [walkGuideOpen, setWalkGuideOpen] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [draftLaunch, setDraftLaunch] = useState<LaunchPose | null>(null);
