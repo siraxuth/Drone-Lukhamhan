@@ -650,10 +650,8 @@ function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, po
   const shadow = useRef<THREE.Mesh>(null);
   const beacon = useRef<THREE.Mesh>(null);
   const plumb = useRef<THREE.Mesh>(null);
-  const aim = useRef<THREE.Mesh>(null);
   const propNodes = useRef<THREE.Object3D[]>([]);
   const spinAngle = useRef(0);
-  const h = heading(drone.yaw);
   const { invalidate } = useThree();
 
   // ระหว่างบินจำลอง: อ่านท่าจาก poseRef ทุกเฟรมแล้วตั้งค่าตรงๆ (ไม่ผ่าน React)
@@ -669,12 +667,6 @@ function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, po
     beacon.current?.position.set(px, gy + 0.004, pz);
     if (shadow.current) { shadow.current.position.set(px, gy, pz); (shadow.current.material as THREE.MeshBasicMaterial).opacity = Math.max(0.12, 0.5 - p.alt * 0.25); }
     if (plumb.current) { plumb.current.position.set(px, (p.alt + gy) / 2, -p.y); plumb.current.scale.y = Math.max(0.01, p.alt - gy); }
-    if (aim.current) {
-      aim.current.visible = false;
-      const hx = Math.sin((p.yaw * Math.PI) / 180), hy = Math.cos((p.yaw * Math.PI) / 180);
-      aim.current.position.set(p.x + hx * 2.5, p.alt, -(p.y + hy * 2.5));
-      aim.current.rotation.set(Math.PI / 2, 0, -(p.yaw * Math.PI) / 180);
-    }
     spinAngle.current += p.spin * dt * Math.PI * 2 * 9; // รอบต่อวินาทีสูงสุด ~9 (ภาพจะเห็นเป็นใบพัดหมุนเร็ว)
     propNodes.current.forEach((n, idx) => { n.rotation.y = (idx % 2 === 0 ? -1 : 1) * spinAngle.current; });
     invalidate();
@@ -698,11 +690,6 @@ function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, po
       <mesh ref={plumb} position={p3(ax, ay, (aalt + groundY(ax, ay, platforms)) / 2)} scale={[1, Math.max(0.01, aalt - groundY(ax, ay, platforms)), 1]}>
         <cylinderGeometry args={[0.004, 0.004, 1, 6]} />
         <meshBasicMaterial color="#9aa3b2" transparent opacity={0.6} />
-      </mesh>
-      {/* เส้นเล็งไปข้างหน้า */}
-      <mesh ref={aim} position={p3(ax + h.x * 2.5, ay + h.y * 2.5, aalt)} rotation={[Math.PI / 2, 0, -(ayaw * Math.PI) / 180]}>
-        <cylinderGeometry args={[0.006, 0.006, 5, 6]} />
-        <meshBasicMaterial color="#ef4466" transparent opacity={0.55} />
       </mesh>
       <group
         ref={yawGroup}
@@ -1119,7 +1106,7 @@ export default function Field3D({ event, drone, onDrone, view, shot, low, live =
   return (
     <Canvas
       frameloop={live || view === 'walk' ? 'always' : 'demand'}
-      dpr={low ? 1 : [1, 1.5]}
+      dpr={low ? [1, 1.4] : [1, 2]}
       camera={{ position: [0, 15.5, 0.01], fov: 42, near: 0.05, far: 80 }}
       gl={{ antialias: !low, powerPreference: low ? 'low-power' : 'high-performance', stencil: false }}
       style={{ touchAction: 'none' }}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Blocks, BookOpen, Braces, ChevronDown, CircleHelp, Plus, RotateCcw } from 'lucide-react';
+import { Blocks, BookOpen, Braces, ChevronDown, CircleHelp, Plus, RotateCcw, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -387,6 +387,19 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
     window.addEventListener('pagehide', flush);
     return () => { window.removeEventListener('pagehide', flush); flush(); };
   }, [signedIn]);
+  const saveNow = async () => {
+    if (!latestWorkspace.current.ready || saveStatus === 'saving') return;
+    setSaveStatus('saving');
+    const data = latestWorkspace.current.data;
+    try {
+      localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(data));
+      if (signedIn) {
+        const response = await fetch('/api/simulator/workspace', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        if (!response.ok) throw new Error('workspace save failed');
+      }
+      setSaveStatus('saved');
+    } catch { setSaveStatus('error'); }
+  };
   const chooseStyle = (v: Style) => { setStyleSel(v); if (v !== 'any') setCode(convertStyle(code, v)); try { localStorage.setItem(STYLE_KEY, v); } catch { /* ไม่เป็นไร */ } };
 
   useEffect(() => { document.title = 'ตัวจำลองการบิน · ชมรมโดรน ลือคำหาญฯ'; }, []);
@@ -478,14 +491,15 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
 
   return (
     <main className="flex h-svh w-full min-w-0 flex-col overflow-hidden pt-[4.75rem]">
-      <header className="flex flex-wrap items-center gap-3 px-4 py-2 sm:px-6">
-        <div className="min-w-0 flex-1"><h1 className="text-xl font-extrabold sm:text-2xl">สนามฝึกการบินโดรน</h1><p className="hidden text-sm text-muted-foreground lg:block">วางแผนคำสั่ง ดูเส้นทางจริง แล้วเรียนรู้จากสิ่งที่คลาดเคลื่อน</p></div>
-        {qs.get('lesson') !== '1' && <Button variant="outline" className="min-h-10" data-sim-guide><CircleHelp className="size-4" /> วิธีใช้</Button>}
-        <span role="status" className="text-xs text-muted-foreground">{saveStatus === 'saving' ? 'กำลังบันทึก…' : saveStatus === 'saved' ? signedIn ? 'บันทึกในบัญชีแล้ว' : 'บันทึกในเครื่องแล้ว' : saveStatus === 'error' ? 'บันทึกข้ามอุปกรณ์ไม่สำเร็จ' : ''}</span>
-        <Button className="min-h-10" data-tour="sim-pick" onClick={() => setPanel('pick')}><BookOpen className="size-4" /> เลือกภารกิจ</Button>
+      <header className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-3 py-2 sm:flex sm:flex-wrap sm:gap-3 sm:px-6">
+        <div className="min-w-0 flex-1"><h1 className="text-base font-extrabold sm:text-2xl">สนามฝึกการบินโดรน</h1><p className="hidden text-sm text-muted-foreground lg:block">วางแผนคำสั่ง ดูเส้นทางจริง แล้วเรียนรู้จากสิ่งที่คลาดเคลื่อน</p></div>
+        {qs.get('lesson') !== '1' && <Button variant="outline" className="min-h-10 px-2 sm:px-4" data-sim-guide aria-label="วิธีใช้"><CircleHelp className="size-4" /><span className="hidden sm:inline">วิธีใช้</span></Button>}
+        <Button type="button" variant="outline" className="min-h-10 px-2 sm:px-4" disabled={!workspaceReady || saveStatus === 'saving'} onClick={saveNow}><Save className="size-4" />{saveStatus === 'saving' ? 'กำลังเซฟ' : 'เซฟ'}</Button>
+        <span role="status" className="col-span-2 min-w-0 text-xs text-muted-foreground sm:order-none sm:w-auto">{saveStatus === 'saving' ? 'กำลังบันทึก…' : saveStatus === 'saved' ? signedIn ? 'บันทึกในบัญชีแล้ว' : 'บันทึกในเครื่องแล้ว' : saveStatus === 'error' ? 'บันทึกไม่สำเร็จ กดเซฟอีกครั้ง' : ''}</span>
+        <Button className="col-start-3 row-start-2 min-h-10 whitespace-nowrap" data-tour="sim-pick" onClick={() => setPanel('pick')}><BookOpen className="size-4" /> เลือกภารกิจ</Button>
       </header>
       <div className="grid w-full min-h-0 min-w-0 flex-1 auto-rows-max grid-cols-1 gap-3 overflow-y-auto p-3 sm:p-4 xl:auto-rows-[minmax(0,1fr)] xl:overflow-hidden xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <section data-tour="sim-stage" aria-label="สนามจำลอง" className="order-1 grid min-h-0 min-w-0 content-start gap-2 xl:order-2 xl:grid-rows-[auto_auto_auto] xl:overflow-y-auto">
+        <section data-tour="sim-stage" aria-label="สนามจำลอง" className="order-1 grid min-h-0 min-w-0 grid-cols-1 content-start gap-2 xl:order-2 xl:grid-rows-[auto_auto_auto] xl:overflow-y-auto">
           <div className="min-w-0 squircle-2xl border border-line bg-surface">
             <div className="flex min-w-0 items-center gap-2 px-3 py-2">
             <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-extrabold sm:text-base">{sc.title}</h2><p className="truncate text-xs text-muted-foreground">{sc.level} · {pat?.label}</p>{!briefOpen && <p className="rich mt-0.5 line-clamp-2 text-xs leading-5" dangerouslySetInnerHTML={{ __html: objectiveOf(sc.briefHtml) }} />}</div>

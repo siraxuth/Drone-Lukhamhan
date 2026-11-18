@@ -419,7 +419,8 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
     const hoopCrash = (firstFrame: number, line: number) => {
         const hoops = cfg.hoops ?? [];
         if (!flying || !hoops.length) return false;
-        const BAR = 4.5, BODY = 11, DEPTH = BAR / 2 + 5;
+        // The frame is 4.5 cm thick. Approximate the drone's swept body by a 14 cm sphere.
+        const BAR = 4.5, BODY = 14;
         for (let i = firstFrame; i < frames.length - 1; i++) {
             const a = frames[i], b = frames[i + 1];
             const len = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
@@ -430,13 +431,20 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                 for (const h of hoops) {
                     const nx = Math.sin(rad(h.yaw)), ny = -Math.cos(rad(h.yaw));
                     const along = (px - h.x) * nx + (py - h.y) * ny;
-                    if (Math.abs(along) > DEPTH) continue;
+                    if (Math.abs(along) > BODY + BAR / 2) continue;
                     const lat = (px - h.x) * -ny + (py - h.y) * nx;
                     const half = h.size / 2;
-                    const bottomEdge = Math.max(0, h.zMin - 12 - BAR), topEdge = h.zMax + 12 + BAR;
-                    const inGap = Math.abs(lat) <= half && pz >= h.zMin && pz <= h.zMax;
-                    const outer = Math.abs(lat) <= half + BAR + BODY;
-                    const hit = !inGap && outer && pz <= topEdge + 7 && (Math.abs(lat) > half || pz >= bottomEdge - 5);
+                    const bottomBar = Math.max(0, h.zMin - 12 - BAR / 2);
+                    const topBar = h.zMax + 12 + BAR / 2;
+                    const boxDistance = (side: number, zCenter: number, halfWidth: number, halfHeight: number) => Math.hypot(
+                        Math.max(0, Math.abs(along) - BAR / 2),
+                        Math.max(0, Math.abs(lat - side) - halfWidth),
+                        Math.max(0, Math.abs(pz - zCenter) - halfHeight),
+                    );
+                    const sideHeight = topBar + BAR / 2;
+                    const hit = [-1, 1].some(side => boxDistance(side * (half + BAR / 2), sideHeight / 2, BAR / 2, sideHeight / 2) <= BODY)
+                        || boxDistance(0, bottomBar, half + BAR, BAR / 2) <= BODY
+                        || boxDistance(0, topBar, half + BAR, BAR / 2) <= BODY;
                     if (!hit) continue;
                     // ตัดเส้นทางที่จุดชน
                     const tHit = a.t + (b.t - a.t) * u;

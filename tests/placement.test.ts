@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { buildScenarioConfig } from '../src/flight/config';
 import { inLaunchZone, LIGHTS_OFF } from '../src/flight/environment';
 import { forecastLaunch, recommendLaunch } from '../src/flight/placement';
+import { simulate } from '../src/flight/engine';
 
 const config = buildScenarioConfig({ pattern: 'blank', event: 'mission', objects: [] });
 const code = `void setup() { drone.onKey1(fly); }
@@ -40,4 +41,17 @@ describe('launch placement analysis', () => {
     assert.equal(result.pose.yaw, 90);
     assert.deepEqual(result.reached, ['checkpoint 1', 'hoop 1']);
   });
+});
+
+test('a drone whose body clips a hoop post crashes instead of passing through', () => {
+  const mission = buildScenarioConfig({ pattern: 'grid5', event: 'mission', start: { x: 0, y: 0, yaw: 0 }, objects: [
+    { type: 'hoop', id: 'hoop 1', x: 0, y: 3.5, yaw: 0, size: 1, zMin: 55, zMax: 150 },
+  ] });
+  const program = 'void setup(){drone.onKey1(fly);} void fly(){calibration(); delay(3000); take_off(); delay(3000); set_height(100); move_forward_cm(420);}';
+  const centered = simulate(program, mission, 0, 1, { difficulty: 'easy', lights: LIGHTS_OFF, launch: { x: 500, y: 500, yaw: 0 } });
+  const clipping = simulate(program, mission, 0, 1, { difficulty: 'easy', lights: LIGHTS_OFF, launch: { x: 538, y: 500, yaw: 0 } });
+  assert.ok(centered.visits.some(visit => visit.id === 'hoop 1'));
+  assert.ok(!centered.events.some(event => event.text.includes('ชนโครงห่วง')));
+  assert.ok(clipping.events.some(event => event.text.includes('ชนโครงห่วง')));
+  assert.ok(!clipping.visits.some(visit => visit.id === 'hoop 1'));
 });
