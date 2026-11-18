@@ -234,3 +234,33 @@ model DailyRun {
   @@id([userId, day, tier])
   @@index([day, tier, bestScore])
 }
+
+model BattleRoom {
+  code      String   @id
+  state     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  flights   BattleFlight[]
+}
+
+model BattleFlight {
+  id       String @id
+  roomCode String
+  room     BattleRoom @relation(fields: [roomCode], references: [code], onDelete: Cascade)
+  tape     Json
+  @@index([roomCode])
+}
+
+model BattleRating {
+  userId String @id
+  name   String
+  rating Int    @default(1000)
+  games  Int    @default(0)
+  @@index([rating])
+}
+
+model BattleRatingGame {
+  id        String   @id
+  players   Json
+  createdAt DateTime @default(now())
+}

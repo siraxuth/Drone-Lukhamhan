@@ -75,6 +75,7 @@ export type FlightConfig = {
     /** Payload prepared at the launch pad by the side-panel service control. */
     initialPayload?: Payload;
     servoBench?: boolean;
+    stopAtFinish?: boolean;
 };
 
 /** rpm = รอบใบพัด 0–1 (ช่วงสตาร์ทหมุนจากช้าไปเร็วตาม delay หลัง takeOff) */
@@ -1072,6 +1073,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
         }
         drainOpenGates(t, c.line);
         commandTimeline.push({ start: commandStart, end: t, line: c.line });
+        if (cfg.stopAtFinish && stopTime !== null) break;
     }
 
     if (!crashed && !timedOut && armedAt !== null) ev({ kind: "warn", text: "สั่ง takeOff แล้วแต่โปรแกรมจบก่อนโดรนจะยกตัว (ต้อง delay อย่างน้อย 3000 ms หลัง takeOff)" });
