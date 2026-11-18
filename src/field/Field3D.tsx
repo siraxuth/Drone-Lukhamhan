@@ -601,9 +601,12 @@ function HandDrone({ low }: { low: boolean }) {
 function GripHand() {
   const skin = <meshStandardMaterial color="#bd8b70" roughness={0.82} />;
   return <group position={[0.085, -0.045, 0]} rotation={[0, 0, -0.3]}>
-    <mesh position={[0.065, -0.07, 0]} rotation={[0, 0, -0.45]}><capsuleGeometry args={[0.027, 0.14, 6, 12]} />{skin}</mesh>
+    <group position={[0.038, -0.025, 0]} rotation={[0, 0, 0.55]}>
+      <mesh><latheGeometry args={[[new THREE.Vector2(0.025, 0.025), new THREE.Vector2(0.024, 0), new THREE.Vector2(0.029, -0.045), new THREE.Vector2(0.038, -0.12), new THREE.Vector2(0.043, -0.21)], 28]} />{skin}</mesh>
+      <mesh position={[0, -0.22, 0]}><cylinderGeometry args={[0.045, 0.048, 0.055, 28]} /><meshStandardMaterial color="#303b45" roughness={0.95} /></mesh>
+    </group>
     <mesh scale={[0.8, 0.42, 1]}><sphereGeometry args={[0.065, 20, 14]} />{skin}</mesh>
-    {[0, 1, 2, 3].map(i => <group key={i} position={[-0.03, 0, (i - 1.5) * 0.022]} rotation={[0, 0, -0.6]}>
+    {[0, 1, 2, 3].map(i => <group key={i} position={[-0.03, 0, (i - 1.5) * 0.022]} scale={[i === 3 ? 0.78 : i === 1 ? 1.07 : 1, 1, i === 3 ? 0.85 : 1]} rotation={[0, 0, -0.6]}>
       <mesh position={[-0.02, 0.008, 0]} rotation={[0, 0, Math.PI / 2]}><capsuleGeometry args={[0.0105, 0.027, 5, 10]} />{skin}</mesh>
       <group position={[-0.038, 0.018, 0]} rotation={[0, 0, -0.9]}>
         <mesh position={[-0.012, 0, 0]} rotation={[0, 0, Math.PI / 2]}><capsuleGeometry args={[0.0095, 0.019, 5, 10]} />{skin}</mesh>
@@ -819,7 +822,7 @@ function SpringLauncher({ loaded }: { loaded: boolean }) {
 
 function DroneDartRack({ inventory }: { inventory: { front: number; back: number } }) {
   return <group>
-    <RoundedBox position={[0, 0.048, 0]} args={[0.15, 0.012, 0.18]} radius={0.005} smoothness={3}><meshStandardMaterial color="#344954" metalness={0.45} roughness={0.45} /></RoundedBox>
+    <mesh position={[0, 0.048, 0]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[0.052, 0.004, 8, 32]} /><meshStandardMaterial color="#344954" metalness={0.45} roughness={0.45} /></mesh>
     {(['front', 'back'] as const).flatMap(side => [0, 1].map(i => <group key={`${side}-${i}`} position={[(i - 0.5) * 0.075, 0.077, side === 'front' ? 0.085 : -0.085]} rotation={[side === 'front' ? Math.PI / 2 : -Math.PI / 2, 0, 0]}>
       <SpringLauncher loaded={i < Math.min(2, inventory[side])} />
     </group>))}
@@ -846,38 +849,32 @@ function DroneNeedle() {
   );
 }
 
-/** บอลที่บรรจุอยู่บนตัวโดรน: ถังใสสองข้าง (ซ้าย = ประตู 1&4, ขวา = 2&3) ซ้อนบอลเป็นชั้น ชั้นละ 6 ลูก */
+/** Central top-loading hopper with a servo-operated outlet beneath the funnel. */
 function DroneBalls({ loaded }: { loaded: { L: number; R: number } }) {
-  const R = 0.01, gap = 0.022; // เส้นผ่านศูนย์กลาง 2 ซม.
-  const cells: Array<[number, number, number, number]> = []; // x,y,z,side
-  for (const [sd, sx] of [['L', 1], ['R', -1]] as const) { // โมเดลหันหน้า +Z: ซ้ายของโดรนคือ +X
-    const n = Math.min(loaded[sd], 20);
-    for (let i = 0; i < n; i++) {
-      const layer = Math.floor(i / 6), k = i % 6;
-      cells.push([sx * 0.046 + ((k % 2) - 0.5) * gap, 0.014 + layer * gap, (Math.floor(k / 2) - 1) * gap, sx]);
-    }
-  }
-  return (
-    <group>
-      {[1, -1].map((sx) => (
-        <mesh key={sx} position={[sx * 0.046, 0.045, 0]}>
-          <boxGeometry args={[0.05, 0.09, 0.072]} />
-          <meshStandardMaterial color="#bcd6ff" transparent opacity={0.16} depthWrite={false} />
-        </mesh>
-      ))}
-      {[-1, 1].map(side => <group key={side}>
-        <group position={[side * 0.078, 0, 0]}><PayloadServo /></group>
-        <mesh position={[side * 0.046, -0.004, 0]}><boxGeometry args={[0.053, 0.006, 0.075]} /><meshStandardMaterial color="#46515b" metalness={0.4} roughness={0.55} /></mesh>
-        {[-1, 1].map(end => <mesh key={end} position={[side * 0.046, 0.045, end * 0.037]}><boxGeometry args={[0.056, 0.095, 0.004]} /><meshStandardMaterial color="#64717b" metalness={0.5} roughness={0.5} /></mesh>)}
-      </group>)}
-      {cells.map(([x, y, z], i) => (
-        <mesh key={i} position={[x, y, z]}>
-          <sphereGeometry args={[R, 8, 6]} />
-          <meshBasicMaterial color="#ffd23f" />
-        </mesh>
-      ))}
+  const count = Math.min(40, loaded.L + loaded.R);
+  const previous = useRef(count);
+  const opening = useRef(0);
+  const gate = useRef<THREE.Group>(null);
+  useFrame((_, dt) => {
+    if (count < previous.current) opening.current = 0.8;
+    previous.current = count;
+    opening.current = Math.max(0, opening.current - dt);
+    if (gate.current) gate.current.rotation.y = THREE.MathUtils.damp(gate.current.rotation.y, opening.current > 0.25 ? 1.6 : 0, 14, dt);
+  });
+  const profile = useMemo(() => [new THREE.Vector2(0.014, -0.045), new THREE.Vector2(0.014, -0.028), new THREE.Vector2(0.05, 0.015), new THREE.Vector2(0.05, 0.13), new THREE.Vector2(0.047, 0.13), new THREE.Vector2(0.047, 0.017), new THREE.Vector2(0.011, -0.027), new THREE.Vector2(0.011, -0.045)], []);
+  return <group position={[0, 0.025, 0]}>
+    <mesh><latheGeometry args={[profile, 40]} /><meshStandardMaterial color="#b8d4dd" transparent opacity={0.28} depthWrite={false} roughness={0.22} side={THREE.DoubleSide} /></mesh>
+    {[0.015, 0.13].map(y => <mesh key={y} position={[0, y, 0]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[0.049, 0.003, 8, 40]} /><meshStandardMaterial color="#526772" metalness={0.45} roughness={0.45} /></mesh>)}
+    {Array.from({ length: count }, (_, i) => {
+      const slot = i % 7, layer = Math.floor(i / 7), angle = slot * Math.PI / 3;
+      return <mesh key={i} position={[slot === 6 ? 0 : Math.cos(angle) * 0.026, 0.028 + layer * 0.02, slot === 6 ? 0 : Math.sin(angle) * 0.026]}><sphereGeometry args={[0.0095, 12, 10]} /><meshStandardMaterial color="#f1cd44" roughness={0.65} /></mesh>;
+    })}
+    <group position={[0.028, -0.043, 0]} rotation={[0, 0, Math.PI / 2]}><PayloadServo /></group>
+    <group ref={gate} position={[0.028, -0.047, 0]}>
+      <mesh position={[-0.014, 0, 0]} rotation={[0, 0, Math.PI / 2]}><capsuleGeometry args={[0.003, 0.024, 4, 10]} /><meshStandardMaterial color="#d0d8da" metalness={0.6} roughness={0.35} /></mesh>
+      <mesh position={[-0.028, 0, 0]}><cylinderGeometry args={[0.016, 0.016, 0.003, 28]} /><meshStandardMaterial color="#526772" metalness={0.5} roughness={0.4} /></mesh>
     </group>
-  );
+  </group>;
 }
 
 /** เอฟเฟกต์ poshold: วงคลื่นแผ่ออกจากโดรน 2 ชั้น แล้วจางหาย (โดรนล็อกตำแหน่งนิ่ง) */
@@ -1018,16 +1015,8 @@ function DartModel() {
       </mesh>
       <mesh position={[0, -0.09, 0]}>
         <cylinderGeometry args={[0.012, 0.011, 0.025, 10]} />
-        <meshStandardMaterial color="#f59e0b" metalness={0.55} roughness={0.3} />
+        <meshStandardMaterial color="#526772" metalness={0.55} roughness={0.3} />
       </mesh>
-      {[0, 1, 2].map((i) => (
-        <group key={i} rotation={[0, i * Math.PI * 2 / 3, 0]}>
-          <mesh position={[0, -0.082, 0.024]}>
-            <boxGeometry args={[0.004, 0.085, 0.055]} />
-            <meshStandardMaterial color="#f59e0b" metalness={0.2} roughness={0.48} side={THREE.DoubleSide} />
-          </mesh>
-        </group>
-      ))}
     </group>
   );
 }
