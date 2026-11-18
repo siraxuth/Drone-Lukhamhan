@@ -490,7 +490,7 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
 
 
   return (
-    <main className="flex h-svh w-full min-w-0 flex-col overflow-hidden pt-[4.75rem]">
+    <main className="flex min-h-svh w-full min-w-0 flex-col pt-[4.75rem] xl:h-svh xl:overflow-hidden">
       <header className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-3 py-2 sm:flex sm:flex-wrap sm:gap-3 sm:px-6">
         <div className="min-w-0 flex-1"><h1 className="text-base font-extrabold sm:text-2xl">สนามฝึกการบินโดรน</h1><p className="hidden text-sm text-muted-foreground lg:block">วางแผนคำสั่ง ดูเส้นทางจริง แล้วเรียนรู้จากสิ่งที่คลาดเคลื่อน</p></div>
         {qs.get('lesson') !== '1' && <Button variant="outline" className="min-h-10 px-2 sm:px-4" data-sim-guide aria-label="วิธีใช้"><CircleHelp className="size-4" /><span className="hidden sm:inline">วิธีใช้</span></Button>}
@@ -498,7 +498,7 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
         <span role="status" className="col-span-2 min-w-0 text-xs text-muted-foreground sm:order-none sm:w-auto">{saveStatus === 'saving' ? 'กำลังบันทึก…' : saveStatus === 'saved' ? signedIn ? 'บันทึกในบัญชีแล้ว' : 'บันทึกในเครื่องแล้ว' : saveStatus === 'error' ? 'บันทึกไม่สำเร็จ กดเซฟอีกครั้ง' : ''}</span>
         <Button className="col-start-3 row-start-2 min-h-10 whitespace-nowrap" data-tour="sim-pick" onClick={() => setPanel('pick')}><BookOpen className="size-4" /> เลือกภารกิจ</Button>
       </header>
-      <div className="grid w-full min-h-0 min-w-0 flex-1 auto-rows-max grid-cols-1 gap-3 overflow-y-auto p-3 sm:p-4 xl:auto-rows-[minmax(0,1fr)] xl:overflow-hidden xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="grid w-full min-w-0 flex-1 auto-rows-max grid-cols-1 gap-3 p-3 sm:p-4 xl:min-h-0 xl:auto-rows-[minmax(0,1fr)] xl:overflow-hidden xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <section data-tour="sim-stage" aria-label="สนามจำลอง" className="order-1 grid min-h-0 min-w-0 grid-cols-1 content-start gap-2 xl:order-2 xl:grid-rows-[auto_auto_auto] xl:overflow-y-auto">
           <div className="min-w-0 squircle-2xl border border-line bg-surface">
             <div className="flex min-w-0 items-center gap-2 px-3 py-2">
@@ -510,7 +510,7 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
             </div>
             <div id="sim-mission-brief" inert={!briefOpen} className={`grid transition-[grid-template-rows] duration-200 motion-reduce:transition-none ${briefOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
               <div className="min-h-0 overflow-hidden">
-                <div className="rich max-h-[25svh] overflow-y-auto border-t border-line px-3 py-3 text-sm leading-6" dangerouslySetInnerHTML={{ __html: sc.briefHtml }} />
+                <div className="rich border-t border-line px-3 py-3 text-sm leading-6 xl:max-h-[25svh] xl:overflow-y-auto" dangerouslySetInnerHTML={{ __html: sc.briefHtml }} />
                 {sc.config.objects.filter((object) => object.type === 'waypoint').length > 1 && <p className="border-t border-line px-3 py-2 text-xs text-muted-foreground">เลขบนจุดใช้ดูตำแหน่งในสนาม เลือกผ่านจุดไหนก่อนก็ได้ ขอให้ผ่านครบตามโจทย์</p>}
               </div>
             </div>
