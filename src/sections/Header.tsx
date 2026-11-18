@@ -34,6 +34,7 @@ const links: readonly NavLink[] = [
   { href: '/learn', label: 'คอร์สเรียน', children: courseSets },
   { href: '/#showcase', label: 'ผลงานที่ผ่านมา', spy: 'showcase' },
   { href: '/simulator', label: 'ฝึกเขียนโค้ด' },
+  { href: '/battle', label: 'Battle' },
   { href: '/field', label: 'จำลองสนามแข่งขัน' },
 ];
 
@@ -108,7 +109,7 @@ export function Header({ frame = false, autoHide = false }: { frame?: boolean; a
       <nav
         data-tour="menu"
         aria-label="เมนูหลัก"
-        className="pointer-events-auto relative mx-auto flex h-14 w-[calc(100%-1rem)] items-center justify-between gap-3 border border-t-0 border-line bg-canvas px-4 squircle-b-notch sm:mt-2 sm:w-fit sm:min-w-[22rem] sm:max-w-[calc(100%-4rem)] lg:gap-8 lg:px-6"
+        className="pointer-events-auto relative mx-auto flex h-14 w-[calc(100%-1rem)] items-center justify-between gap-3 border border-t-0 border-line bg-canvas px-4 squircle-b-notch sm:mt-2 sm:w-fit sm:min-w-[22rem] sm:max-w-[calc(100%-4rem)] lg:gap-3 lg:px-3 xl:gap-6 xl:px-5"
       >
         <span aria-hidden className="pointer-events-none absolute -inset-x-px -top-2 hidden h-[9px] bg-canvas sm:block" />
         <span aria-hidden className="notch-fillet notch-fillet-l" />
@@ -123,7 +124,7 @@ export function Header({ frame = false, autoHide = false }: { frame?: boolean; a
           />
           {links.map((l) => {
             const active = isActive(l);
-            const tone = `relative flex min-h-11 items-center whitespace-nowrap squircle-xl px-3 text-base transition-colors hover:text-foreground xl:px-4 ${active ? 'bg-brand-blue/10 font-semibold text-brand-blue' : 'text-muted-foreground'}`;
+            const tone = `relative flex min-h-11 items-center whitespace-nowrap squircle-xl px-2 text-sm transition-colors hover:text-foreground xl:px-3 xl:text-base ${active ? 'bg-brand-blue/10 font-semibold text-brand-blue' : 'text-muted-foreground'}`;
             if (l.children) {
               return (
                 <li key={l.href} data-menu className="relative" onMouseEnter={(e) => { point(e.currentTarget); setMenu(l.href); }} onMouseLeave={() => setMenu(null)} onFocus={(e) => point(e.currentTarget)}>

@@ -40,6 +40,7 @@ const DECL = new RegExp(`^${TYPES}\\s+(\\w+)\\s*(?:=\\s*([\\s\\S]+))?$`);
 const FUNC = /^(?:static\s+)?void\s+(\w+)\s*\(([^)]*)\)$/;
 const MAX_CALLS = 4000;
 const MAX_DEPTH = 24;
+const MAX_PARSE_STEPS = 40_000;
 /** loop() วนซ้ำสูงสุดกี่รอบในตัวจำลอง (โดรนจริงวนไม่รู้จบ) */
 export const LOOP_REPEATS = 8;
 
@@ -48,6 +49,7 @@ type Tok = { kind: "stmt" | "open" | "close"; text: string; line: number };
 /** คำนวณนิพจน์ตัวเลข (+ - * / % วงเล็บ ตัวแปร) แบบไม่ใช้ eval · คืน NaN ถ้าอ่านไม่ได้ */
 function evalExpr(src: string, env: Map<string, number>): number {
     const s = src.replace(/\s+/g, "");
+    if (s.length > 2000) return NaN;
     if (s === "true") return 1;
     if (s === "false") return 0;
     let i = 0;
@@ -282,12 +284,20 @@ export function parseBlockProgram(code: string): { program: BlockProgram; skippe
 /** สร้างต้นไม้จากโทเคน */
 function buildTree(toks: Tok[], errors: SimEvent[]): Node[] {
     let i = 0;
-    const block = (top: boolean): Node[] => {
+    const block = (depth: number): Node[] => {
+        const top = depth === 0;
         const out: Node[] = [];
         while (i < toks.length) {
             const t = toks[i++];
             if (t.kind === "stmt") out.push({ kind: "stmt", text: t.text, line: t.line });
-            else if (t.kind === "open") out.push({ kind: "block", header: t.text, body: block(false), line: t.line });
+            else if (t.kind === "open") {
+                if (depth >= MAX_DEPTH) {
+                    errors.push({ t: 0, kind: "error", line: t.line, text: `บรรทัด ${t.line}: บล็อกซ้อนลึกเกินไป` });
+                    i = toks.length;
+                    return out;
+                }
+                out.push({ kind: "block", header: t.text, body: block(depth + 1), line: t.line });
+            }
             else {
                 if (top) errors.push({ t: 0, kind: "error", line: t.line, text: `บรรทัด ${t.line}: มีปีกกาปิด } เกินมา` });
                 else return out;
@@ -296,7 +306,7 @@ function buildTree(toks: Tok[], errors: SimEvent[]): Node[] {
         if (!top) errors.push({ t: 0, kind: "error", line: toks[toks.length - 1]?.line, text: "ปีกกาเปิด { ไม่มีปีกกาปิด } คู่กัน" });
         return out;
     };
-    return block(true);
+    return block(0);
 }
 
 /**
@@ -347,14 +357,22 @@ export function parse(code: string, style: Style = "any", selectedKey?: number):
 
     let halted = false;
     let budget = MAX_CALLS;
+    let steps = MAX_PARSE_STEPS;
     const reported = new Set<string>();
     const once = (line: number, text: string) => { const k = `${line}|${text}`; if (!reported.has(k)) { reported.add(k); err(line, text); } };
+
+    const stepBudget = (line: number) => {
+        if (--steps >= 0) return true;
+        if (!halted) once(line, "โค้ดใช้ขั้นตอนมากเกินไป ลดจำนวนรอบของลูปหรือการเรียกซ้อน");
+        halted = true;
+        return false;
+    };
 
     /** รันบล็อกคำสั่ง (คลี่เป็น calls) ด้วยตัวแปรเฉพาะที่ env */
     const run = (body: Node[], env: Map<string, number>, depth: number): void => {
         for (let index = 0; index < body.length; index++) {
             const n = body[index];
-            if (halted || budget <= 0) return;
+            if (halted || budget <= 0 || !stepBudget(n.line)) return;
             if (n.kind === "block") {
                 const h = n.header;
                 const condition = /^if\s*\(([\s\S]*)\)$/.exec(h);
@@ -408,6 +426,7 @@ export function parse(code: string, style: Style = "any", selectedKey?: number):
         if (Number.isNaN(cur) || stepVar !== v || cond[1] !== v || Number.isNaN(amount) || amount === 0) { once(n.line, `ขอบเขตของ for ต้องเป็นตัวเลขหรือค่าคงที่ที่ประกาศไว้ และเพิ่ม/ลดตัวนับตัวเดียวกัน`); return; }
         const delta = op === "++" ? 1 : op === "--" ? -1 : op === "+=" ? amount : -amount;
         for (let k = 0; k < 500; k++) {
+            if (!stepBudget(n.line)) return;
             local.set(v, cur);
             const bound = evalExpr(cond[3], local);
             if (Number.isNaN(bound)) { once(n.line, `ค่าขอบเขต "${cond[3]}" ใน for อ่านไม่ได้`); return; }

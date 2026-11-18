@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { Blocks, BookOpen, Braces, ChevronDown, CircleHelp, Plus, RotateCcw, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -531,6 +532,7 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
       <header className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-3 py-2 sm:flex sm:flex-wrap sm:gap-3 sm:px-6">
         <div className="min-w-0 flex-1"><h1 className="text-base font-extrabold sm:text-2xl">สนามฝึกการบินโดรน</h1><p className="hidden text-sm text-muted-foreground lg:block">วางแผนคำสั่ง ดูเส้นทางจริง แล้วเรียนรู้จากสิ่งที่คลาดเคลื่อน</p></div>
         {qs.get('lesson') !== '1' && <Button variant="outline" className="min-h-10 px-2 sm:px-4" data-sim-guide aria-label="วิธีใช้"><CircleHelp className="size-4" /><span className="hidden sm:inline">วิธีใช้</span></Button>}
+        <Link href="/battle" className="inline-flex min-h-10 items-center squircle-xl border border-line px-3 text-sm font-semibold hover:bg-surface-2">Battle</Link>
         <Button type="button" variant="outline" className="min-h-10 px-2 sm:px-4" disabled={!workspaceReady || saveStatus === 'saving'} onClick={saveNow}><Save className="size-4" />{saveStatus === 'saving' ? 'กำลังเซฟ' : 'เซฟ'}</Button>
         <span role="status" className="col-span-2 min-w-0 text-xs text-muted-foreground sm:order-none sm:w-auto">{saveStatus === 'saving' ? 'กำลังบันทึก…' : saveStatus === 'saved' ? signedIn ? 'บันทึกในบัญชีแล้ว' : 'บันทึกในเครื่องแล้ว' : saveStatus === 'error' ? 'บันทึกไม่สำเร็จ กดเซฟอีกครั้ง' : ''}</span>
         <Button className="col-start-3 row-start-2 min-h-10 whitespace-nowrap" data-tour="sim-pick" onClick={() => setPanel('pick')}><BookOpen className="size-4" /> เลือกภารกิจ</Button>
