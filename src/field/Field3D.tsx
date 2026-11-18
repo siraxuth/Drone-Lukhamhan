@@ -3,7 +3,7 @@
 import { DRONE_MODEL } from '@/lib/drone-assets';
 
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
-import { OrbitControls, useGLTF, useTexture } from '@react-three/drei';
+import { OrbitControls, RoundedBox, useGLTF, useTexture } from '@react-three/drei';
 import { baseAt } from '@/lib/scenarios';
 import { PlainMat, SceneLayer3D, type SceneSpec } from './SceneObjects';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -593,7 +593,34 @@ function HandDrone({ low }: { low: boolean }) {
     group.current.quaternion.copy(camera.quaternion);
   });
   return <group ref={group}>
-    <group rotation={[0.45, -0.4, -0.2]} scale={0.6}><DroneModel low={low} /></group>
+    <group rotation={[0.45, -0.4, -0.2]} scale={0.6}><DroneModel low={low} /><GripHand /></group>
+  </group>;
+}
+
+/** Palm, thumb and articulated curled fingers wrapping the battery housing. */
+function GripHand() {
+  const skin = <meshStandardMaterial color="#bd8b70" roughness={0.82} />;
+  return <group position={[0.085, -0.045, 0]} rotation={[0, 0, -0.3]}>
+    <mesh position={[0.065, -0.07, 0]} rotation={[0, 0, -0.45]}><capsuleGeometry args={[0.027, 0.14, 6, 12]} />{skin}</mesh>
+    <mesh scale={[0.8, 0.42, 1]}><sphereGeometry args={[0.065, 20, 14]} />{skin}</mesh>
+    {[0, 1, 2, 3].map(i => <group key={i} position={[-0.03, 0, (i - 1.5) * 0.022]} rotation={[0, 0, -0.6]}>
+      <mesh position={[-0.02, 0.008, 0]} rotation={[0, 0, Math.PI / 2]}><capsuleGeometry args={[0.0105, 0.027, 5, 10]} />{skin}</mesh>
+      <group position={[-0.038, 0.018, 0]} rotation={[0, 0, -0.9]}>
+        <mesh position={[-0.012, 0, 0]} rotation={[0, 0, Math.PI / 2]}><capsuleGeometry args={[0.0095, 0.019, 5, 10]} />{skin}</mesh>
+        <mesh position={[-0.025, 0.008, 0]} rotation={[0, 0, -0.4]}><capsuleGeometry args={[0.0085, 0.014, 5, 10]} />{skin}</mesh>
+        <mesh position={[-0.026, 0.016, 0.006]} scale={[0.65, 1, 0.25]}><sphereGeometry args={[0.008, 10, 8]} /><meshStandardMaterial color="#d7ad99" roughness={0.48} /></mesh>
+      </group>
+    </group>)}
+    <mesh position={[-0.012, 0.033, 0.049]} rotation={[0.6, 0, -0.8]}><capsuleGeometry args={[0.014, 0.042, 6, 12]} />{skin}</mesh>
+  </group>;
+}
+
+function PayloadServo() {
+  const wires = useMemo(() => ['#543b29', '#d34a36', '#e6aa35'].map((color, i) => ({ color, curve: new THREE.CatmullRomCurve3([new THREE.Vector3(0.014, 0, i * 0.003), new THREE.Vector3(0.035, 0.012, 0.025), new THREE.Vector3(0.025, 0.025, 0.055), new THREE.Vector3(0, 0.015, 0.07)]) })), []);
+  return <group>
+    <mesh><boxGeometry args={[0.024, 0.025, 0.013]} /><meshStandardMaterial color="#254871" roughness={0.4} /></mesh>
+    <mesh position={[0, 0.016, 0]}><boxGeometry args={[0.034, 0.004, 0.006]} /><meshStandardMaterial color="#e0ded5" /></mesh>
+    {wires.map(w => <mesh key={w.color}><tubeGeometry args={[w.curve, 12, 0.0012, 5, false]} /><meshStandardMaterial color={w.color} roughness={0.7} /></mesh>)}
   </group>;
 }
 
@@ -621,14 +648,7 @@ function RescueDrone({ low, start, walker, view }: { low: boolean; start: LivePo
   return <group ref={carrier} position={origin} quaternion={yaw}>
     <group ref={grip} scale={1.4}>
       <DroneModel low={low} />
-      <mesh position={[0.14, -0.055, 0.035]} rotation={[0, 0, -0.5]}>
-        <capsuleGeometry args={[0.028, 0.18, 4, 8]} />
-        <meshStandardMaterial color="#8794a2" roughness={0.85} />
-      </mesh>
-      {[-1, 1].map(side => <mesh key={side} position={[0.055, 0.045, side * 0.052]} rotation={[0, 0, Math.PI / 2]}>
-        <capsuleGeometry args={[0.012, 0.07, 4, 8]} />
-        <meshStandardMaterial color="#a9b4bf" roughness={0.82} />
-      </mesh>)}
+      <GripHand />
     </group>
   </group>;
 }
@@ -640,7 +660,7 @@ function groundY(x: number, y: number, platforms: boolean) {
   return 0.016;
 }
 
-function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, poseRef, platforms, loaded, dartInventory, needle }: { drone: DroneState; onDrone: Props['onDrone']; onRotate?: (yaw: number) => void; setDragging: (v: boolean) => void; low: boolean; live: boolean; placement?: boolean; poseRef?: React.RefObject<LivePose>; platforms: boolean; loaded: { L: number; R: number }; dartInventory: { front: number; back: number }; needle: boolean }) {
+function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, poseRef, platforms, loaded, dartInventory, dartRack, needle }: { drone: DroneState; onDrone: Props['onDrone']; onRotate?: (yaw: number) => void; setDragging: (v: boolean) => void; low: boolean; live: boolean; placement?: boolean; poseRef?: React.RefObject<LivePose>; platforms: boolean; loaded: { L: number; R: number }; dartInventory: { front: number; back: number }; dartRack: boolean; needle: boolean }) {
   const dragging = useRef(false);
   const rotating = useRef(false);
   const lim = placement ? 5.8 : FIELD.size / 2 - 0.15;
@@ -729,7 +749,7 @@ function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, po
         <group ref={tiltGroup}>
           <DroneModel low={low} propsRef={propNodes} />
           <DroneBalls loaded={loaded} />
-          {dartInventory.front + dartInventory.back > 0 && <DroneDartRack inventory={dartInventory} />}
+          {dartRack && <DroneDartRack inventory={dartInventory} />}
           {needle && <DroneNeedle />}
         </group>
       </group>
@@ -757,22 +777,53 @@ function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, po
 }
 
 /** ลูกดอกสองคู่: หัวโดรนหัน +Z และท้ายโดรนหัน -Z */
-function DroneDartRack({ inventory }: { inventory: { front: number; back: number } }) {
-  return (
-    <group>
-      <mesh position={[0, 0.048, 0]}>
-        <boxGeometry args={[0.16, 0.014, 0.2]} />
-        <meshStandardMaterial color="#151e29" metalness={0.8} roughness={0.25} />
-      </mesh>
-      {(['front', 'back'] as const).flatMap((side) =>
-        Array.from({ length: Math.min(2, inventory[side]) }, (_, i) => (
-          <group key={`${side}-${i}`} position={[(i - 0.5) * 0.07, 0.065, side === 'front' ? 0.085 : -0.085]} rotation={[side === 'front' ? Math.PI / 2 : -Math.PI / 2, 0, 0]} scale={0.72}>
-            <DartModel />
-          </group>
-        ))
-      )}
+/** Toy suction-dart cassette. Local +Y points out of the barrel. */
+function SpringLauncher({ loaded }: { loaded: boolean }) {
+  const spring = useRef<THREE.Group>(null);
+  const piston = useRef<THREE.Mesh>(null);
+  const latch = useRef<THREE.Group>(null);
+  const travel = useRef(loaded ? 0 : 1);
+  const coil = useMemo(() => new THREE.CatmullRomCurve3(Array.from({ length: 145 }, (_, i) => {
+    const t = i / 144, angle = t * Math.PI * 16;
+    return new THREE.Vector3(Math.cos(angle) * 0.009, t * 0.065, Math.sin(angle) * 0.009);
+  })), []);
+  useFrame((_, dt) => {
+    travel.current = THREE.MathUtils.damp(travel.current, loaded ? 0 : 1, 22, dt);
+    const t = travel.current;
+    if (spring.current) spring.current.scale.y = 0.32 + t * 0.68;
+    if (piston.current) piston.current.position.y = -0.071 + 0.065 * (0.32 + t * 0.68);
+    if (latch.current) latch.current.rotation.z = -t * 0.95;
+  });
+  return <group>
+    {/* Transparent cylindrical sleeve exposes the coil and captive pusher. */}
+    <mesh><cylinderGeometry args={[0.017, 0.017, 0.16, 24, 1, true]} /><meshStandardMaterial color="#a7c7d4" transparent opacity={0.23} depthWrite={false} roughness={0.18} side={THREE.DoubleSide} /></mesh>
+    {[-0.073, 0.066].map(y => <group key={y} position={[0, y, 0]}>
+      <mesh rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[0.017, 0.003, 8, 24]} /><meshStandardMaterial color="#344954" metalness={0.45} roughness={0.4} /></mesh>
+    </group>)}
+    <mesh position={[0, -0.079, 0]}><cylinderGeometry args={[0.018, 0.018, 0.008, 24]} /><meshStandardMaterial color="#344954" metalness={0.4} roughness={0.45} /></mesh>
+    <mesh position={[0, -0.04, 0]}><cylinderGeometry args={[0.0025, 0.0025, 0.07, 10]} /><meshStandardMaterial color="#c1cbd0" metalness={0.8} roughness={0.3} /></mesh>
+    <group ref={spring} position={[0, -0.071, 0]} scale={[1, loaded ? 0.32 : 1, 1]}><mesh><tubeGeometry args={[coil, 144, 0.0014, 6, false]} /><meshStandardMaterial color="#b6c0c6" metalness={0.85} roughness={0.26} /></mesh></group>
+    <mesh ref={piston} position={[0, loaded ? -0.05 : -0.006, 0]}><cylinderGeometry args={[0.013, 0.013, 0.006, 20]} /><meshStandardMaterial color="#e98745" roughness={0.7} /></mesh>
+    <group position={[0.026, -0.048, 0]}>
+      <RoundedBox args={[0.022, 0.028, 0.019]} radius={0.004} smoothness={3}><meshStandardMaterial color="#344954" roughness={0.45} /></RoundedBox>
+      <mesh position={[0, 0, 0.012]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.006, 0.006, 0.006, 16]} /><meshStandardMaterial color="#d3d9da" metalness={0.65} roughness={0.3} /></mesh>
+      <group ref={latch} position={[0, 0, 0.016]}>
+        <RoundedBox position={[-0.012, 0, 0]} args={[0.03, 0.006, 0.005]} radius={0.002} smoothness={2}><meshStandardMaterial color="#e98745" roughness={0.5} /></RoundedBox>
+        <mesh position={[-0.025, -0.003, -0.008]}><capsuleGeometry args={[0.0025, 0.013, 4, 8]} /><meshStandardMaterial color="#c1cbd0" metalness={0.7} roughness={0.3} /></mesh>
+      </group>
+      {['#543b29', '#d34a36', '#e6aa35'].map((color, i) => <mesh key={color} position={[0.008 + i * 0.003, -0.023, 0]} rotation={[0, 0, -0.35]}><capsuleGeometry args={[0.0012, 0.035, 3, 6]} /><meshStandardMaterial color={color} roughness={0.8} /></mesh>)}
     </group>
-  );
+    {loaded && <group position={[0, 0.012, 0]} scale={0.48}><DartModel /></group>}
+  </group>;
+}
+
+function DroneDartRack({ inventory }: { inventory: { front: number; back: number } }) {
+  return <group>
+    <RoundedBox position={[0, 0.048, 0]} args={[0.15, 0.012, 0.18]} radius={0.005} smoothness={3}><meshStandardMaterial color="#344954" metalness={0.45} roughness={0.45} /></RoundedBox>
+    {(['front', 'back'] as const).flatMap(side => [0, 1].map(i => <group key={`${side}-${i}`} position={[(i - 0.5) * 0.075, 0.077, side === 'front' ? 0.085 : -0.085]} rotation={[side === 'front' ? Math.PI / 2 : -Math.PI / 2, 0, 0]}>
+      <SpringLauncher loaded={i < Math.min(2, inventory[side])} />
+    </group>))}
+  </group>;
 }
 
 /** เข็มปลายโดรนยื่นถึงระยะตรวจชน 12 ซม. จากกึ่งกลางลำตัว */
@@ -814,6 +865,11 @@ function DroneBalls({ loaded }: { loaded: { L: number; R: number } }) {
           <meshStandardMaterial color="#bcd6ff" transparent opacity={0.16} depthWrite={false} />
         </mesh>
       ))}
+      {[-1, 1].map(side => <group key={side}>
+        <group position={[side * 0.078, 0, 0]}><PayloadServo /></group>
+        <mesh position={[side * 0.046, -0.004, 0]}><boxGeometry args={[0.053, 0.006, 0.075]} /><meshStandardMaterial color="#46515b" metalness={0.4} roughness={0.55} /></mesh>
+        {[-1, 1].map(end => <mesh key={end} position={[side * 0.046, 0.045, end * 0.037]}><boxGeometry args={[0.056, 0.095, 0.004]} /><meshStandardMaterial color="#64717b" metalness={0.5} roughness={0.5} /></mesh>)}
+      </group>)}
       {cells.map(([x, y, z], i) => (
         <mesh key={i} position={[x, y, z]}>
           <sphereGeometry args={[R, 8, 6]} />
@@ -951,9 +1007,14 @@ function DartModel() {
         <cylinderGeometry args={[0.012, 0.012, 0.025, 10]} />
         <meshStandardMaterial color="#dbe7ee" metalness={0.9} roughness={0.18} />
       </mesh>
-      <mesh position={[0, 0.118, 0]}>
-        <coneGeometry args={[0.012, 0.044, 10]} />
-        <meshStandardMaterial color="#f4f8fa" metalness={0.95} roughness={0.12} />
+      {/* Open rubber cup: concave inner wall and a rounded sealing lip. */}
+      <mesh position={[0, 0.098, 0]}>
+        <latheGeometry args={[[new THREE.Vector2(0.008, 0), new THREE.Vector2(0.012, 0.008), new THREE.Vector2(0.027, 0.027), new THREE.Vector2(0.029, 0.032), new THREE.Vector2(0.025, 0.032), new THREE.Vector2(0.022, 0.025), new THREE.Vector2(0.008, 0.008)], 24]} />
+        <meshStandardMaterial color="#e96736" roughness={0.85} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[0, 0.13, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.027, 0.002, 6, 24]} />
+        <meshStandardMaterial color="#ed7849" roughness={0.8} />
       </mesh>
       <mesh position={[0, -0.09, 0]}>
         <cylinderGeometry args={[0.012, 0.011, 0.025, 10]} />
@@ -1129,7 +1190,7 @@ export default function Field3D({ event, drone, onDrone, view, shot, low, live =
       {!placement && !custom && event.field.platforms && <Platforms />}
       {!placement && !custom && event.field.balloons && <Balloons popped={marks.popped} />}
       {!placement && !custom && event.field.targets && (<><Targets /><ShootZones drone={drone} /></>)}
-      {!carryingDrone && !rescuePose && <Drone drone={drone} onDrone={onDrone} onRotate={placement?.onRotate} setDragging={setDragging} low={low} live={live && !placement} placement={!!placement} poseRef={poseRef} platforms={event.field.platforms && !custom} loaded={loaded} dartInventory={hasTargets ? dartInventory : { front: 0, back: 0 }} needle={hasBalloons} />}
+      {!carryingDrone && !rescuePose && <Drone drone={drone} onDrone={onDrone} onRotate={placement?.onRotate} setDragging={setDragging} low={low} live={live && !placement} placement={!!placement} poseRef={poseRef} platforms={event.field.platforms && !custom} loaded={loaded} dartInventory={hasTargets ? dartInventory : { front: 0, back: 0 }} dartRack={hasTargets} needle={hasBalloons} />}
       {rescuePose && walkPoseRef && <RescueDrone low={low} start={rescuePose} walker={walkPoseRef} view={view} />}
       {carryingDrone && view === 'walk' && <HandDrone low={low} />}
       {placement && <PlacementMarkers center={placement.center} target={placement.target} drone={drone} aligned={placement.aligned} onRotate={placement.onRotate} scene={scene} />}
