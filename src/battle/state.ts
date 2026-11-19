@@ -52,9 +52,11 @@ export function advance(room: Room, now: number, make: NextMatch) {
       for (const seat of match.seats) if (seat.opensAt === null) lockSeat(seat, opens);
     }
   } else {
+    const waitingForFixedReady = room.settings.clock === 'fixed'
+      && match.seats.some(seat => memberFor(seat).stoppedAt === null);
     for (let i = 0; i < match.seats.length; i++) {
       const seat = match.seats[i], previous = match.seats[i - 1], stopped = memberFor(seat).stoppedAt;
-      if (seat.opensAt === null && stopped !== null && (!previous || (previous.endsAt !== null && previous.endsAt <= now))) {
+      if (!waitingForFixedReady && seat.opensAt === null && stopped !== null && (!previous || (previous.endsAt !== null && previous.endsAt <= now))) {
         if (i === 0 && match.wheelAt === null && match.seats.length > 1) {
           match.wheelAt = now;
           dirty = true;

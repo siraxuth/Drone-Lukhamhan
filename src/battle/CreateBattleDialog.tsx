@@ -22,6 +22,7 @@ import { BattleField, useTapeTime } from './BattleField';
 import { battleApi, battleRequest, flightLabel } from './client';
 import { flightWindow, makeTape } from './flight';
 import { ScenarioImage, ScenarioPicker } from './ScenarioPicker';
+import { MAX_PRACTICES } from './rules';
 import { CLOCKS, FORMATS, type Settings, type Tape } from './types';
 
 const defaults: Settings = {
@@ -82,7 +83,7 @@ function FlightComparison({ scenario, settings }: { scenario: ScenarioView; sett
     </FieldGroup>
     <div className="grid min-w-0 gap-3 md:grid-cols-2">
       {[settings, other].map((option, index) => <div key={index} className="grid min-w-0 gap-2">
-        <BattleField flight={flightWindow(tapes[index], Math.min(offset, tapes[index].duration), false)} scenario={scenario} settings={option}
+        <BattleField flight={flightWindow(tapes[index], Math.min(offset, tapes[index].duration), false)} scenario={scenario} settings={option} playing={offset < tapes[index].duration}
           title={`${index ? 'ตัวเลือกเปรียบเทียบ' : 'ค่าที่จะใช้แข่ง'} · ${battleLevels[option.difficulty]}`} />
         <FlightMetrics tape={tapes[index]} />
       </div>)}
@@ -112,8 +113,13 @@ export function CreateBattleDialog({ open, onOpenChange, tab, onTabChange, scena
   async function create(event: FormEvent) {
     event.preventDefault();
     if (!scenario || pending) return;
-    if (!name.trim() || (settings.clock !== 'open' && (settings.minutes < 1 || settings.minutes > maximum))) {
+    if (!name.trim() || (settings.clock !== 'open' && (!Number.isInteger(settings.minutes) || settings.minutes < 1 || settings.minutes > maximum))) {
       setError('ใส่ชื่อและตรวจเวลาเขียนโค้ดอีกครั้ง');
+      onTabChange('rules');
+      return;
+    }
+    if (!Number.isInteger(settings.practices) || settings.practices < 0 || settings.practices > MAX_PRACTICES) {
+      setError('กำหนดรอบซ้อมได้ตั้งแต่ 0 ถึง 1,000,000 รอบ');
       onTabChange('rules');
       return;
     }
@@ -123,7 +129,7 @@ export function CreateBattleDialog({ open, onOpenChange, tab, onTabChange, scena
       const roomSettings = settings.clock === 'open' ? { ...settings, minutes: defaults.minutes } : settings;
       const result = await battleRequest<{ code: string }>(battleApi, { name, role, scenario: slug, listed, settings: roomSettings });
       onOpenChange(false);
-      router.push(`/battle/${result.code}`);
+      router.push(`/battle/${result.code}?role=join`);
     } catch (error) {
       setError(error instanceof Error ? error.message : 'สร้างห้องไม่สำเร็จ');
     } finally {
@@ -166,7 +172,8 @@ export function CreateBattleDialog({ open, onOpenChange, tab, onTabChange, scena
                     </Field>}
                     <Field>
                       <FieldLabel htmlFor="battle-practices">รอบทดลองบินต่อคน</FieldLabel>
-                      <Input id="battle-practices" type="number" min={0} max={10} value={settings.practices} onChange={event => change('practices', Math.max(0, Math.min(10, event.target.valueAsNumber || 0)))} />
+                      <Input id="battle-practices" type="number" min={0} max={MAX_PRACTICES} value={settings.practices} onChange={event => change('practices', event.target.valueAsNumber || 0)} />
+                      <FieldDescription>สูงสุด 1,000,000 รอบ</FieldDescription>
                     </Field>
                     <SettingSelect id="battle-level" label="ระดับการบิน" value={settings.difficulty} values={battleLevels} onChange={value => change('difficulty', value)} />
                   </FieldGroup>

@@ -7,8 +7,9 @@ export const metadata = { title: 'ห้องแข่งโดรน', robots:
 export default async function BattleRoomPage({ params, searchParams }: { params: Promise<{ code: string }>; searchParams: Promise<{ role?: string }> }) {
   const [{ code }, { role }] = await Promise.all([params, searchParams]);
   if (!/^[0-9A-F]{8}$/.test(code)) notFound();
+  const memberEntry = role === 'join' || role === 'pilot';
   return <>
     <Header />
-    <div className="mx-auto max-w-[100rem] px-3 pb-16 pt-24 sm:px-5"><BattleRoom code={code} initialRole={role === 'watch' ? 'watch' : 'pilot'} /></div>
+    <div className="mx-auto max-w-[100rem] px-3 pb-16 pt-24 sm:px-5"><BattleRoom key={`${code}:${memberEntry ? 'join' : 'watch'}`} code={code} initialRole={memberEntry ? 'pilot' : 'watch'} /></div>
   </>;
 }

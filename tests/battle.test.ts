@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { compileBattle, flightWindow, makeTape } from '../src/battle/flight';
-import { canEdit, canPractice, chooseFinalists, compareFinish, deadline, elo, initialMatch, pairUp, START_WINDOW, table } from '../src/battle/rules';
+import { canEdit, canPractice, chooseFinalists, compareFinish, deadline, elo, initialMatch, MAX_PRACTICES, pairUp, practiceCount, START_WINDOW, table } from '../src/battle/rules';
 import { advance, bracketRound } from '../src/battle/state';
 import { LIGHTS_OFF, CEILING_LIGHTS_ON } from '../src/flight/environment';
 import type { Finish, Member, Room } from '../src/battle/types';
@@ -36,13 +36,43 @@ test('fixed writing uses the server deadline and locks the last saved code', () 
   assert.ok(room.matches[0].seats.every(seat => seat.result?.dnf));
 });
 
+test('fixed writing opens both lanes early only after both drafts are locked', () => {
+  for (const mode of ['parallel', 'turns'] as const) {
+    const room = makeRoom();
+    room.settings.flight = mode;
+    const [a, b] = room.members;
+    a.stoppedAt = 3_000;
+    advance(room, 3_000, next);
+    assert.equal(room.matches[0].seats[0].opensAt, null);
+    assert.equal(canEdit(room, b, 3_000), true);
+    b.stoppedAt = 5_000;
+    advance(room, 5_000, next);
+    assert.equal(room.matches[0].seats[0].opensAt, mode === 'parallel' ? 5_000 : 7_200);
+    assert.equal(canEdit(room, a, 5_000), false);
+    assert.equal(canEdit(room, b, 5_000), false);
+  }
+});
+
+test('practice counters preserve older rooms and honor the million-round limit', () => {
+  const room = makeRoom('open');
+  room.settings.practices = MAX_PRACTICES;
+  const [member] = room.members;
+  member.practiceIds = ['older-id'];
+  assert.equal(practiceCount(member), 1);
+  member.practice = { count: MAX_PRACTICES - 1, requestId: 'recent-attempt', tapeId: 'recent-tape' };
+  assert.equal(canPractice(room, member, 2_000), true);
+  member.practice.count++;
+  assert.equal(practiceCount(member), 1_000_000);
+  assert.equal(canPractice(room, member, 2_000), false);
+});
+
 test('open writing stays editable beyond 30 minutes while practice quota is separate', () => {
   const room = makeRoom('open');
   const [a] = room.members;
   const now = 4_000_000;
   assert.equal(deadline(room), null);
   assert.equal(canPractice(room, a, now), true);
-  a.practiceIds.push('practice');
+  a.practiceIds = ['practice'];
   assert.equal(canPractice(room, a, now), false);
   assert.equal(canEdit(room, a, now), true);
   a.stoppedAt = now;
