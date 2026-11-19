@@ -17,6 +17,7 @@ import { CircleHelp, Footprints, Keyboard, Layers, Lightbulb, Maximize2, Minimiz
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildConfig, toField } from './config';
+import { flightMotion } from './visual-pose';
 import { baseAt, startOf } from '@/lib/scenarios';
 import type { FlightConfig } from './engine';
 import type { SceneSpec } from '@/field/SceneObjects';
@@ -554,29 +555,12 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     c.last = ts;
     c.t = Math.min(r.duration, c.t + dt * 1000 * speedRef.current);
     playheadRef.current = c.t;
-    const f = frameAt(r.frames, c.t);
-    const b = frameAt(r.frames, Math.max(0, c.t - 120));
-    const b2 = frameAt(r.frames, Math.max(0, c.t - 240));
-    const fld = toField(f.x, f.y), prev = toField(b.x, b.y), prev2 = toField(b2.x, b2.y);
-    // ความเร็วในกรอบสนาม (ม./วินาที) → แยกเป็นไปข้างหน้า/ด้านข้างตามหัวโดรน เพื่อเอียงตัวตามทิศที่บิน
-    const span = Math.max(0.001, (c.t - Math.max(0, c.t - 120)) / 1000);
-    const vx = (fld.x - prev.x) / span, vy = (fld.y - prev.y) / span;
-    const wx = (prev.x - prev2.x) / span, wy = (prev.y - prev2.y) / span; // ความเร็วเมื่อ 120 ms ก่อน
-    const yawR = (f.yaw * Math.PI) / 180;
-    const along = (ux: number, uy: number) => ux * Math.sin(yawR) + uy * Math.cos(yawR);
-    const across = (ux: number, uy: number) => ux * Math.cos(yawR) - uy * Math.sin(yawR);
-    const vf = along(vx, vy), vr = across(vx, vy);
-    // ความเร่ง (ม./วินาที²): ออกตัวเป็นบวก เบรกเป็นลบ → เอียงเพิ่ม "กระชาก" ตอนเริ่มและตอนเบรก (เบรก = เงยหัวขึ้น)
-    const af = (vf - along(wx, wy)) / span, ar = (vr - across(wx, wy)) / span;
-    const sp = Math.hypot(vx, vy);
+    const motion = flightMotion(r.frames, c.t, difficulty === 'hard', c.airborne ? flightSeed : null);
+    const { frame: f, speed: sp } = motion;
     const p = poseRef.current;
-    const shake = difficulty === 'hard' && c.airborne ? 7 : 0;
-    const leanLimit = difficulty === 'hard' ? 34 : 22;
-    const tp = clamp(vf * 8 + af * 4.5 + Math.sin(c.t / 260 + flightSeed) * shake, -leanLimit, leanLimit);
-    const tr = clamp(vr * 8 + ar * 4.5 + Math.cos(c.t / 310 + flightSeed * 0.7) * shake, -leanLimit, leanLimit);
     const k = 1 - Math.exp(-dt * 14);
-    p.x = fld.x; p.y = fld.y; p.alt = f.z / 100; p.yaw = f.yaw;
-    p.pitch += (tp - p.pitch) * k; p.roll += (tr - p.roll) * k;
+    p.x = motion.x; p.y = motion.y; p.alt = motion.alt; p.yaw = motion.yaw;
+    p.pitch += (motion.pitch - p.pitch) * k; p.roll += (motion.roll - p.roll) * k;
     // ใบพัด: ดับก่อนขึ้นบิน เร่งหลังขึ้นบิน ดับหลังลงจอด
     // ช่วงสตาร์ทหลัง takeOff: รอบใบพัดไต่จากช้าไปเร็วตามที่ผู้เขียน delay ไว้ (ยกตัวเมื่อครบ 3000 ms)
     if (rescued || (f.rpm ?? 0) === 0 && c.airborne && c.t > 0) c.airborne = false;

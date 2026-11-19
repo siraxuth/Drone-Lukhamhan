@@ -35,7 +35,8 @@ export type Member = {
   key: number | null;
   savedAt: number;
   stoppedAt: number | null;
-  practiceIds: string[];
+  practiceIds?: string[];
+  practice?: { count: number; requestId: string; tapeId: string };
 };
 
 export type Finish = { score: number; totalMs: number; exitMs: number | null; writingMs: number; dnf: boolean };
@@ -80,7 +81,7 @@ export type RoomView = {
   settings: Settings;
   scenario: ScenarioView;
   owner: string;
-  members: Pick<Member, 'id' | 'name' | 'role' | 'ready'>[];
+  members: Pick<Member, 'id' | 'name' | 'role' | 'ready' | 'stoppedAt'>[];
   me: Pick<Member, 'id' | 'role' | 'ready' | 'draft' | 'key' | 'savedAt' | 'stoppedAt'> & { practices: number; canEdit: boolean; canPractice: boolean };
   prepAt: number | null;
   active: Match | null;

@@ -91,7 +91,7 @@ export function makeTape(room: Pick<Room, 'settings' | 'scenario'>, code: string
   frames.push({ ...frameAt(result.frames, duration), t: duration });
   return {
     frames, duration, scores,
-    events: result.events.filter(event => ['drop', 'pop', 'shot', 'shot_b', 'servo', 'land'].includes(event.kind))
+    events: result.events.filter(event => ['drop', 'pop', 'shot', 'shot_b', 'servo', 'land', 'hold'].includes(event.kind))
       .map(({ line: _line, text: _text, ...event }) => ({ ...event, text: '' })),
     visits: result.visits.map(({ id, t }) => ({ id, t })),
     finish: {

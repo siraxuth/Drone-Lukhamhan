@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { COMMANDS, KNOWN, canon, type Cmd } from '@/flight/commands';
 
 const LINE = 24; // px ต่อบรรทัด (leading-6)
@@ -38,10 +38,48 @@ type Sugg = { cmd: Cmd; word: string; start: number };
 export function CodeEditor({ value, onChange, rows = 14, name, id, autoFocus, label = 'โค้ด', fill = false, commands = COMMANDS, quickLayout = 'row', showQuick = true }: { value: string; onChange: (v: string) => void; rows?: number; name?: string; id?: string; autoFocus?: boolean; label?: string; fill?: boolean; /** รายการคำสั่งตามโหมดการเขียน (ดู commandsFor) */ commands?: Cmd[]; quickLayout?: 'row' | 'grid'; showQuick?: boolean }) {
   const ta = useRef<HTMLTextAreaElement>(null);
   const pre = useRef<HTMLDivElement>(null);
+  const suggestions = useRef<HTMLUListElement>(null);
+  const [viewport, setViewport] = useState({ height: 0, start: 0, end: 0 });
+  useEffect(() => {
+    const input = ta.current;
+    if (!input) return;
+    const visual = window.visualViewport;
+    const measure = () => {
+      const rect = input.getBoundingClientRect();
+      const height = input.clientHeight;
+      const windowTop = visual?.offsetTop ?? 0;
+      const windowHeight = visual?.height ?? window.innerHeight;
+      const start = Math.max(0, windowTop - rect.top);
+      const end = Math.min(height, windowTop + windowHeight - rect.top);
+      setViewport(previous => previous.height === height && previous.start === start && previous.end === end
+        ? previous : { height, start, end });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(input);
+    window.addEventListener('scroll', measure, true);
+    window.addEventListener('resize', measure);
+    visual?.addEventListener('resize', measure);
+    visual?.addEventListener('scroll', measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('resize', measure);
+      visual?.removeEventListener('resize', measure);
+      visual?.removeEventListener('scroll', measure);
+    };
+  }, []);
   const [scroll, setScroll] = useState({ top: 0, left: 0 });
   const [sugg, setSugg] = useState<Sugg[]>([]);
   const [sel, setSel] = useState(0);
   const [caret, setCaret] = useState({ line: 0, col: 0 });
+  useEffect(() => {
+    const list = suggestions.current;
+    const item = list?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!list || !item) return;
+    const top = item.offsetTop, bottom = top + item.offsetHeight;
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
+  }, [sel, sugg]);
   const copiedLine = useRef<string | null>(null);
 
   const lines = useMemo(() => value.split('\n').length, [value]);
@@ -290,6 +328,15 @@ export function CodeEditor({ value, onChange, rows = 14, name, id, autoFocus, la
     place(text, pos, el?.selectionEnd ?? pos);
   };
 
+  const editorHeight = viewport.height || rows * LINE + 24;
+  const visibleEnd = viewport.height ? viewport.end : editorHeight;
+  const cursorTop = caret.line * LINE + 12 - scroll.top;
+  const above = Math.max(0, Math.min(visibleEnd, cursorTop) - viewport.start - 6);
+  const below = Math.max(0, visibleEnd - Math.max(viewport.start, cursorTop + LINE) - 6);
+  const showAbove = below < Math.min(260, sugg.length * 54 + 28) && above > below;
+  const suggestionHeight = Math.min(320, showAbove ? above : below);
+  const cursorVisible = cursorTop < visibleEnd && cursorTop + LINE > viewport.start;
+
   return (
     <div className={fill ? 'flex h-full min-h-0 flex-col' : 'grid gap-2'}>
       {showQuick && <div className={`${quickLayout === 'grid' ? 'grid grid-cols-2 gap-2 border-b border-line bg-surface-2/40 p-3 sm:grid-cols-3' : `flex gap-1.5 ${fill ? 'flex-nowrap overflow-x-auto overscroll-x-contain border-b border-line bg-surface-2/40 px-3 py-2' : 'flex-wrap'}`}`} role="group" aria-label="ปุ่มเพิ่มคำสั่งบิน">
@@ -328,12 +375,16 @@ export function CodeEditor({ value, onChange, rows = 14, name, id, autoFocus, la
             onScroll={(e) => setScroll({ top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft })}
             className="absolute inset-0 size-full resize-none overflow-auto whitespace-pre bg-transparent p-3 font-mono text-sm leading-6 text-transparent caret-foreground outline-none selection:bg-brand-blue/25"
           />
-          {sugg.length > 0 && (
-            <ul role="listbox" aria-label="คำแนะนำคำสั่ง" className="absolute z-20 w-[min(22rem,calc(100%-1rem))] overflow-hidden squircle-xl border border-line bg-popover p-1 shadow-xl"
-              style={{ top: Math.min((caret.line + 1) * LINE + 12 - scroll.top + 2, fill ? 9999 : rows * LINE - 8), left: Math.min(12 + caret.col * 8.4 - scroll.left, 120) }}>
+          {sugg.length > 0 && cursorVisible && suggestionHeight >= 28 && (
+            <ul ref={suggestions} role="listbox" aria-label="คำแนะนำคำสั่ง" className="absolute z-20 w-[min(22rem,calc(100%-1rem))] overflow-y-auto overscroll-contain squircle-xl border border-line bg-popover p-1 shadow-xl"
+              style={{
+                ...(showAbove ? { bottom: editorHeight - cursorTop + 2 } : { top: Math.max(viewport.start, cursorTop + LINE) + 2 }),
+                maxHeight: suggestionHeight, left: Math.max(8, Math.min(12 + caret.col * 8.4 - scroll.left, 120)),
+              }}>
               {sugg.map((s, i) => (
                 <li key={s.cmd.name} role="option" aria-selected={i === sel}
-                  onMouseDown={(e) => { e.preventDefault(); place(s.cmd.insert, s.start, s.start + s.word.length); }}
+                  onMouseDown={event => event.preventDefault()}
+                  onClick={() => place(s.cmd.insert, s.start, s.start + s.word.length)}
                   className={`flex cursor-pointer flex-col px-2.5 py-1.5 ${i === sel ? 'bg-brand-blue/12' : ''}`}>
                   <span className="font-mono text-sm font-semibold text-blue-700 dark:text-sky-300">{s.cmd.sig}</span>
                   <span className="font-sans text-sm text-muted-foreground">{s.cmd.desc}</span>

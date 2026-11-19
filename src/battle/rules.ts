@@ -6,6 +6,7 @@ export const MAX_PILOTS = 16;
 export const MAX_MATCHES = 64;
 export const MAX_CODE = 20_000;
 export const MAX_WATCHERS = 32;
+export const MAX_PRACTICES = 1_000_000;
 
 export class RuleError extends Error {
   constructor(message: string, readonly status = 409) { super(message); }
@@ -27,8 +28,12 @@ export function canEdit(room: Room, member: Member, now: number) {
   return until === null || now < until;
 }
 
+export function practiceCount(member: Member) {
+  return member.practice?.count ?? member.practiceIds?.length ?? 0;
+}
+
 export function canPractice(room: Room, member: Member, now: number) {
-  return room.status === 'active' && canEdit(room, member, now) && member.practiceIds.length < room.settings.practices
+  return room.status === 'active' && canEdit(room, member, now) && practiceCount(member) < room.settings.practices
     && !activeMatch(room)?.seats.some(seat => seat.opensAt !== null);
 }
 

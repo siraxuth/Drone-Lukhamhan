@@ -6,6 +6,8 @@ import { RuleError } from './rules';
 import { cookieName } from './server';
 
 export async function actorFor(request: NextRequest, code = '') {
+  const watchOnly = !!code && request.nextUrl.searchParams.get('role') === 'watch';
+  if (watchOnly) return { userId: null, watchOnly, token: request.cookies.get(cookieName(code, true))?.value };
   const session = await getSession();
   return { userId: session?.user.id ?? null, token: code ? request.cookies.get(cookieName(code))?.value : undefined };
 }
@@ -37,8 +39,8 @@ export function response(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } });
 }
 
-export function remember(result: NextResponse, code: string, token: string) {
-  result.cookies.set(cookieName(code), token, {
+export function remember(result: NextResponse, code: string, token: string, watchOnly = false) {
+  result.cookies.set(cookieName(code, watchOnly), token, {
     httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 60 * 60 * 24 * 180,
     path: `/api/simulator/battle/${code}`,
   });

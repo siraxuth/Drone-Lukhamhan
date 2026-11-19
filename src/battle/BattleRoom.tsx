@@ -11,6 +11,8 @@ import { Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Slider } from '@/components/ui/slider';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { BattleField, TapePlayer } from './BattleField';
 import { BattleRequestError, battleApi, battleRequest, flightLabel, seconds } from './client';
@@ -23,7 +25,11 @@ const emptyCode = { draft: '', key: null as number | null };
 
 export function BattleRoom({ code, initialRole }: { code: string; initialRole: 'pilot' | 'watch' }) {
   const router = useRouter();
-  const url = `${battleApi}/${code}`;
+  const watchOnly = initialRole === 'watch';
+  const watchPath = `/battle/${code}`;
+  const roomPath = watchPath + '?role=join';
+  const endpoint = `${battleApi}/${code}`;
+  const url = endpoint + (watchOnly ? '?role=watch' : '');
   const [room, setRoom] = useState<RoomView | null>(null);
   const [joinNeeded, setJoinNeeded] = useState(false);
   const [name, setName] = useState('');
@@ -34,6 +40,7 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
   const [compile, setCompile] = useState<ActionResult['compile']>();
   const [practice, setPractice] = useState<Tape>();
   const [practiceSerial, setPracticeSerial] = useState(0);
+  const [showPractice, setShowPractice] = useState(false);
   const [editor, setEditor] = useState(emptyCode);
   const [pair, setPair] = useState(['', '']);
   const [replay, setReplay] = useState('');
@@ -42,7 +49,7 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
   const [mobileField, setMobileField] = useState(0);
   const [confirm, setConfirm] = useState('');
   const [showDelete, setShowDelete] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'join' | 'watch' | null>(null);
   const [clock, setClock] = useState(0);
   const dirty = useRef(false);
   const current = useRef<RoomView | null>(null);
@@ -52,7 +59,7 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
 
   const refresh = useCallback(async () => {
     try {
-      const query = replay ? '?' + new URLSearchParams({ replay, at: String(replayAt) }) : '';
+      const query = replay ? (watchOnly ? '&' : '?') + new URLSearchParams({ replay, at: String(replayAt) }) : '';
       const data = await battleRequest<RoomView>(url + query);
       if (current.current && data.serverNow < current.current.serverNow) return;
       current.current = data;
@@ -67,10 +74,19 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
       }
       setClock(data.serverNow);
     } catch (error) {
-      if (error instanceof BattleRequestError && error.status === 403) setJoinNeeded(true);
-      else setConnection(error instanceof Error ? error.message : 'เชื่อมต่อห้องไม่ได้');
+      if (error instanceof BattleRequestError && error.status === 403) {
+        current.current = null;
+        setRoom(null);
+        dirty.current = false;
+        acknowledged.current = 0;
+        editorRef.current = emptyCode;
+        setEditor(emptyCode);
+        setCompile(undefined);
+        setPractice(undefined);
+        setJoinNeeded(true);
+      } else setConnection(error instanceof Error ? error.message : 'เชื่อมต่อห้องไม่ได้');
     }
-  }, [replay, replayAt, url]);
+  }, [replay, replayAt, url, watchOnly]);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,7 +151,7 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
       const result = await battleRequest<ActionResult>(url, action);
       if (result.compile) setCompile(result.compile);
       if (result.savedAt !== undefined) acknowledged.current = Math.max(acknowledged.current, result.savedAt);
-      if (result.tape) { setPractice(result.tape); setPracticeSerial(serial => serial + 1); }
+      if (result.tape) { setPractice(result.tape); setPracticeSerial(serial => serial + 1); setShowPractice(true); }
       if (result.deleted) { router.replace('/battle'); return; }
       if (!('action' in action) || action.action !== 'compile') await refresh();
     } catch (error) {
@@ -145,18 +161,32 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
 
   async function join(event: FormEvent) {
     event.preventDefault();
-    await send({ action: 'join', name, role });
+    if (role !== 'watch' || watchOnly) {
+      await send({ action: 'join', name, role });
+      return;
+    }
+    setPending(true);
+    setError('');
+    try {
+      await battleRequest(endpoint + '?role=watch', { action: 'join', name, role });
+      router.replace(watchPath);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'เข้าห้องไม่ได้');
+    } finally {
+      setPending(false);
+    }
   }
 
   if (!room) return <Card className="mx-auto grid max-w-md gap-4 squircle-3xl p-5">
-    <h1 className="text-xl font-bold">ห้องแข่ง {code}</h1>
+    <h1 className="text-xl font-bold">{watchOnly ? 'เข้าดูห้องแข่ง' : 'ห้องแข่ง'} {code}</h1>
     {joinNeeded ? <form onSubmit={join} className="grid gap-3">
       <Field><FieldLabel htmlFor="battle-member-name">ชื่อในห้อง</FieldLabel><Input id="battle-member-name" required maxLength={36} value={name} onChange={event => setName(event.target.value)} /></Field>
-      <Field><FieldLabel htmlFor="battle-member-role">เข้ามาทำอะไร</FieldLabel><NativeSelect id="battle-member-role" className="w-full" value={role} onChange={event => setRole(event.target.value === 'pilot' ? 'pilot' : 'watch')}><NativeSelectOption value="pilot">ลงแข่ง</NativeSelectOption><NativeSelectOption value="watch">ดูสด</NativeSelectOption></NativeSelect></Field>
+      {!watchOnly && <Field><FieldLabel htmlFor="battle-member-role">เข้ามาทำอะไร</FieldLabel><NativeSelect id="battle-member-role" className="w-full" value={role} onChange={event => setRole(event.target.value === 'pilot' ? 'pilot' : 'watch')}><NativeSelectOption value="pilot">ลงแข่ง</NativeSelectOption><NativeSelectOption value="watch">ดูสด</NativeSelectOption></NativeSelect></Field>}
       <Button type="submit" disabled={pending}>เข้าร่วม</Button>
     </form> : <p role="status" className="text-muted-foreground">{connection || 'กำลังเปิดห้อง…'}</p>}
     {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-    <Link href={`/login?next=/battle/${code}`} className="text-sm underline">ล็อกอินเพื่อกลับด้วยบัญชีเดิมหรือแข่งเก็บแต้ม</Link>
+    {watchOnly ? <Link href={roomPath} className="text-sm underline">เข้าห้องในฐานะผู้แข่ง</Link>
+      : <Link href={`/login?next=${encodeURIComponent(roomPath)}`} className="text-sm underline">ล็อกอินเพื่อกลับด้วยบัญชีเดิมหรือแข่งเก็บแต้ม</Link>}
     <Link href="/battle" className="underline">กลับหน้า Battle</Link>
   </Card>;
 
@@ -175,19 +205,29 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
     ?? [];
   const fallback = match?.seats.find(seat => seat.opensAt !== null && seat.endsAt === null) ?? match?.seats.at(-1);
   const fields = showing.length ? showing : fallback ? [fallback] : [];
+  const pilot = room.me.role === 'pilot' && (room.status === 'lobby' || room.status === 'active');
+  const finished = room.status === 'complete' || room.status === 'archived';
+  const showingPractice = pilot && room.me.canEdit && showPractice && practice;
   const maxReplay = Math.max(...Object.values(room.playback).map(tape => tape.duration), 0);
 
   return <div className="grid gap-4">
     <Card className="grid gap-3 squircle-3xl p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><Link href="/battle" className="text-sm underline">ห้องแข่งโดรน</Link><h1 className="text-2xl font-bold">{room.scenario.title}</h1></div>
-        <Button variant="outline" onClick={async () => {
-          try { await navigator.clipboard.writeText(location.href); setCopied(true); }
-          catch { setError('คัดลอกไม่ได้ ใช้รหัสห้องด้านล่างเพื่อเชิญเพื่อนได้'); }
-        }}>{copied ? 'คัดลอกลิงก์แล้ว' : 'คัดลอกลิงก์ห้อง'}</Button>
+        <div className="flex flex-wrap gap-2">
+          {room.me.role === 'pilot' && <Button variant="outline" nativeButton={false} render={<Link href={watchPath} />}>เปิดมุมผู้ชม</Button>}
+          {watchOnly && <Button variant="outline" nativeButton={false} render={<Link href={roomPath} />}>กลับมุมผู้แข่ง</Button>}
+          {(['watch', 'join'] as const).map(kind => <Button key={kind} variant="outline" onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(new URL(kind === 'watch' ? watchPath : roomPath, location.origin).href);
+              setCopied(kind);
+            } catch { setError('คัดลอกไม่ได้ ใช้รหัสห้องเพื่อเชิญเพื่อนได้'); }
+          }}>{copied === kind ? 'คัดลอกลิงก์แล้ว' : kind === 'watch' ? 'คัดลอกลิงก์ดูสด' : 'คัดลอกลิงก์ลงแข่ง'}</Button>)}
+        </div>
       </div>
+      <div><Badge variant="secondary">{memberName(room.me.id)} · {room.me.role === 'watch' ? 'ผู้ชม' : 'ผู้แข่ง'}</Badge></div>
       <p className="text-sm">รหัส <b className="font-mono">{code}</b> · {FORMATS[room.settings.format]} · {flightLabel[room.settings.flight]} · {CLOCKS[room.settings.clock]}</p>
-      <p className="text-sm text-muted-foreground">ระดับ {({ easy: 'ง่าย', medium: 'ปานกลาง', hard: 'ยาก' })[room.settings.difficulty]} · ไฟเพดาน {room.settings.ceilingLights.some(Boolean) ? 'เปิด' : 'ปิด'} · ไฟมุม {room.settings.lights.filter(light => light.enabled).length} ดวง · ทดลองได้ {room.settings.practices} รอบ</p>
+      <p className="text-sm text-muted-foreground">ระดับ {({ easy: 'ง่าย', medium: 'ปานกลาง', hard: 'ยาก' })[room.settings.difficulty]} · ไฟเพดาน {room.settings.ceilingLights.some(Boolean) ? 'เปิด' : 'ปิด'} · ไฟมุม {room.settings.lights.filter(light => light.enabled).length} ดวง · ทดลองได้ {room.settings.practices.toLocaleString('th-TH')} รอบ</p>
       {room.me.role === 'watch' && until !== null && clock < until && room.status === 'active' &&
         <p className="tabular-nums text-sm">ช่วงเขียนโค้ดเหลือ {seconds(until - clock)}</p>}
       {room.scenario.briefHtml && <Collapsible>
@@ -196,12 +236,12 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
       </Collapsible>}
       {room.settings.clock === 'stopwatch' && <p className="text-sm text-muted-foreground">กดหยุดเพื่อล็อกโค้ด ถ้าคะแนนเท่ากัน คนที่เขียนเสร็จก่อนจะได้เปรียบ</p>}
       {room.settings.ranked && <p className="text-sm">กดพร้อมเพื่อยืนยันเก็บแต้ม Battle เมื่อผู้แข่งทั้งคู่ล็อกอิน</p>}
-      <p className="text-sm text-muted-foreground">ถ้าเจ้าของเก็บห้อง สมาชิกที่อยู่ในห้องจะเปิดดูโค้ดที่ส่งแข่งย้อนหลังได้</p>
+      <p className="text-sm text-muted-foreground">โค้ดที่ส่งแข่งเปิดให้คนในห้องดูเมื่อการแข่งขันจบ</p>
       {connection && <p role="status">กำลังเชื่อมต่อใหม่ · {connection}</p>}
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
     </Card>
 
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+    <div className="grid min-w-0 gap-4">
       <main className="grid min-w-0 content-start gap-4">
         {room.status === 'closed' && <Alert><AlertDescription>เจ้าของปิดห้องแล้ว</AlertDescription></Alert>}
         {match?.wheelAt != null && clock < match.wheelAt + 2200 && <Card className="flex flex-row flex-wrap items-center gap-4 squircle-3xl p-4" role="status">
@@ -215,47 +255,59 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
           กงล้อสุ่มลำดับบิน
         </Card>}
         {match?.wheelAt != null && clock >= match.wheelAt + 2200 && <p className="text-sm">ลำดับบิน · {match.seats.map(seat => memberName(seat.member)).join(' → ')}</p>}
-        {match && room.status !== 'closed' && <>
-          <div className="grid grid-cols-2 gap-2">
-            {match.seats.map((seat, index) => <Button key={seat.member} variant={mobileField === index ? 'default' : 'outline'} onClick={() => setMobileField(index)} className="lg:pointer-events-none">
-              {memberName(seat.member)} · {room.playback[seat.member]?.score ?? seat.result?.score ?? 0} คะแนน
-            </Button>)}
-          </div>
-          {bothFields && <div className="hidden items-center gap-3 text-sm lg:flex"><span id="battle-split">แบ่งหน้าจอซ้าย–ขวา</span><Slider className="max-w-40" aria-labelledby="battle-split" min={30} max={70} value={[split]} onValueChange={value => setSplit(typeof value === "number" ? value : value[0])} /></div>}
-          <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,var(--battle-left))_minmax(0,1fr)]" style={bothFields ? { '--battle-left': `${split}%` } as React.CSSProperties : { gridTemplateColumns: 'minmax(0,1fr)' }}>
-            {fields.map((seat, index) => <div key={seat.member} className={bothFields && mobileField !== index ? 'hidden min-w-0 lg:block' : 'min-w-0'}>
-              <BattleField scenario={room.scenario} settings={room.settings} flight={room.playback[seat.member]} title={memberName(seat.member)} />
-            </div>)}
-          </div>
-        </>}
-        {room.me.role === 'pilot' && room.status !== 'closed' && room.status !== 'archived' && <Card className="grid min-w-0 gap-3 squircle-3xl p-4 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-bold">โค้ดของคุณ</h2>
-            <p className="text-sm tabular-nums">
-              {writing !== null && `เขียนไป ${seconds(writing)} · `}
-              {room.me.stoppedAt === null && until !== null && `เหลือ ${seconds(until - clock)} · `}
-              ทดลองได้อีก {Math.max(0, room.settings.practices - room.me.practices)} รอบ
-            </p>
-          </div>
-          {room.me.canEdit ? <CodeEditor value={editor.draft} onChange={code => edit({ ...editor, draft: code })} label="โค้ด Battle" rows={11} showQuick={false} />
-            : room.prepAt !== null ? <pre className="max-h-48 overflow-auto whitespace-pre-wrap squircle-xl bg-surface-2 p-3 text-xs">{editor.draft || 'ยังไม่มีโค้ด'}</pre>
-              : <p className="text-sm text-muted-foreground">รอเจ้าของเริ่มจับเวลาเขียนโค้ด</p>}
-          {compile?.keys.length ? <Field><FieldLabel htmlFor="battle-key">ปุ่มที่ให้รัน</FieldLabel><NativeSelect id="battle-key" className="w-full" disabled={!room.me.canEdit} value={editor.key ?? ''} onChange={event => edit({ ...editor, key: event.target.value ? Number(event.target.value) : null })}>
-            <NativeSelectOption value="">ใช้ KEY ตัวแรก</NativeSelectOption>{compile.keys.map(key => <NativeSelectOption key={key.key} value={key.key}>KEY {key.key} · {key.functionName}()</NativeSelectOption>)}
-          </NativeSelect></Field> : null}
-          <div className="flex flex-wrap gap-2">
-            {room.prepAt !== null && <Button variant="outline" disabled={pending} onClick={() => void send({ action: 'compile', ...editor })}>ตรวจโค้ด</Button>}
-            {room.prepAt !== null && <Button variant="outline" disabled={pending || !room.me.canPractice} onClick={() => void send({ action: 'practice', id: crypto.randomUUID(), ...editor })}>ทดลองบิน</Button>}
-            {room.me.canEdit && room.settings.clock !== 'fixed' && <Button disabled={pending} onClick={() => void send({ action: 'stop', ...editor })}>{room.settings.clock === 'stopwatch' ? 'หยุดเวลาเขียนและล็อก' : 'เขียนเสร็จแล้ว ล็อกโค้ด'}</Button>}
-            {available && <Button disabled={pending} onClick={() => void send({ action: 'start', matchId: match!.id })}>เริ่มบิน · {seconds(seat!.opensAt! + START_WINDOW - clock)}</Button>}
-          </div>
-          {compile && <div role="status" className={compile.ok ? 'text-sm' : 'text-sm text-destructive'}>
-            {compile.ok ? 'โค้ดผ่านการตรวจแล้ว' : <ul className="list-disc pl-5">{compile.errors.map(error => <li key={error}>{error}</li>)}</ul>}
-          </div>}
-          {room.me.stoppedAt !== null && <p className="text-sm text-muted-foreground">ล็อกโค้ดแล้ว {available ? 'กดเริ่มเมื่อพร้อม' : 'รอคิวบินหรือดูผลได้'}</p>}
-          {practice && <TapePlayer key={practiceSerial} tape={practice} title="สนามซ้อมของคุณ" scenario={room.scenario} settings={room.settings} />}
-        </Card>}
-        {room.status === 'archived' && <Card className="grid min-w-0 gap-3 squircle-3xl p-4 sm:p-5">
-          <h2 className="font-bold">ดูย้อนหลัง</h2>
+        <div className={cn('grid min-w-0 items-start gap-3', pilot && 'xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]')}>
+          {pilot && <Card className="order-2 grid min-w-0 content-start gap-3 squircle-3xl p-4 sm:p-5 xl:order-1">
+            <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-bold">โค้ดของคุณ</h2>
+              <p className="text-sm tabular-nums">
+                {writing !== null && `เขียนไป ${seconds(writing)} · `}
+                {room.me.stoppedAt === null && until !== null && `เหลือ ${seconds(until - clock)} · `}
+                ซ้อมได้อีก {Math.max(0, room.settings.practices - room.me.practices).toLocaleString('th-TH')} รอบ
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {room.status === 'lobby' && <Button disabled={pending} onClick={() => void send({ action: 'ready', value: !room.me.ready })}>{room.me.ready ? 'ยกเลิกพร้อม' : 'พร้อมเข้าช่วงเขียนโค้ด'}</Button>}
+              {room.prepAt !== null && <Button variant="outline" disabled={pending} onClick={() => void send({ action: 'compile', ...editor })}>ตรวจโค้ด</Button>}
+              {room.prepAt !== null && <Button variant="outline" disabled={pending || !room.me.canPractice} onClick={() => void send({ action: 'practice', id: crypto.randomUUID(), count: room.me.practices, ...editor })}>ทดลองบิน</Button>}
+              {room.me.canEdit && <Button disabled={pending} title="กดแล้วจะแก้โค้ดต่อไม่ได้" onClick={() => void send({ action: 'stop', ...editor })}>{room.settings.clock === 'stopwatch' ? 'พร้อมแข่ง · หยุดเวลาและล็อกโค้ด' : 'พร้อมแข่ง · ล็อกโค้ด'}</Button>}
+              {available && <Button disabled={pending} onClick={() => void send({ action: 'start', matchId: match!.id })}>เริ่มบิน · {seconds(seat!.opensAt! + START_WINDOW - clock)}</Button>}
+            </div>
+            {room.me.canEdit ? <div className="h-[min(64svh,42rem)] min-h-96 overflow-hidden squircle-2xl border border-line focus-within:border-brand-blue">
+              <CodeEditor value={editor.draft} onChange={code => edit({ ...editor, draft: code })} label="โค้ด Battle" fill showQuick={false} />
+            </div>
+              : room.prepAt !== null ? <pre className="max-h-48 overflow-auto whitespace-pre-wrap squircle-xl bg-surface-2 p-3 text-xs">{editor.draft || 'ยังไม่มีโค้ด'}</pre>
+                : <p className="text-sm text-muted-foreground">รอเจ้าของเริ่มจับเวลาเขียนโค้ด</p>}
+            {compile?.keys.length ? <Field><FieldLabel htmlFor="battle-key">ปุ่มที่ให้รัน</FieldLabel><NativeSelect id="battle-key" className="w-full" disabled={!room.me.canEdit} value={editor.key ?? ''} onChange={event => edit({ ...editor, key: event.target.value ? Number(event.target.value) : null })}>
+              <NativeSelectOption value="">ใช้ KEY ตัวแรก</NativeSelectOption>{compile.keys.map(key => <NativeSelectOption key={key.key} value={key.key}>KEY {key.key} · {key.functionName}()</NativeSelectOption>)}
+            </NativeSelect></Field> : null}
+            {compile && <div role="status" className={compile.ok ? 'text-sm' : 'text-sm text-destructive'}>
+              {compile.ok ? 'โค้ดผ่านการตรวจแล้ว' : <ul className="list-disc pl-5">{compile.errors.map(error => <li key={error}>{error}</li>)}</ul>}
+            </div>}
+            {room.me.stoppedAt !== null && <p className="text-sm text-muted-foreground">ล็อกโค้ดแล้ว {available ? 'กดเริ่มเมื่อพร้อม' : 'รอเปิดคิวบิน'}</p>}
+          </Card>}
+          {room.status !== 'closed' && <section aria-label="สนามแข่ง" className="order-1 grid min-w-0 gap-3 xl:order-2">
+            {pilot && room.me.canEdit && practice && <div className="flex flex-wrap gap-2" aria-label="เลือกสนาม">
+              <Button size="sm" variant={showPractice ? 'outline' : 'default'} aria-pressed={!showPractice} onClick={() => setShowPractice(false)}>สนามแข่ง</Button>
+              <Button size="sm" variant={showPractice ? 'default' : 'outline'} aria-pressed={showPractice} onClick={() => setShowPractice(true)}>สนามซ้อม</Button>
+            </div>}
+            {showingPractice
+              ? <TapePlayer key={practiceSerial} tape={showingPractice} title="สนามซ้อมของคุณ" scenario={room.scenario} settings={room.settings} tall />
+              : match ? <>
+                <div className="flex flex-wrap gap-2">
+                  {match.seats.map((seat, index) => <Button key={seat.member} variant={bothFields && mobileField === index ? 'default' : 'outline'} onClick={bothFields ? () => setMobileField(index) : undefined} tabIndex={bothFields ? undefined : -1} aria-pressed={bothFields ? mobileField === index : undefined}>
+                    {memberName(seat.member)} · {room.playback[seat.member]?.score ?? seat.result?.score ?? 0} คะแนน
+                  </Button>)}
+                </div>
+                {bothFields && <div className="hidden items-center gap-3 text-sm lg:flex"><span id="battle-split">แบ่งหน้าจอซ้าย–ขวา</span><Slider className="max-w-40" aria-labelledby="battle-split" min={30} max={70} value={[split]} onValueChange={value => setSplit(typeof value === "number" ? value : value[0])} /></div>}
+                <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,var(--battle-left))_minmax(0,var(--battle-right))]" style={bothFields ? { '--battle-left': `${split}fr`, '--battle-right': `${100 - split}fr` } as React.CSSProperties : { gridTemplateColumns: 'minmax(0,1fr)' }}>
+                  {fields.map((seat, index) => <div key={seat.member} className={bothFields && mobileField !== index ? 'hidden min-w-0 lg:block' : 'min-w-0'}>
+                    <BattleField key={`${match.id}:${seat.member}`} scenario={room.scenario} settings={room.settings} flight={room.playback[seat.member]} title={memberName(seat.member)} tall />
+                  </div>)}
+                </div>
+              </> : <BattleField scenario={room.scenario} settings={room.settings} title="สนามแข่ง" tall />}
+          </section>}
+        </div>
+        {finished && room.history.length > 0 && <Card className="grid min-w-0 gap-3 squircle-3xl p-4 sm:p-5">
+          <h2 className="font-bold">เที่ยวบินและโค้ดที่ส่งแข่ง</h2>
           <Field><FieldLabel htmlFor="battle-replay">เที่ยวบิน</FieldLabel><NativeSelect id="battle-replay" className="w-full" value={replay || match?.id || ''} onChange={event => { setReplay(event.target.value); setReplayAt(0); }}>
             {room.history.map((item, index) => <NativeSelectOption key={item.id} value={item.id}>รอบ {index + 1} · {item.seats.map(seat => memberName(seat.member)).join(' / ')}</NativeSelectOption>)}
           </NativeSelect></Field>
@@ -267,11 +319,10 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
         </Card>}
       </main>
 
-      <aside className="grid min-w-0 content-start gap-4">
+      <aside className="grid min-w-0 content-start items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Card className="grid min-w-0 gap-3 squircle-3xl p-4 sm:p-5">
           <h2 className="font-bold">คนในห้อง</h2>
-          <ul className="divide-y divide-line">{room.members.map(member => <li key={member.id} className="flex justify-between gap-2 py-2 text-sm"><span className="break-all">{member.name}{member.id === room.owner ? ' · เจ้าของ' : ''}</span><span>{member.role === 'watch' ? 'ดูสด' : member.ready ? 'พร้อม' : 'รอพร้อม'}</span></li>)}</ul>
-          {room.status === 'lobby' && room.me.role === 'pilot' && <Button disabled={pending} onClick={() => void send({ action: 'ready', value: !room.me.ready })}>{room.me.ready ? 'ยกเลิกพร้อม' : 'พร้อมแข่ง'}</Button>}
+          <ul className="divide-y divide-line">{room.members.map(member => <li key={member.id} className="flex justify-between gap-2 py-2 text-sm"><span className="break-all">{member.name}{member.id === room.owner ? ' · เจ้าของ' : ''}</span><span>{member.role === 'watch' ? 'ผู้ชม' : room.prepAt !== null ? member.stoppedAt !== null ? 'ล็อกโค้ดแล้ว' : 'เขียนโค้ดอยู่' : member.ready ? 'พร้อม' : 'รอพร้อม'}</span></li>)}</ul>
           {host && (room.status === 'lobby' || (room.settings.format === 'pairs' && room.status === 'active' && match?.finishedAt != null)) && <>
             {room.settings.format === 'pairs' && pair.map((id, index) => <Field key={index}><FieldLabel htmlFor={`battle-pair-${index}`}>ผู้แข่งคนที่ {index + 1}</FieldLabel><NativeSelect id={`battle-pair-${index}`} className="w-full" value={id} onChange={event => setPair(previous => previous.map((value, slot) => slot === index ? event.target.value : value))}>
               <NativeSelectOption value="">เลือกจากคนที่พร้อม</NativeSelectOption>{readyForPair.map(item => <NativeSelectOption key={item.id} value={item.id}>{item.name}</NativeSelectOption>)}

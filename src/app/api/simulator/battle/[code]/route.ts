@@ -21,9 +21,10 @@ export async function POST(request: NextRequest, { params }: Context) {
   try {
     const parsed = actionInput.safeParse(await readAction(request));
     if (!parsed.success) return response({ error: 'ข้อมูลไม่ครบ หรือโค้ดยาวเกินกำหนด' }, 400);
-    const result = await act(code, await actorFor(request, code), parsed.data);
+    const actor = await actorFor(request, code);
+    const result = await act(code, actor, parsed.data);
     const { token, ...data } = result as typeof result & { token?: string };
-    return token ? remember(response(data), code, token) : response(data);
+    return token ? remember(response(data), code, token, actor.watchOnly) : response(data);
   } catch (error) {
     return failure(error);
   }

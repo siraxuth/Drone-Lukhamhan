@@ -25,7 +25,7 @@ function JoinDialog({ signedIn }: { signedIn: boolean }) {
   const [code, setCode] = useState('');
   function join(event: FormEvent) {
     event.preventDefault();
-    router.push('/battle/' + code.trim().toUpperCase());
+    router.push('/battle/' + code.trim().toUpperCase() + '?role=join');
   }
   return <Dialog>
     <DialogTrigger render={<Button variant="outline" size="lg" />}><KeyRound data-icon="inline-start" /> เข้าด้วยรหัส</DialogTrigger>
@@ -63,7 +63,7 @@ function RoomCard({ room }: { room: ListedRoom }) {
     </CardContent>
     <CardFooter className="mt-auto justify-between gap-2 border-t py-3">
       <span className="font-mono text-xs text-muted-foreground">{room.code}</span>
-      <Button size="sm" variant="outline" nativeButton={false} render={<Link href={'/battle/' + room.code + (room.canCompete ? '' : '?role=watch')} />}>
+      <Button size="sm" variant="outline" nativeButton={false} render={<Link href={'/battle/' + room.code + (room.canCompete ? '?role=join' : '')} />}>
         {room.canCompete ? 'เข้าห้อง' : live ? 'ดูสด' : 'เข้าดู'} <ArrowUpRight data-icon="inline-end" />
       </Button>
     </CardFooter>

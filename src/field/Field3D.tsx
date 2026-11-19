@@ -38,6 +38,7 @@ type Props = {
   shot: Shot;
   low: boolean;
   live?: boolean;
+  readOnly?: boolean;
   poseRef?: React.RefObject<LivePose>;
   playheadRef?: React.RefObject<number>;
   marks?: Marks;
@@ -658,7 +659,7 @@ function groundY(x: number, y: number, platforms: boolean) {
   return 0.016;
 }
 
-function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, poseRef, platforms, loaded, gatePositions, dartInventory, dartRack, needle }: { drone: DroneState; onDrone: Props['onDrone']; onRotate?: (yaw: number) => void; setDragging: (v: boolean) => void; low: boolean; live: boolean; placement?: boolean; poseRef?: React.RefObject<LivePose>; platforms: boolean; loaded: Payload; gatePositions: GatePositions; dartInventory: { front: number; back: number }; dartRack: boolean; needle: boolean }) {
+function Drone({ drone, onDrone, onRotate, setDragging, low, live, readOnly, placement, poseRef, platforms, loaded, gatePositions, dartInventory, dartRack, needle }: { drone: DroneState; onDrone: Props['onDrone']; onRotate?: (yaw: number) => void; setDragging: (v: boolean) => void; low: boolean; live: boolean; readOnly: boolean; placement?: boolean; poseRef?: React.RefObject<LivePose>; platforms: boolean; loaded: Payload; gatePositions: GatePositions; dartInventory: { front: number; back: number }; dartRack: boolean; needle: boolean }) {
   const dragging = useRef(false);
   const rotating = useRef(false);
   const lim = placement ? 5.8 : FIELD.size / 2 - 0.15;
@@ -714,7 +715,7 @@ function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, po
         position={p3(ax, ay, aalt)}
         rotation={[0, Math.PI - (ayaw * Math.PI) / 180, 0]}
         onPointerDown={(e: ThreeEvent<PointerEvent>) => {
-          if (live) return;
+          if (live || readOnly) return;
           e.stopPropagation();
           (e.target as Element).setPointerCapture?.(e.pointerId);
           dragging.current = true;
@@ -732,6 +733,7 @@ function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, po
           } else onDrone({ x: clamp(point.x), y: clamp(-point.z) });
         }}
         onPointerUp={(e: ThreeEvent<PointerEvent>) => {
+          if (readOnly) return;
           e.stopPropagation();
           dragging.current = false;
           rotating.current = false;
@@ -752,7 +754,7 @@ function Drone({ drone, onDrone, onRotate, setDragging, low, live, placement, po
         </group>
       </group>
       {/* ระนาบรับการลาก/แตะ ครอบทั้งสนามที่ระดับพื้น */}
-      {!live && !placement && (
+      {!live && !readOnly && !placement && (
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}
           position={[0, 0.02, 0]}
@@ -1007,6 +1009,7 @@ function DartModel() {
 function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight, placementCenter }: { view: ViewPreset; topH: number; drone: DroneState; dragging: boolean; live: boolean; poseRef?: React.RefObject<LivePose>; highlight?: ShotHighlight; placementCenter?: { x: number; y: number } }) {
   const controls = useRef<React.ComponentRef<typeof OrbitControls>>(null);
   const { camera, invalidate, size } = useThree();
+  const topDistance = topH * Math.max(1, size.height / Math.max(1, size.width));
   const droneRef = useRef(drone);
   const cinematic = useRef<{ view: ViewPreset; position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   droneRef.current = drone;
@@ -1020,10 +1023,10 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight, plac
       cam.position.set(placementCenter.x, height, -placementCenter.y + 0.001);
       c.target.set(placementCenter.x, 0, -placementCenter.y);
     }
-    else if (view === 'top') { cam.position.set(0, topH, 0.01); c.target.set(0, 0, 0); }
+    else if (view === 'top') { cam.position.set(0, topDistance, 0.01); c.target.set(0, 0, 0); }
     c.update();
     invalidate();
-  }, [view, topH, placementCenter?.x, placementCenter?.y, camera, invalidate, size.width, size.height]);
+  }, [view, topDistance, placementCenter?.x, placementCenter?.y, camera, invalidate, size.width, size.height]);
 
   // มุม "ตามโดรน" (ขณะแก้ตำแหน่งเอง)
   useEffect(() => {
@@ -1092,7 +1095,7 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight, plac
     if (cinematic.current) {
       lastChase.current = null;
       const saved = cinematic.current;
-      const presetPosition = view === 'top' ? new THREE.Vector3(0, topH, 0.01) : new THREE.Vector3(0, 1.7, 6.6);
+      const presetPosition = view === 'top' ? new THREE.Vector3(0, topDistance, 0.01) : new THREE.Vector3(0, 1.7, 6.6);
       const presetTarget = view === 'top' ? new THREE.Vector3(0, 0, 0) : new THREE.Vector3(0, 0.9, -1.5);
       const position = chasePosition ?? (saved.view === view ? saved.position : presetPosition);
       const target = chaseTarget ?? (saved.view === view ? saved.target : presetTarget);
@@ -1120,14 +1123,14 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight, plac
       enabled={!placementCenter && !dragging && !highlight}
       enableDamping={false}
       minDistance={0.8}
-      maxDistance={22}
+      maxDistance={Math.max(22, topDistance)}
       maxPolarAngle={Math.PI / 2 - 0.02}
       onChange={() => invalidate()}
     />
   );
 }
 
-export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, gatePositions = {}, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, ceilingLights, walkPoseRef, walkInputRef, walkControlsEnabled = true, onWalk, placement, carryingDrone = false, rescuePose = null }: Props) {
+export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, readOnly = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, gatePositions = {}, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, ceilingLights, walkPoseRef, walkInputRef, walkControlsEnabled = true, onWalk, placement, carryingDrone = false, rescuePose = null }: Props) {
   const [dragging, setDragging] = useState(false);
   // โจทย์ฝึกบนกริด/พื้นว่าง: วาดวัตถุจาก scene แทนของตามกติกา และให้โดรนมีเข็ม/ลูกดอกตามวัตถุที่วางไว้
   const custom = !!scene && scene.pattern !== 'standard';
@@ -1161,7 +1164,7 @@ export default function Field3D({ event, drone, onDrone, view, shot, low, live =
       {!placement && !custom && event.field.platforms && <Platforms />}
       {!placement && !custom && event.field.balloons && <Balloons popped={marks.popped} />}
       {!placement && !custom && event.field.targets && (<><Targets /><ShootZones drone={drone} /></>)}
-      {!carryingDrone && !rescuePose && <Drone drone={drone} onDrone={onDrone} onRotate={placement?.onRotate} setDragging={setDragging} low={low} live={live && !placement} placement={!!placement} poseRef={poseRef} platforms={event.field.platforms && !custom} loaded={loaded} gatePositions={gatePositions} dartInventory={hasTargets ? dartInventory : { front: 0, back: 0 }} dartRack={hasTargets} needle={hasBalloons} />}
+      {!carryingDrone && !rescuePose && <Drone drone={drone} onDrone={onDrone} onRotate={placement?.onRotate} setDragging={setDragging} low={low} live={live && !placement} readOnly={readOnly} placement={!!placement} poseRef={poseRef} platforms={event.field.platforms && !custom} loaded={loaded} gatePositions={gatePositions} dartInventory={hasTargets ? dartInventory : { front: 0, back: 0 }} dartRack={hasTargets} needle={hasBalloons} />}
       {rescuePose && walkPoseRef && <RescueDrone low={low} start={rescuePose} walker={walkPoseRef} view={view} loaded={loaded} gatePositions={gatePositions} />}
       {carryingDrone && view === 'walk' && <HandDrone low={low} loaded={loaded} gatePositions={gatePositions} />}
       {placement && <PlacementMarkers center={placement.center} target={placement.target} drone={drone} aligned={placement.aligned} onRotate={placement.onRotate} scene={scene} />}

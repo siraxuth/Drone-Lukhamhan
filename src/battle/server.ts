@@ -5,16 +5,16 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import type { Prisma } from '@/generated/prisma/client';
 import { getScenarios } from '@/lib/scenario-data';
-import { activeMatch, canEdit, canPractice, chooseFinalists, compareFinish, dnf, elo, MAX_CODE, MAX_MATCHES, MAX_PILOTS, MAX_WATCHERS, pairUp, RuleError, START_WINDOW, table } from './rules';
+import { activeMatch, canEdit, canPractice, chooseFinalists, compareFinish, dnf, elo, MAX_CODE, MAX_MATCHES, MAX_PILOTS, MAX_PRACTICES, MAX_WATCHERS, pairUp, practiceCount, RuleError, START_WINDOW, table } from './rules';
 import { advance, bracketRound, makeMatch, writingTime } from './state';
 import { compileBattle, flightWindow, makeTape } from './flight';
 import { CLOCKS, FORMATS, type FlightView, type Member, type Room, type RoomView, type ListedRoom, type Settings, type Tape } from './types';
 
-type Actor = { userId: string | null; token?: string };
+type Actor = { userId: string | null; token?: string; watchOnly?: boolean };
 type Tx = Prisma.TransactionClient;
 const json = (value: Room | Tape | unknown[]) => value as unknown as Prisma.InputJsonValue;
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
-export const cookieName = (code: string) => `battle_${code}`;
+export const cookieName = (code: string, watchOnly = false) => `battle_${watchOnly ? 'watch_' : ''}${code}`;
 export const rankedEnabled = () => process.env.NODE_ENV !== 'production' || process.env.BATTLE_RANKED_ENABLED === '1';
 
 const name = z.string().trim().min(1).max(36).regex(/^[^\p{Cc}\p{Cf}]+$/u);
@@ -28,7 +28,7 @@ const settings = z.object({
   flight: z.enum(['parallel', 'turns']),
   clock: z.enum(Object.keys(CLOCKS) as [keyof typeof CLOCKS, ...(keyof typeof CLOCKS)[]]),
   minutes: z.number().int().min(1).max(60),
-  practices: z.number().int().min(0).max(10),
+  practices: z.number().int().min(0).max(MAX_PRACTICES),
   difficulty: z.enum(['easy', 'medium', 'hard']),
   lights: z.tuple([light, light, light, light]),
   ceilingLights: z.tuple([z.boolean(), z.boolean(), z.boolean(), z.boolean()]),
@@ -42,7 +42,7 @@ export const actionInput = z.discriminatedUnion('action', [
   z.object({ action: z.literal('save'), draft, key }),
   z.object({ action: z.literal('compile'), draft, key }),
   z.object({ action: z.literal('stop'), draft, key }),
-  z.object({ action: z.literal('practice'), id, draft, key }),
+  z.object({ action: z.literal('practice'), id, count: z.number().int().min(0).max(MAX_PRACTICES), draft, key }),
   z.object({ action: z.literal('begin'), pair: z.array(id).length(2).optional() }),
   z.object({ action: z.literal('start'), matchId: id }),
   z.object({ action: z.literal('archive') }),
@@ -52,9 +52,10 @@ export const actionInput = z.discriminatedUnion('action', [
 
 function authenticate(room: Room, actor: Actor) {
   const digest = actor.token && /^[a-f0-9]{64}$/.test(actor.token) ? Buffer.from(hash(actor.token), 'hex') : null;
-  return room.members.find(member => member.userId
-    ? member.userId === actor.userId
-    : digest && timingSafeEqual(digest, Buffer.from(member.tokenHash, 'hex')));
+  if (actor.userId && !actor.watchOnly) return room.members.find(member => member.userId === actor.userId);
+  if (!digest) return undefined;
+  return room.members.find(member => !member.userId && (!actor.watchOnly || member.role === 'watch')
+    && timingSafeEqual(digest, Buffer.from(member.tokenHash, 'hex')));
 }
 
 function memberOf(room: Room, actor: Actor) {
@@ -67,7 +68,7 @@ function newMember(room: Pick<Room, 'scenario'>, actor: Actor, input: { name: st
   return {
     id: randomUUID(), tokenHash: hash(token), userId: actor.userId, name: input.name, role: input.role,
     ready: false, draft: input.role === 'pilot' && room.scenario.starter.length <= MAX_CODE ? room.scenario.starter : '', key: null,
-    stoppedAt: null, savedAt: Date.now(), practiceIds: [],
+    stoppedAt: null, savedAt: Date.now(),
   };
 }
 
@@ -180,7 +181,7 @@ async function issueRatings(tx: Tx, room: Room) {
   return true;
 }
 
-function publicMatch(match: Room['matches'][number], now: number, archive: boolean) {
+function publicMatch(match: Room['matches'][number], now: number, revealCode: boolean) {
   return {
     ...match,
     seed: 0,
@@ -188,7 +189,7 @@ function publicMatch(match: Room['matches'][number], now: number, archive: boole
       ...seat,
       endsAt: seat.endsAt !== null && seat.endsAt <= now ? seat.endsAt : null,
       result: seat.endsAt !== null && seat.endsAt <= now ? seat.result : null,
-      code: archive ? seat.code : null,
+      code: revealCode ? seat.code : null,
     })),
   };
 }
@@ -228,7 +229,8 @@ export async function roomView(code: string, actor: Actor, replay: string | null
   const serverNow = Date.now();
   const active = activeMatch(room);
   const latest = room.matches.at(-1);
-  const selectedMatch = room.status === 'archived' && replay
+  const finished = room.status === 'complete' || room.status === 'archived';
+  const selectedMatch = finished && replay
     ? room.matches.find(match => match.id === replay && match.finishedAt !== null)
     : active ?? latest;
   const playback: Record<string, FlightView> = {};
@@ -238,20 +240,20 @@ export async function roomView(code: string, actor: Actor, replay: string | null
       const tape = await readTape(code, seat.flightId!);
       if (!tape) return;
       const live = seat.endsAt !== null && serverNow < seat.endsAt;
-      const at = room.status === 'archived' && replay && Number.isFinite(offset) ? offset : serverNow - seat.startedAt!;
+      const at = finished && replay && Number.isFinite(offset) ? offset : serverNow - seat.startedAt!;
       playback[seat.member] = flightWindow(tape, at, live);
     }));
   }
   return {
-    code, serverNow, status: room.status, settings: room.settings, scenario: room.scenario, owner: room.owner,
-    members: room.members.map(({ id, name, ready, role }) => ({ id, name, ready, role })),
+    code, serverNow, status: room.status, settings: room.settings, scenario: { ...room.scenario, starter: '' }, owner: room.owner,
+    members: room.members.map(({ id, name, ready, role, stoppedAt }) => ({ id, name, ready, role, stoppedAt })),
     me: {
-      id: me.id, role: me.role, ready: me.ready, draft: me.draft, key: me.key, savedAt: me.savedAt, stoppedAt: me.stoppedAt,
-      practices: me.practiceIds.length, canEdit: canEdit(room, me, serverNow), canPractice: canPractice(room, me, serverNow),
+      id: me.id, role: me.role, ready: me.ready, draft: me.role === 'pilot' ? me.draft : '', key: me.role === 'pilot' ? me.key : null, savedAt: me.savedAt, stoppedAt: me.stoppedAt,
+      practices: practiceCount(me), canEdit: canEdit(room, me, serverNow), canPractice: canPractice(room, me, serverNow),
     },
     prepAt: room.prepAt, queue: room.status === 'active' ? room.queue : [],
-    active: selectedMatch ? publicMatch(selectedMatch, serverNow, room.status === 'archived') : null,
-    history: room.matches.filter(match => match.finishedAt !== null).map(match => publicMatch(match, serverNow, room.status === 'archived')),
+    active: selectedMatch ? publicMatch(selectedMatch, serverNow, finished && selectedMatch.finishedAt !== null) : null,
+    history: room.matches.filter(match => match.finishedAt !== null).map(match => publicMatch(match, serverNow, false)),
     standings: table(room), playback,
   };
 }
@@ -297,6 +299,9 @@ const save = (member: Member, code: string, key: number | null, now: number) => 
 };
 
 export async function act(code: string, actor: Actor, input: z.infer<typeof actionInput>) {
+  if (actor.watchOnly && (input.action !== 'join' || input.role !== 'watch')) {
+    throw new RuleError('ลิงก์นี้ใช้ดูการแข่งขัน', 403);
+  }
   if (input.action === 'compile') {
     const room = await readRoom(code);
     const member = memberOf(room, actor);
@@ -312,10 +317,10 @@ export async function act(code: string, actor: Actor, input: z.infer<typeof acti
     if (advanced) await issueRatings(tx, room);
     if (input.action === 'join') {
       if (existing) return { joined: true };
-      if (room.status !== 'lobby' && !(room.status === 'active' && input.role === 'watch')) throw new RuleError('ห้องนี้ปิดรับสมาชิกแล้ว');
+      if (room.status !== 'lobby' && !((room.status === 'active' || room.status === 'complete') && input.role === 'watch')) throw new RuleError('ห้องนี้ปิดรับสมาชิกแล้ว');
       const count = room.members.filter(member => member.role === input.role).length;
       if (count >= (input.role === 'watch' ? MAX_WATCHERS : room.settings.format === 'duel' ? 2 : MAX_PILOTS)) throw new RuleError('ที่นั่งประเภทนี้เต็มแล้ว');
-      if (room.members.some(member => member.name.toLowerCase() === input.name.toLowerCase())) throw new RuleError('ชื่อนี้มีคนใช้ในห้องแล้ว');
+      if (room.members.some(member => member.role === input.role && member.name.toLowerCase() === input.name.toLowerCase())) throw new RuleError('ชื่อนี้มีคนใช้ในห้องแล้ว');
       const token = randomBytes(32).toString('hex');
       room.members.push(newMember(room, actor, input, token));
       await tx.battleRoom.update({ where: { code }, data: { state: json(room) } });
@@ -334,7 +339,6 @@ export async function act(code: string, actor: Actor, input: z.infer<typeof acti
       case 'stop': {
         if (!canEdit(room, me, now)) throw new RuleError('โค้ดถูกล็อกแล้ว');
         if (input.action === 'stop') {
-          if (room.status !== 'active' || room.settings.clock === 'fixed') throw new RuleError('ห้องนี้ล็อกโค้ดเมื่อถึงเวลาที่กำหนด');
           const compiled = compileBattle(input.draft, input.key);
           if (!compiled.ok) return { compile: compiled };
           me.stoppedAt = now;
@@ -344,16 +348,22 @@ export async function act(code: string, actor: Actor, input: z.infer<typeof acti
         break;
       }
       case 'practice': {
-        if (me.practiceIds.includes(input.id)) {
-          const flight = await tx.battleFlight.findUnique({ where: { id: input.id } });
+        if (!canEdit(room, me, now)) throw new RuleError('หมดเวลาเขียนโค้ดแล้ว');
+        if (me.practice?.requestId === input.id) {
+          const flight = await tx.battleFlight.findFirst({ where: { id: me.practice.tapeId, roomCode: code } });
           return { tape: flight?.tape as unknown as Tape };
         }
+        const count = practiceCount(me);
+        if (input.count !== count) throw new RuleError('จำนวนรอบซ้อมเปลี่ยนแล้ว ลองกดอีกครั้ง');
         if (!canPractice(room, me, now)) throw new RuleError('หมดรอบทดลองบิน หรือถึงเวลาบินจริงแล้ว');
         const compiled = compileBattle(input.draft, input.key);
         if (!compiled.ok) return { compile: compiled };
         const tape = makeTape(room, input.draft, compiled.key, randomInt(1, 2_147_483_647));
-        await tx.battleFlight.create({ data: { id: input.id, roomCode: code, tape: json(tape) } });
-        me.practiceIds.push(input.id);
+        const tapeId = randomUUID();
+        await tx.battleFlight.create({ data: { id: tapeId, roomCode: code, tape: json(tape) } });
+        if (me.practice) await tx.battleFlight.deleteMany({ where: { id: me.practice.tapeId, roomCode: code } });
+        me.practice = { count: count + 1, requestId: input.id, tapeId };
+        delete me.practiceIds;
         payload = { tape };
         break;
       }
