@@ -4,7 +4,8 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useRef, useState, useMemo } from 'react';
 import { RescueMotorSound } from './RescueMotorSound';
-import { RemotePanel } from './RemotePanel';
+import { EMPTY_PHONE_READOUT, RemotePanel } from './RemotePanel';
+import { PhoneRemoteHost } from './PhoneRemoteHost';
 import { makeLandscape } from './rescue-landscape';
 import { NEUTRAL_STICK } from './radio-physics';
 import { keyActions, expectedKey, useMissionKey, approach, LAND_HEIGHT, LAND_HOLD_MS, newFlight, missions } from './rescue-sortie';
@@ -15,7 +16,11 @@ const noop=()=>{};
 export function RescueSimulator() {
   const flight=useRef(newFlight());
   const corner=useRef(0), released=useRef(false);
-  const [connected, setConnected] = useState(false);
+  const [usbConnected, setUsbConnected] = useState(false);
+  const [phoneConnected, setPhoneConnected] = useState(false);
+  const phoneLinked = useRef(false);
+  const phoneReadout = useRef(EMPTY_PHONE_READOUT);
+  const connected = usbConnected || phoneConnected;
   const [message,setMessage]=useState('');
   const [,refresh]=useState(0);
   const f=flight.current;
@@ -99,9 +104,29 @@ export function RescueSimulator() {
           </details>}
           <p className="text-sm" role="status">{message}</p>
         </section>
-        <RemotePanel active locked={f.phase !== 'ground'} calibration="idle" calibrated rescueMode autoConnect
-          onStick={sample} onKey={missionButton} onLost={lost}
-          onConnectionChange={setConnected} onCalibrationComplete={noop}
+        <PhoneRemoteHost
+          display={{ mode: 'rescue', hint: flightHint }}
+          locked={f.phase !== 'ground'}
+          onConnection={value => {
+            phoneLinked.current = value;
+            phoneReadout.current = EMPTY_PHONE_READOUT;
+            setPhoneConnected(value);
+            if (!value) lost();
+          }}
+          onStick={stick => {
+            phoneReadout.current = { ...phoneReadout.current, axes: stick };
+            sample(stick);
+          }}
+          onKey={key => {
+            phoneReadout.current = { ...phoneReadout.current, lastKey: key };
+            missionButton(key);
+          }}
+        />
+        <RemotePanel phoneReadout={phoneConnected ? phoneReadout : undefined} active={!phoneConnected} locked={f.phase !== 'ground'} calibration="idle" calibrated rescueMode autoConnect
+          onStick={stick => { if (!phoneLinked.current) sample(stick); }}
+          onKey={key => { if (!phoneLinked.current) missionButton(key); }}
+          onLost={() => { if (!phoneLinked.current) lost(); }}
+          onConnectionChange={setUsbConnected} onCalibrationComplete={noop}
         />
         <p className="text-xs text-muted-foreground">พื้นผิวจาก <a className="underline" href="https://polyhaven.com/a/grass_path_2">Grass Path 2</a> และ <a className="underline" href="https://polyhaven.com/a/gravel_floor">Gravel Floor</a> ของ Poly Haven</p>
         <a href="https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer" className="text-xs text-muted-foreground underline">ภาพถ่ายทางอากาศ USGS The National Map</a>

@@ -25,7 +25,8 @@ import type { SceneSpec } from '@/field/SceneObjects';
 import { frameAt, parse, simulate, TIME_LIMIT_MS, type Frame, type Result, type SimEvent } from './engine';
 import { CEILING_LIGHTS_ON, LIGHTS_OFF, LIGHTS_ON, type CeilingLights, type FieldLights, type FlightAction, type FlightDifficulty, type FlightEnvironment, type ManualStick } from './environment';
 import { TouchStick, TouchWalkControls } from './TouchControls';
-import { RemotePanel } from './RemotePanel';
+import { EMPTY_PHONE_READOUT, RemotePanel } from './RemotePanel';
+import { PhoneRemoteHost } from './PhoneRemoteHost';
 import { NEUTRAL_STICK, RADIO_READY_MS } from './radio-physics';
 import { WalkGuide } from './WalkGuide';
 import type { LaunchPose } from './placement';
@@ -115,6 +116,10 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   const [radioMode, setRadioMode] = useState(dedicatedRemote);
   const [radioSetup, setRadioSetup] = useState(dedicatedRemote);
   const [hardwareConnected, setHardwareConnected] = useState(false);
+  const [phoneConnected, setPhoneConnected] = useState(false);
+  const phoneLinked = useRef(false);
+  const phoneReadout = useRef(EMPTY_PHONE_READOUT);
+  const usbLinked = useRef(false);
   const [calibration, setCalibration] = useState<'idle' | 'running' | 'ready'>('idle');
   const [radioCalibrated, setRadioCalibrated] = useState(false);
   const calibrationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -913,6 +918,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     calibrationTimer.current = setTimeout(() => {
       calibrationTimer.current = null;
       setCalibration('ready');
+      if (phoneLinked.current) setRadioCalibrated(true);
     }, 3000);
   };
   const startRadio = () => {
@@ -938,6 +944,15 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
     calibrationTimer.current = null;
     setCalibration('idle');
     setRadioCalibrated(false);
+  };
+  const onPhoneConnection = (connected: boolean) => {
+    phoneLinked.current = connected;
+    phoneReadout.current = EMPTY_PHONE_READOUT;
+    setPhoneConnected(connected);
+    if (connected) setRadioSetup(true);
+    setHardwareConnected(connected || usbLinked.current);
+    resetRemoteCalibration();
+    if (!connected) landRadio(true);
   };
   const handleRadioStick = (stick: ManualStick) => {
     if (radioEnding.current) return;
@@ -1245,6 +1260,19 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
             {(cfg.hoops?.length || cfg.waypoints?.length) ? <span className="squircle-xl border border-line bg-surface/95 px-2 py-1 text-xs">ผ่าน {result.visits.filter(visit => visit.t <= now).length}/{(cfg.hoops?.length ?? 0) + (cfg.waypoints?.length ?? 0)}</span> : null}
           </div>}
           <div className="flex flex-wrap items-center gap-1.5 squircle-xl border border-line bg-surface/95 p-1.5 shadow-lg">
+            <PhoneRemoteHost
+              display={{ mode: radioMode ? 'manual' : 'code', hint: radioStatus }}
+              locked={flightInProgress}
+              onConnection={onPhoneConnection}
+              onStick={stick => {
+                phoneReadout.current = { ...phoneReadout.current, axes: stick };
+                if (radioMode && radioReady && playing) handleRadioStick(stick);
+              }}
+              onKey={key => {
+                phoneReadout.current = { ...phoneReadout.current, lastKey: key };
+                radioKey(key);
+              }}
+            />
             <Button size="sm" variant="outline" disabled={!canSwitch} onClick={() => switchRadioMode(!radioMode)}>K1 · {radioMode ? 'Coding' : 'Manual'}</Button>
             {radioMode && !radioFlying && <>
               <Button size="sm" variant="outline" disabled={!hardwareConnected || calibration === 'running'} onClick={calibrateRadio}>K2 · {'ตั้งศูนย์'}</Button>
@@ -1380,22 +1408,25 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
       {dedicatedRemote && <div className="grid gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" variant="outline" aria-expanded={radioSetup} aria-controls="sim-usb-setup" onClick={() => setRadioSetup(value => !value)}><Gamepad2 className="size-4" /> ดูก้านและปุ่ม</Button>
-          <p role="status" className="text-xs leading-5 text-muted-foreground">{hardwareConnected ? 'กำลังใช้รีโมท USB' : 'เสียบรีโมท USB เพื่อดูก้าน'}</p>
+          <p role="status" className="text-xs leading-5 text-muted-foreground">{phoneConnected ? 'กำลังใช้ก้านจากมือถือ' : hardwareConnected ? 'กำลังใช้รีโมท USB' : 'เชื่อมมือถือหรือเสียบรีโมท USB เพื่อดูก้าน'}</p>
         </div>
         <div id="sim-usb-setup" hidden={!radioSetup}>
-          <RemotePanel active={radioReady && playing && radioMode} locked={flightInProgress}
-            calibration={calibration} calibrated={radioCalibrated} autoConnect={dedicatedRemote}
+          <RemotePanel phoneReadout={phoneConnected ? phoneReadout : undefined} active={!phoneConnected && radioReady && playing && radioMode} locked={flightInProgress}
+            calibration={phoneConnected ? 'idle' : calibration} calibrated={!phoneConnected && radioCalibrated} autoConnect={dedicatedRemote}
             onConnectionChange={connected => {
+              usbLinked.current = connected;
+              if (phoneLinked.current) return;
               setHardwareConnected(connected);
               if (!connected) resetRemoteCalibration();
             }}
-            onCalibrationComplete={setRadioCalibrated}
-            onStick={handleRadioStick}
+            onCalibrationComplete={calibrated => { if (!phoneLinked.current) setRadioCalibrated(calibrated); }}
+            onStick={stick => { if (!phoneLinked.current) handleRadioStick(stick); }}
             onLost={() => {
+              if (phoneLinked.current) return;
               if (radioRun.current) landRadio(true);
               else updateStick(NEUTRAL_STICK);
             }}
-            onKey={radioKey} />
+            onKey={key => { if (!phoneLinked.current) radioKey(key); }} />
         </div>
       </div>}
 

@@ -1,3 +1,4 @@
+import { networkInterfaces } from 'node:os';
 import { createMDX } from 'fumadocs-mdx/next';
 
 const withMDX = createMDX();
@@ -6,6 +7,11 @@ const withMDX = createMDX();
 const config = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Let the phone load development assets from this computer's own LAN address.
+  allowedDevOrigins: Object.values(networkInterfaces()).flatMap(addresses =>
+    (addresses ?? []).filter(address => address.family === 'IPv4' && !address.internal &&
+      /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(address.address) &&
+      address.netmask !== '255.255.255.255').map(address => address.address)),
   // Docker (Dockerfile) ตั้ง BUILD_STANDALONE=1 เพื่อได้โฟลเดอร์รันเดี่ยว · บน Vercel ไม่ตั้ง ไม่มีผล
   output: process.env.BUILD_STANDALONE ? 'standalone' : undefined,
   // ใส่ CSS ลงใน HTML เลย ไม่ต้องรอโหลดไฟล์ .css ก่อนวาดหน้า (ตัด render-blocking 60 KB)
@@ -28,6 +34,7 @@ const config = {
     return [
       { source: '/:path*', headers: security },
       // หลังบ้านและ API ห้ามเข้าผลค้นหา (ซ้ำกับ robots.txt เพื่อกันกรณีลิงก์หลุด)
+      { source: '/simulator/controller', headers: [{ key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=(), interest-cohort=()' }] },
       { source: '/admin/:path*', headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }] },
       { source: '/api/:path*', headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }] },
       { source: '/login', headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }] },
