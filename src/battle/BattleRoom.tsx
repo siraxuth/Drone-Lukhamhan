@@ -5,6 +5,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CodeEditor } from '@/components/CodeEditor';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Card } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Field, FieldLabel } from '@/components/ui/field';
@@ -16,8 +20,8 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { BattleField, TapePlayer } from './BattleField';
 import { BattleRequestError, battleApi, battleRequest, flightLabel, seconds } from './client';
-import { deadline, MAX_CODE, START_WINDOW } from './rules';
-import { CLOCKS, FORMATS, type RoomView, type Tape } from './types';
+import { canStartSeat, deadline, MAX_CODE, START_WINDOW } from './rules';
+import { CLOCKS, FORMATS, PARALLEL_START, type ParallelStart, type RoomView, type Tape } from './types';
 import type { compileBattle } from './flight';
 
 type ActionResult = { compile?: ReturnType<typeof compileBattle>; tape?: Tape; savedAt?: number; deleted?: boolean };
@@ -46,22 +50,23 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
   const [replay, setReplay] = useState('');
   const [replayAt, setReplayAt] = useState(0);
   const [split, setSplit] = useState(50);
-  const [mobileField, setMobileField] = useState(0);
-  const [confirm, setConfirm] = useState('');
+  const [mobileField, setMobileField] = useState<{ match: string; member: string }>();
   const [showDelete, setShowDelete] = useState(false);
   const [copied, setCopied] = useState<'join' | 'watch' | null>(null);
   const [clock, setClock] = useState(0);
   const dirty = useRef(false);
   const current = useRef<RoomView | null>(null);
+  const gone = useRef(false);
   const saving = useRef(false);
   const acknowledged = useRef(0);
   const editorRef = useRef(editor);
 
   const refresh = useCallback(async () => {
+    if (gone.current) return;
     try {
       const query = replay ? (watchOnly ? '&' : '?') + new URLSearchParams({ replay, at: String(replayAt) }) : '';
       const data = await battleRequest<RoomView>(url + query);
-      if (current.current && data.serverNow < current.current.serverNow) return;
+      if (gone.current || (current.current && data.serverNow < current.current.serverNow)) return;
       current.current = data;
       setRoom(data);
       setJoinNeeded(false);
@@ -74,7 +79,14 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
       }
       setClock(data.serverNow);
     } catch (error) {
-      if (error instanceof BattleRequestError && error.status === 403) {
+      if (gone.current) return;
+      if (error instanceof BattleRequestError && error.status === 404) {
+        gone.current = true;
+        current.current = null;
+        setRoom(null);
+        setJoinNeeded(false);
+        setConnection('ไม่พบห้องนี้');
+      } else if (error instanceof BattleRequestError && error.status === 403) {
         current.current = null;
         setRoom(null);
         dirty.current = false;
@@ -93,7 +105,7 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       await refresh();
-      if (cancelled) return;
+      if (cancelled || gone.current) return;
       const state = current.current;
       const active = state?.status === 'active';
       timer = setTimeout(poll, active ? 650 : 1800);
@@ -152,7 +164,11 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
       if (result.compile) setCompile(result.compile);
       if (result.savedAt !== undefined) acknowledged.current = Math.max(acknowledged.current, result.savedAt);
       if (result.tape) { setPractice(result.tape); setPracticeSerial(serial => serial + 1); setShowPractice(true); }
-      if (result.deleted) { router.replace('/battle'); return; }
+      if (result.deleted) {
+        gone.current = true;
+        router.replace('/battle');
+        return;
+      }
       if (!('action' in action) || action.action !== 'compile') await refresh();
     } catch (error) {
       setError(error instanceof Error ? error.message : 'ทำรายการไม่สำเร็จ');
@@ -195,12 +211,14 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
   const seat = match?.seats.find(seat => seat.member === room.me.id);
   const until = deadline(room);
   const writing = room.prepAt === null ? null : (room.me.stoppedAt ?? Math.min(clock, until ?? clock)) - room.prepAt;
-  const available = room.status === 'active' && seat?.opensAt != null && clock >= seat.opensAt && clock < seat.opensAt + START_WINDOW && seat.startedAt === null && seat.endsAt === null;
+  const available = room.status === 'active' && canStartSeat(seat, clock);
+  const startMode = room.settings.parallelStart ?? 'separate';
   const readyForPair = room.members.filter(member => member.role === 'pilot' && member.ready);
   const memberName = (id: string) => room.members.find(member => member.id === id)?.name ?? 'ผู้แข่ง';
   const final = room.settings.format === 'final';
   const awards = ['ชนะเลิศ', 'รองชนะเลิศอันดับ 1', 'รองชนะเลิศอันดับ 2', 'ชมเชย', 'ชมเชย'];
   const bothFields = room.settings.flight === 'parallel' && match?.seats.length === 2;
+  const selectedField = mobileField && mobileField.match === match?.id ? mobileField.member : seat?.member ?? match?.seats[0]?.member;
   const showing = bothFields ? match.seats : match?.seats.filter(seat => seat.startedAt !== null && seat.endsAt === null).slice(0, 1)
     ?? [];
   const fallback = match?.seats.find(seat => seat.opensAt !== null && seat.endsAt === null) ?? match?.seats.at(-1);
@@ -226,7 +244,7 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
         </div>
       </div>
       <div><Badge variant="secondary">{memberName(room.me.id)} · {room.me.role === 'watch' ? 'ผู้ชม' : 'ผู้แข่ง'}</Badge></div>
-      <p className="text-sm">รหัส <b className="font-mono">{code}</b> · {FORMATS[room.settings.format]} · {flightLabel[room.settings.flight]} · {CLOCKS[room.settings.clock]}</p>
+      <p className="text-sm">รหัส <b className="font-mono">{code}</b> · {FORMATS[room.settings.format]} · {flightLabel[room.settings.flight]}{room.settings.flight === 'parallel' && ` · ${PARALLEL_START[startMode]}`} · {CLOCKS[room.settings.clock]}</p>
       <p className="text-sm text-muted-foreground">ระดับ {({ easy: 'ง่าย', medium: 'ปานกลาง', hard: 'ยาก' })[room.settings.difficulty]} · ไฟเพดาน {room.settings.ceilingLights.some(Boolean) ? 'เปิด' : 'ปิด'} · ไฟมุม {room.settings.lights.filter(light => light.enabled).length} ดวง · ทดลองได้ {room.settings.practices.toLocaleString('th-TH')} รอบ</p>
       {room.me.role === 'watch' && until !== null && clock < until && room.status === 'active' &&
         <p className="tabular-nums text-sm">ช่วงเขียนโค้ดเหลือ {seconds(until - clock)}</p>}
@@ -238,7 +256,7 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
       {room.settings.ranked && <p className="text-sm">กดพร้อมเพื่อยืนยันเก็บแต้ม Battle เมื่อผู้แข่งทั้งคู่ล็อกอิน</p>}
       <p className="text-sm text-muted-foreground">โค้ดที่ส่งแข่งเปิดให้คนในห้องดูเมื่อการแข่งขันจบ</p>
       {connection && <p role="status">กำลังเชื่อมต่อใหม่ · {connection}</p>}
-      {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+      {error && !showDelete && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
     </Card>
 
     <div className="grid min-w-0 gap-4">
@@ -269,7 +287,7 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
               {room.prepAt !== null && <Button variant="outline" disabled={pending} onClick={() => void send({ action: 'compile', ...editor })}>ตรวจโค้ด</Button>}
               {room.prepAt !== null && <Button variant="outline" disabled={pending || !room.me.canPractice} onClick={() => void send({ action: 'practice', id: crypto.randomUUID(), count: room.me.practices, ...editor })}>ทดลองบิน</Button>}
               {room.me.canEdit && <Button disabled={pending} title="กดแล้วจะแก้โค้ดต่อไม่ได้" onClick={() => void send({ action: 'stop', ...editor })}>{room.settings.clock === 'stopwatch' ? 'พร้อมแข่ง · หยุดเวลาและล็อกโค้ด' : 'พร้อมแข่ง · ล็อกโค้ด'}</Button>}
-              {available && <Button disabled={pending} onClick={() => void send({ action: 'start', matchId: match!.id })}>เริ่มบิน · {seconds(seat!.opensAt! + START_WINDOW - clock)}</Button>}
+              {available && <Button disabled={pending} onClick={() => void send({ action: 'start', matchId: match!.id })}>{bothFields && startMode === 'together' ? 'เริ่มบินทั้งคู่' : 'เริ่มบิน'} · {seconds(seat.opensAt + START_WINDOW - clock)}</Button>}
             </div>
             {room.me.canEdit ? <div className="h-[min(64svh,42rem)] min-h-96 overflow-hidden squircle-2xl border border-line focus-within:border-brand-blue">
               <CodeEditor value={editor.draft} onChange={code => edit({ ...editor, draft: code })} label="โค้ด Battle" fill showQuick={false} />
@@ -282,7 +300,7 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
             {compile && <div role="status" className={compile.ok ? 'text-sm' : 'text-sm text-destructive'}>
               {compile.ok ? 'โค้ดผ่านการตรวจแล้ว' : <ul className="list-disc pl-5">{compile.errors.map(error => <li key={error}>{error}</li>)}</ul>}
             </div>}
-            {room.me.stoppedAt !== null && <p className="text-sm text-muted-foreground">ล็อกโค้ดแล้ว {available ? 'กดเริ่มเมื่อพร้อม' : 'รอเปิดคิวบิน'}</p>}
+            {room.me.stoppedAt !== null && <p className="text-sm text-muted-foreground">ล็อกโค้ดแล้ว {seat?.startedAt != null ? 'เริ่มรอบแล้ว' : available ? 'กดเริ่มเมื่อพร้อม' : 'รอเปิดคิวบิน'}</p>}
           </Card>}
           {room.status !== 'closed' && <section aria-label="สนามแข่ง" className="order-1 grid min-w-0 gap-3 xl:order-2">
             {pilot && room.me.canEdit && practice && <div className="flex flex-wrap gap-2" aria-label="เลือกสนาม">
@@ -293,13 +311,20 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
               ? <TapePlayer key={practiceSerial} tape={showingPractice} title="สนามซ้อมของคุณ" scenario={room.scenario} settings={room.settings} tall />
               : match ? <>
                 <div className="flex flex-wrap gap-2">
-                  {match.seats.map((seat, index) => <Button key={seat.member} variant={bothFields && mobileField === index ? 'default' : 'outline'} onClick={bothFields ? () => setMobileField(index) : undefined} tabIndex={bothFields ? undefined : -1} aria-pressed={bothFields ? mobileField === index : undefined}>
-                    {memberName(seat.member)} · {room.playback[seat.member]?.score ?? seat.result?.score ?? 0} คะแนน
-                  </Button>)}
+                  {match.seats.map(lane => {
+                    const score = room.playback[lane.member]?.score ?? lane.result?.score ?? 0;
+                    const text = <>{memberName(lane.member)}{lane.member === room.me.id ? ' (คุณ)' : ''} · {score} คะแนน</>;
+                    return <div key={lane.member}>
+                      <Badge variant="secondary" className={bothFields ? 'hidden lg:inline-flex' : undefined}>{text}</Badge>
+                      {bothFields && <Button size="sm" className="lg:hidden" variant={selectedField === lane.member ? 'default' : 'outline'}
+                        aria-pressed={selectedField === lane.member} aria-controls={`battle-field-${lane.member}`}
+                        onClick={() => setMobileField({ match: match.id, member: lane.member })}>{text}</Button>}
+                    </div>;
+                  })}
                 </div>
                 {bothFields && <div className="hidden items-center gap-3 text-sm lg:flex"><span id="battle-split">แบ่งหน้าจอซ้าย–ขวา</span><Slider className="max-w-40" aria-labelledby="battle-split" min={30} max={70} value={[split]} onValueChange={value => setSplit(typeof value === "number" ? value : value[0])} /></div>}
                 <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,var(--battle-left))_minmax(0,var(--battle-right))]" style={bothFields ? { '--battle-left': `${split}fr`, '--battle-right': `${100 - split}fr` } as React.CSSProperties : { gridTemplateColumns: 'minmax(0,1fr)' }}>
-                  {fields.map((seat, index) => <div key={seat.member} className={bothFields && mobileField !== index ? 'hidden min-w-0 lg:block' : 'min-w-0'}>
+                  {fields.map(seat => <div key={seat.member} id={`battle-field-${seat.member}`} className={bothFields && selectedField !== seat.member ? 'hidden min-w-0 lg:block' : 'min-w-0'}>
                     <BattleField key={`${match.id}:${seat.member}`} scenario={room.scenario} settings={room.settings} flight={room.playback[seat.member]} title={memberName(seat.member)} tall />
                   </div>)}
                 </div>
@@ -347,13 +372,34 @@ export function BattleRoom({ code, initialRole }: { code: string; initialRole: '
         </Card>}
         {host && <Card className="grid min-w-0 gap-2 squircle-3xl p-4 sm:p-5">
           <h2 className="font-bold">จัดการห้อง</h2>
+          {room.status === 'lobby' && room.settings.flight === 'parallel' && <Field>
+            <FieldLabel htmlFor="battle-room-start-mode">เริ่มบินยังไง</FieldLabel>
+            <NativeSelect id="battle-room-start-mode" className="w-full" value={startMode} disabled={pending}
+              onChange={event => void send({ action: 'set-start', mode: event.target.value as ParallelStart })}>
+              {Object.entries(PARALLEL_START).map(([value, label]) => <NativeSelectOption key={value} value={value}>{label}</NativeSelectOption>)}
+            </NativeSelect>
+          </Field>}
           {match?.finishedAt != null && room.status !== 'archived' && <Button variant="outline" disabled={pending} onClick={() => void send({ action: 'archive' })}>เก็บห้องและผลย้อนหลัง</Button>}
           {room.status !== 'closed' && room.status !== 'archived' && <Button variant="outline" disabled={pending} onClick={() => void send({ action: 'close' })}>ปิดห้อง</Button>}
-          <Button variant="outline" onClick={() => setShowDelete(!showDelete)}>ลบห้อง</Button>
-          {showDelete && <form className="grid gap-2" onSubmit={event => { event.preventDefault(); void send({ action: 'delete', confirm }); }}>
-            <Field><FieldLabel htmlFor="battle-confirm">พิมพ์ {code} เพื่อยืนยัน</FieldLabel><Input id="battle-confirm" value={confirm} onChange={event => setConfirm(event.target.value.toUpperCase())} /></Field>
-            <Button variant="destructive" disabled={pending || confirm !== code}>ยืนยันลบห้องและโค้ด</Button>
-          </form>}
+          <AlertDialog open={showDelete} onOpenChange={open => {
+            if (pending) return;
+            setError('');
+            setShowDelete(open);
+          }}>
+            <AlertDialogTrigger render={<Button variant="outline" disabled={pending} />}>ลบห้อง</AlertDialogTrigger>
+            <AlertDialogContent className="w-[calc(100%-2rem)] squircle-2xl">
+              <AlertDialogHeader>
+                <AlertDialogTitle>ลบห้อง {code} หรือไม่</AlertDialogTitle>
+                <AlertDialogDescription>ห้อง โค้ดที่ส่ง และเที่ยวบินย้อนหลังจะถูกลบถาวร</AlertDialogDescription>
+              </AlertDialogHeader>
+              {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={pending}>ยกเลิก</AlertDialogCancel>
+                <AlertDialogAction variant="destructive" disabled={pending}
+                  onClick={() => void send({ action: 'delete', confirm: true })}>{pending ? 'กำลังลบห้อง…' : 'ยืนยันลบห้อง'}</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </Card>}
       </aside>
     </div>

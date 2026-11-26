@@ -12,9 +12,17 @@ export const CLOCKS = {
   stopwatch: 'จับเวลาเขียน แล้วกดหยุดเพื่อล็อก',
 } as const;
 
+export const PARALLEL_START = {
+  together: 'คนเดียวกด เริ่มทั้งคู่',
+  separate: 'ต่างคนต่างกด',
+} as const;
+
+export type ParallelStart = keyof typeof PARALLEL_START;
+
 export type Settings = {
   format: keyof typeof FORMATS;
   flight: 'parallel' | 'turns';
+  parallelStart?: ParallelStart;
   clock: keyof typeof CLOCKS;
   minutes: number;
   practices: number;

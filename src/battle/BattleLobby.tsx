@@ -97,6 +97,7 @@ export function BattleLobby({ scenarios, signedIn, ranked, scores, initialRooms 
   }, []);
 
   useEffect(() => {
+    void refresh();
     const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 7000);
     return () => window.clearInterval(timer);
   }, [refresh]);

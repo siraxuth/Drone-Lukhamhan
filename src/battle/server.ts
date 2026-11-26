@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import type { Prisma } from '@/generated/prisma/client';
 import { getScenarios } from '@/lib/scenario-data';
-import { activeMatch, canEdit, canPractice, chooseFinalists, compareFinish, dnf, elo, MAX_CODE, MAX_MATCHES, MAX_PILOTS, MAX_PRACTICES, MAX_WATCHERS, pairUp, practiceCount, RuleError, START_WINDOW, table } from './rules';
+import { activeMatch, canEdit, canPractice, canStartSeat, chooseFinalists, compareFinish, dnf, elo, MAX_CODE, MAX_MATCHES, MAX_PILOTS, MAX_PRACTICES, MAX_WATCHERS, pairUp, practiceCount, RuleError, table } from './rules';
 import { advance, bracketRound, makeMatch, writingTime } from './state';
 import { compileBattle, flightWindow, makeTape } from './flight';
 import { CLOCKS, FORMATS, type FlightView, type Member, type Room, type RoomView, type ListedRoom, type Settings, type Tape } from './types';
@@ -22,10 +22,12 @@ const role = z.enum(['pilot', 'watch']);
 const id = z.uuid();
 const draft = z.string().max(MAX_CODE);
 const key = z.number().int().min(1).max(11).nullable();
+const parallelStart = z.enum(['together', 'separate']);
 const light = z.object({ enabled: z.boolean(), color: z.enum(['cyan', 'blue', 'ice']), intensity: z.number().min(0).max(1) });
 const settings = z.object({
   format: z.enum(Object.keys(FORMATS) as [keyof typeof FORMATS, ...(keyof typeof FORMATS)[]]),
   flight: z.enum(['parallel', 'turns']),
+  parallelStart: parallelStart.optional(),
   clock: z.enum(Object.keys(CLOCKS) as [keyof typeof CLOCKS, ...(keyof typeof CLOCKS)[]]),
   minutes: z.number().int().min(1).max(60),
   practices: z.number().int().min(0).max(MAX_PRACTICES),
@@ -45,9 +47,10 @@ export const actionInput = z.discriminatedUnion('action', [
   z.object({ action: z.literal('practice'), id, count: z.number().int().min(0).max(MAX_PRACTICES), draft, key }),
   z.object({ action: z.literal('begin'), pair: z.array(id).length(2).optional() }),
   z.object({ action: z.literal('start'), matchId: id }),
+  z.object({ action: z.literal('set-start'), mode: parallelStart }),
   z.object({ action: z.literal('archive') }),
   z.object({ action: z.literal('close') }),
-  z.object({ action: z.literal('delete'), confirm: z.string() }),
+  z.object({ action: z.literal('delete'), confirm: z.union([z.literal(true), z.string()]) }),
 ]);
 
 function authenticate(room: Room, actor: Actor) {
@@ -371,30 +374,45 @@ export async function act(code: string, actor: Actor, input: z.infer<typeof acti
         host();
         await startRoom(tx, room, now, input.pair);
         break;
+      case 'set-start':
+        host();
+        if (room.status !== 'lobby' || room.settings.flight !== 'parallel') {
+          throw new RuleError('ตั้งวิธีเริ่มบินได้ก่อนเริ่มแข่งในห้องแบบบินพร้อมกัน');
+        }
+        room.settings.parallelStart = input.mode;
+        break;
       case 'start': {
-        const match = activeMatch(room);
-        const seat = room.matches.find(item => item.id === input.matchId)?.seats.find(item => item.member === me.id);
+        const match = room.matches.find(item => item.id === input.matchId);
+        const seat = match?.seats.find(item => item.member === me.id);
         if (seat?.startedAt != null) {
           if (advanced) await tx.battleRoom.update({ where: { code }, data: { state: json(room) } });
           return {};
         }
-        if (!match || match.id !== input.matchId || !seat || seat.endsAt !== null || seat.opensAt === null || seat.code === null || now < seat.opensAt) {
+        if (!match || match !== activeMatch(room) || !canStartSeat(seat, now)) {
           throw new RuleError('ยังไม่ถึงคิวบิน หรือหมดเวลาของรอบนี้แล้ว');
         }
-        const writingMs = writingTime(room, me);
-        const compiled = compileBattle(seat.code, me.key);
-        seat.startedAt = now;
-        if (!compiled.ok || now >= seat.opensAt + START_WINDOW) {
-          seat.result = dnf(writingMs);
-          seat.endsAt = now;
-          payload = { compile: compiled };
-        } else {
-          const tape = makeTape(room, seat.code, compiled.key, match.seed, now - seat.opensAt);
-          seat.flightId = randomUUID();
-          seat.endsAt = now + tape.duration;
-          seat.result = { ...tape.finish, writingMs };
-          await tx.battleFlight.create({ data: { id: seat.flightId, roomCode: code, tape: json(tape) } });
+        const together = room.settings.flight === 'parallel' && room.settings.parallelStart === 'together';
+        const starting = together ? match.seats.filter(candidate => canStartSeat(candidate, now)) : [seat];
+        const prepared = starting.map(candidate => {
+          const pilot = room.members.find(member => member.id === candidate.member)!;
+          const compiled = compileBattle(candidate.code ?? '', pilot.key);
+          const tape = compiled.ok ? makeTape(room, candidate.code ?? '', compiled.key, match.seed, now - candidate.opensAt!) : null;
+          return { candidate, compiled, tape, writingMs: writingTime(room, pilot) };
+        });
+        const startedAt = Date.now();
+        const flights: Prisma.BattleFlightCreateManyInput[] = [];
+        for (const { candidate, compiled, tape, writingMs } of prepared) {
+          candidate.startedAt = startedAt;
+          candidate.endsAt = startedAt + (tape?.duration ?? 0);
+          candidate.result = tape ? { ...tape.finish, writingMs } : dnf(writingMs);
+          if (tape) {
+            candidate.flightId = randomUUID();
+            flights.push({ id: candidate.flightId, roomCode: code, tape: json(tape) });
+          } else if (candidate.member === me.id) {
+            payload = { compile: compiled };
+          }
         }
+        if (flights.length) await tx.battleFlight.createMany({ data: flights });
         break;
       }
       case 'archive':
@@ -413,9 +431,9 @@ export async function act(code: string, actor: Actor, input: z.infer<typeof acti
         break;
       case 'delete':
         host();
-        if (input.confirm !== code) throw new RuleError('ยืนยันรหัสห้องก่อนลบ');
+        if (input.confirm !== true && input.confirm !== code) throw new RuleError('ยืนยันก่อนลบห้อง');
         for (const match of room.matches) for (const seat of match.seats) if (seat.flightId) tapes.delete(seat.flightId);
-        await tx.battleRoom.delete({ where: { code } });
+        await tx.battleRoom.deleteMany({ where: { code } });
         return { deleted: true };
     }
     if (advance(room, Date.now(), createMatch(room))) await issueRatings(tx, room);

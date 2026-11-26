@@ -1,4 +1,4 @@
-import type { Finish, Match, Member, Room } from './types';
+import type { Finish, Match, Member, Room, Seat } from './types';
 import { TIME_LIMIT_MS } from '@/flight/engine';
 
 export const START_WINDOW = 30_000;
@@ -19,6 +19,11 @@ export function deadline(room: Pick<Room, 'prepAt' | 'settings'>) {
 export function activeMatch(room: Room) {
   const match = room.matches.at(-1);
   return match && match.finishedAt === null && room.status === 'active' ? match : null;
+}
+
+export function canStartSeat(seat: Seat | undefined, now: number): seat is Seat & { opensAt: number } {
+  return seat?.opensAt != null && seat.startedAt === null && seat.endsAt === null
+    && now >= seat.opensAt && now < seat.opensAt + START_WINDOW;
 }
 
 export function canEdit(room: Room, member: Member, now: number) {

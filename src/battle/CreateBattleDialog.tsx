@@ -23,10 +23,10 @@ import { battleApi, battleRequest, flightLabel } from './client';
 import { flightWindow, makeTape } from './flight';
 import { ScenarioImage, ScenarioPicker } from './ScenarioPicker';
 import { MAX_PRACTICES } from './rules';
-import { CLOCKS, FORMATS, type Settings, type Tape } from './types';
+import { CLOCKS, FORMATS, PARALLEL_START, type Settings, type Tape } from './types';
 
 const defaults: Settings = {
-  format: 'duel', flight: 'parallel', clock: 'fixed', minutes: 10, practices: 10,
+  format: 'duel', flight: 'parallel', parallelStart: 'together', clock: 'fixed', minutes: 10, practices: 10,
   difficulty: 'medium', lights: LIGHTS_OFF, ceilingLights: CEILING_LIGHTS_ON, ranked: false,
 };
 export const battleLevels = { easy: 'ง่าย', medium: 'ปานกลาง', hard: 'ยาก' };
@@ -163,6 +163,7 @@ export function CreateBattleDialog({ open, onOpenChange, tab, onTabChange, scena
                     <SettingSelect id="battle-host-role" label="คุณจะเข้าห้องแบบไหน" value={role} values={{ watch: 'ดูและจัดคิว', pilot: 'ลงแข่งด้วย' }} onChange={setRole} />
                     <SettingSelect id="battle-format" label="รูปแบบห้อง" value={settings.format} values={FORMATS} onChange={value => change('format', value)} />
                     <SettingSelect id="battle-flight-mode" label="ลำดับการบิน" value={settings.flight} values={flightLabel} onChange={value => change('flight', value)} />
+                    {settings.flight === 'parallel' && <SettingSelect id="battle-start-mode" label="เริ่มบินยังไง" value={settings.parallelStart ?? 'together'} values={PARALLEL_START} onChange={value => change('parallelStart', value)} />}
                     <SettingSelect id="battle-clock" label="เวลาเขียนโค้ด" value={settings.clock} values={CLOCKS} onChange={clock => setSettings(previous => ({
                       ...previous, clock, minutes: Math.max(1, Math.min(previous.minutes, clock === 'stopwatch' ? 30 : 60)),
                     }))} />
