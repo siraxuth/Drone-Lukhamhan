@@ -10,7 +10,7 @@ import { baseAt } from '@/lib/scenarios';
 import { PlainMat, SceneLayer3D, type SceneSpec } from './SceneObjects';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { FIELD } from './layout';
+import { FIELD, launchFrameBars } from './layout';
 import { heading, type DroneState } from './aim';
 import { balloonId } from './layout';
 import type { RuleEvent } from '@/rules/types';
@@ -62,6 +62,7 @@ type Props = {
   walkControlsEnabled?: boolean;
   onWalk?: (pose: WalkPose) => void;
   placement?: { center: { x: number; y: number }; target: { x: number; y: number }; aligned: boolean; onRotate: (yaw: number) => void };
+  dropPreview?: { x: number; y: number; height: number } | null;
   carryingDrone?: boolean;
   rescuePose?: LivePose | null;
 };
@@ -319,19 +320,7 @@ function WalkerMarker({ poseRef, visible }: { poseRef: React.RefObject<WalkPose>
 
 export function Takeoff({ color, hoop = true }: { color: 'green' | 'red'; hoop?: boolean }) {
   const s = FIELD.takeoff.size, h = FIELD.takeoff.height;
-  const { size: hs, bottom, top } = FIELD.hoop;
-  const t = 0.065;
   const col = color === 'green' ? C.green : C.red;
-  const bars: Array<[[number, number, number], [number, number, number]]> = [];
-  const half = hs / 2;
-  const hy = top / 2;
-  // 4 เสา
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) bars.push([[sx * half, hy, sz * half], [t, top, t]]);
-  // วงบนและวงล่าง
-  for (const y of [bottom, top]) {
-    for (const sz of [-1, 1]) bars.push([[0, y, sz * half], [hs, t, t]]);
-    for (const sx of [-1, 1]) bars.push([[sx * half, y, 0], [t, t, hs]]);
-  }
   return (
     <group>
       <mesh position={[0, h / 2, 0]}>
@@ -342,7 +331,7 @@ export function Takeoff({ color, hoop = true }: { color: 'green' | 'red'; hoop?:
         <planeGeometry args={[s * 0.62, s * 0.62]} />
         <meshStandardMaterial color="#ffffff" transparent opacity={0.18} />
       </mesh>
-      {hoop && bars.map(([pos, size], i) => (
+      {hoop && launchFrameBars().map(({position: pos, size}, i) => (
         <mesh key={i} position={pos}>
           <boxGeometry args={size} />
           <meshStandardMaterial color={C.orange} roughness={0.55} />
@@ -1130,7 +1119,7 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight, plac
   );
 }
 
-export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, readOnly = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, gatePositions = {}, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, ceilingLights, walkPoseRef, walkInputRef, walkControlsEnabled = true, onWalk, placement, carryingDrone = false, rescuePose = null }: Props) {
+export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, readOnly = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, gatePositions = {}, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, ceilingLights, walkPoseRef, walkInputRef, walkControlsEnabled = true, onWalk, placement, dropPreview, carryingDrone = false, rescuePose = null }: Props) {
   const [dragging, setDragging] = useState(false);
   // โจทย์ฝึกบนกริด/พื้นว่าง: วาดวัตถุจาก scene แทนของตามกติกา และให้โดรนมีเข็ม/ลูกดอกตามวัตถุที่วางไว้
   const custom = !!scene && scene.pattern !== 'standard';
@@ -1166,6 +1155,10 @@ export default function Field3D({ event, drone, onDrone, view, shot, low, live =
       {!placement && !custom && event.field.targets && (<><Targets /><ShootZones drone={drone} /></>)}
       {!carryingDrone && !rescuePose && <Drone drone={drone} onDrone={onDrone} onRotate={placement?.onRotate} setDragging={setDragging} low={low} live={live && !placement} readOnly={readOnly} placement={!!placement} poseRef={poseRef} platforms={event.field.platforms && !custom} loaded={loaded} gatePositions={gatePositions} dartInventory={hasTargets ? dartInventory : { front: 0, back: 0 }} dartRack={hasTargets} needle={hasBalloons} />}
       {rescuePose && walkPoseRef && <RescueDrone low={low} start={rescuePose} walker={walkPoseRef} view={view} loaded={loaded} gatePositions={gatePositions} />}
+      {dropPreview && <mesh position={[dropPreview.x, dropPreview.height + 0.008, -dropPreview.y]} rotation-x={-Math.PI / 2}>
+        <ringGeometry args={[0.15, 0.18, 32]} />
+        <meshBasicMaterial color="#edf6ff" />
+      </mesh>}
       {carryingDrone && view === 'walk' && <HandDrone low={low} loaded={loaded} gatePositions={gatePositions} />}
       {placement && <PlacementMarkers center={placement.center} target={placement.target} drone={drone} aligned={placement.aligned} onRotate={placement.onRotate} scene={scene} />}
       {walkPoseRef && <WalkerMarker poseRef={walkPoseRef} visible={view !== 'walk' && !placement} />}

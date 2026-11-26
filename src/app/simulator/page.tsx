@@ -12,7 +12,7 @@ import { readWorkspace } from '@/flight/workspace';
 
 export const revalidate = 60;
 const title = 'ตัวจำลองการบินโดรน 3 มิติ';
-const description = 'เขียนโค้ดสั่งโดรนและทดลองบินในสนามจำลอง 3 มิติขนาดจริง พร้อมโจทย์กริด 5×5 เมตร ห่วง จุดผ่าน และภารกิจแข่ง';
+const description = 'ฝึกเขียนโค้ดสั่งโดรนในสนาม 3 มิติ พร้อมโจทย์ลอดห่วง บินผ่านจุด และลงจอด';
 export const metadata: Metadata = { title, alternates: { canonical: '/simulator' }, description, ...shareMetadata({ title, description, path: '/simulator' }) };
 
 export default async function Page() {

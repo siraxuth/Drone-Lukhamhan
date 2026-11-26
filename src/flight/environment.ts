@@ -1,3 +1,4 @@
+import type { Call } from './parser';
 import { FIELD } from '@/field/layout';
 
 const FIELD_CM = FIELD.size * 100;
@@ -14,6 +15,10 @@ export type FlightAction =
   | { t: number; type: 'manual'; enabled: boolean }
   | { t: number; type: 'stick'; value: ManualStick }
   | { t: number; type: 'land' }
+  | { t: number; type: 'radio-land' }
+  | { t: number; type: 'radio-drop' }
+  | { t: number; type: 'radio-key'; key: number; calls: Call[] }
+  | { t: number; type: 'radio-cancel-code' }
   | { t: number; type: 'pickup' }
   | { t: number; type: 'flip' } // ผลจำลองเก่าที่บันทึกไว้ในเครื่อง
   | { t: number; type: 'power' };
@@ -22,6 +27,8 @@ export type FlightEnvironment = {
   lights: FieldLights;
   ceilingLights?: CeilingLights;
   actions?: FlightAction[];
+  radio?: boolean;
+  radioUntilMs?: number;
   launch?: { x: number; y: number; yaw: number }; // engine centimetres
   timeLimitMs?: number;
   completed?: {

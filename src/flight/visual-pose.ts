@@ -23,7 +23,7 @@ export function flightMotion(frames: Frame[], time: number, hard: boolean, shake
   const tilt = (value: number) => Math.max(-limit, Math.min(limit, value));
   return {
     frame, ...position, alt: frame.z / 100, yaw: frame.yaw, speed: Math.hypot(vx, vy),
-    pitch: tilt(forward * 8 + forwardAccel * 4.5 + Math.sin(time / 260 + seed) * shake),
-    roll: tilt(side * 8 + sideAccel * 4.5 + Math.cos(time / 310 + seed * 0.7) * shake),
+    pitch: frame.pitch ?? tilt(forward * 8 + forwardAccel * 4.5 + Math.sin(time / 260 + seed) * shake),
+    roll: frame.roll ?? tilt(side * 8 + sideAccel * 4.5 + Math.cos(time / 310 + seed * 0.7) * shake),
   };
 }

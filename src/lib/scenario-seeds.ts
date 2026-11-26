@@ -7,8 +7,8 @@ import type { ScenarioConfig, SceneObject } from './scenarios';
  */
 export type SeedScenario = { slug: string; title: string; level: 'เริ่มต้น' | 'กลาง' | 'ยาก'; order: number; brief: string; starter: string; solution: string; config: ScenarioConfig };
 
-const wp = (id: string, x: number, y: number, order?: number, points = 10): SceneObject => ({ type: 'waypoint', id, x, y, order, points });
-const hoop = (id: string, x: number, y: number, yaw: number, points = 15): SceneObject => ({ type: 'hoop', id, x, y, yaw, size: 1, zMin: 55, zMax: 150, points });
+const wp = (id: string, x: number, y: number, order?: number, points = 10): Extract<SceneObject, { type: 'waypoint' }> => ({ type: 'waypoint', id, x, y, order, points });
+const hoop = (id: string, x: number, y: number, yaw: number, points = 15): Extract<SceneObject, { type: 'hoop' }> => ({ type: 'hoop', id, x, y, yaw, size: 1, zMin: 55, zMax: 150, points });
 
 export const scenarioSeeds: SeedScenario[] = [
   // ───────── ต้นแบบของ 3 ภารกิจแข่ง: ทำแค่ฝั่งเดียว แล้วต่อยอดเอง ─────────
@@ -375,6 +375,36 @@ void loop() {
 void loop() {
 }`,
     config: { pattern: 'grid5', event: 'mission', objects: [wp('D4', 1, 1, 1), wp('C4', 0, 1, 2), wp('B4', -1, 1, 3), wp('B3', -1, 0, 4), wp('B2', -1, -1, 5), wp('C2', 0, -1, 6), wp('D2', 1, -1, 7)] },
+  },
+  {
+    slug: 'first-hoop', title: 'ลอดห่วงแรกแล้วกลับฐาน', level: 'เริ่มต้น', order: 9,
+    brief: '<p>บินลอดห่วงที่อยู่หน้าแท่น 1.5 เมตร ผ่านจุดตรวจด้านหลังห่วง แล้วบินถอยกลับมาลงฐาน</p><ul><li>รักษาความสูง 80–145 ซม. ตอนลอด</li><li>หัวโดรนหันตรงเข้าห่วงตั้งแต่เริ่ม ลองบินเข้าและถอยกลับโดยคงทิศหัวเดิม</li><li>ปล่อยก้านให้โดรนเบรกก่อนกดลงจอดเหนือแท่นสีเขียว</li></ul>',
+    starter: `void setup() {
+  drone.onKey1(fly);
+}
+
+void fly() {
+  calibration();
+  delay(3000);
+  take_off();
+  delay(3000);
+  set_height(110);
+  // เดินหน้าให้ถึงจุดตรวจ แล้วถอยกลับฐาน
+  auto_land();
+}`,
+    solution: `void setup() { drone.onKey1(fly); }
+void fly() {
+  calibration(); delay(3000);
+  take_off(); delay(3000);
+  set_height(110);
+  move_forward(220);
+  move_backward(220);
+  auto_land();
+}`,
+    config: { event: 'mission', pattern: 'grid5', tags: ['hoop', 'checkpoint', 'landing'], objects: [
+      { ...hoop('ห่วงแรก', 0, 1.5, 0), zMin: 80, zMax: 145 },
+      { ...wp('จุดตรวจ', 0, 2.2, 1), zMin: 80, zMax: 145, r: 35 },
+    ] },
   },
   {
     slug: 'grid-hoops', title: 'ลอดห่วง 4 ใบรอบสี่เหลี่ยม', level: 'กลาง', order: 10,

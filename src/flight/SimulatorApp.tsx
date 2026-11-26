@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Blocks, BookOpen, Braces, ChevronDown, CircleHelp, Plus, RotateCcw, Save } from 'lucide-react';
+import { Blocks, BookOpen, Braces, ChevronDown, CircleHelp, Gamepad2, Plus, RotateCcw, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -32,7 +32,8 @@ const STYLE_KEY = 'sim-style-v1';
 const LAST_KEY = 'sim-last-mission-v1';
 const DONE_KEY = 'sim-progress-v1';
 /** ด่านสำหรับคนเพิ่งเริ่ม เรียงจากง่ายไปยาก (ด่านที่ไม่มีในฐานข้อมูลจะถูกข้าม) */
-const START_HERE = ['blank-hover', 'grid-line', 'grid-l', 'grid-square', 'grid-hoops', 'grid-delivery'];
+const START_HERE = ['blank-hover', 'grid-line', 'first-hoop', 'grid-l', 'grid-square', 'grid-hoops', 'grid-delivery'];
+const RADIO_COURSES = ['blank-hover', 'first-hoop', 'grid-hoops', 'grid-delivery', 'grid-balloons', 'grid-course'];
 /** เป้าหมายของด่าน: บล็อก (ย่อหน้าหรือข้อในรายการ) ที่ขึ้นต้นด้วย "เป้าหมาย" ถ้าไม่มีใช้ย่อหน้าแรก (มักเป็นคำโปรย) */
 function objectiveOf(html: string) {
   const blocks = [...html.matchAll(/<(p|li)(?:\s[^>]*)?>([\s\S]*?)<\/\1>/gi)].map((match) => ({ tag: match[1].toLowerCase(), inner: match[2] }));
@@ -290,13 +291,17 @@ const CODE_COURSE: TourStep[] = [
  * ใช้ครั้งแรกจะมีบทสอนเขียนโค้ดทีละขั้นก่อน (เปิดซ้ำได้ที่ปุ่ม "บทสอน") · โจทย์มาจากฐานข้อมูล (จัดการที่ /admin/challenges)
  * URL: ?tab=<slug ของโจทย์> (รับ mission|aviation|innovation แบบเก่าด้วย) · ?lesson=1 เปิดบทสอน · ?notour ปิดบทสอนอัตโนมัติ
  */
-export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenarios: ScenarioView[]; initialWorkspace: SimulatorWorkspaceData | null; signedIn: boolean }) {
+export function SimulatorApp({ scenarios, initialWorkspace, signedIn, remoteOnly = false }: { scenarios: ScenarioView[]; initialWorkspace: SimulatorWorkspaceData | null; signedIn: boolean; remoteOnly?: boolean }) {
   const qs = useSearchParams();
-  const wanted = LEGACY[qs.get('tab') ?? ''] ?? qs.get('tab');
+  const [radioMode, setRadioMode] = useState(remoteOnly);
+  const styleKey = remoteOnly ? `${STYLE_KEY}-remote` : STYLE_KEY;
+  const workspaceKey = remoteOnly ? `${WORKSPACE_STORAGE_KEY}-remote` : WORKSPACE_STORAGE_KEY;
+  const lastMissionKey = remoteOnly ? `${LAST_KEY}-remote` : LAST_KEY;
+  const wanted = LEGACY[qs.get('tab') ?? ''] ?? qs.get('tab') ?? null;
   const legacyProgram = programs.find((p) => p.id === qs.get('p'));
   const hasLink = !!wanted || !!legacyProgram;
   // เข้ามาครั้งแรกเริ่มที่ด่านง่ายสุด ไม่ใช่ด่านแรกของรายการ (ซึ่งเป็นโจทย์นำเสนอที่ยากที่สุด)
-  const beginnerSlug = START_HERE.find((id) => scenarios.some((s) => s.slug === id));
+  const beginnerSlug = (remoteOnly ? ['first-hoop', ...START_HERE] : START_HERE).find((id) => scenarios.some((s) => s.slug === id));
   const initial = scenarios.find((s) => s.slug === wanted) ?? scenarios.find((s) => legacyProgram && s.slug === LEGACY[legacyProgram.event]) ?? scenarios.find((s) => s.slug === initialWorkspace?.slug) ?? scenarios.find((s) => s.slug === beginnerSlug) ?? scenarios[0];
   const [slug, setSlug] = useState(initial.slug);
   const [drafts, setDrafts] = useState<Record<string, string>>(legacyProgram ? { ...initialWorkspace?.drafts, [initial.slug]: bindStarterToKey(legacyProgram.code) } : initialWorkspace?.drafts ?? {});
@@ -361,7 +366,7 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
   useEffect(() => {
     if (signedIn) return;
     try {
-      const saved = readWorkspace(JSON.parse(localStorage.getItem(WORKSPACE_STORAGE_KEY) ?? 'null'));
+      const saved = readWorkspace(JSON.parse(localStorage.getItem(workspaceKey) ?? 'null'));
       if (saved) {
         setDrafts(saved.drafts);
         setStyleSel(saved.style);
@@ -374,7 +379,7 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
           setBlockProgramSlug(target);
         }
       } else {
-        const style = localStorage.getItem(STYLE_KEY);
+        const style = localStorage.getItem(styleKey);
         if (style === 'full' || style === 'any' || style === 'drone' || style === 'parduino') setStyleSel(style);
       }
     } catch { /* storage may be disabled */ }
@@ -385,14 +390,14 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
     try {
       const saved: unknown = JSON.parse(localStorage.getItem(DONE_KEY) ?? '{}');
       if (saved && typeof saved === 'object') setProgress(saved as Record<string, number>);
-      const last = localStorage.getItem(LAST_KEY);
-      if (!signedIn && !hasLink && !localStorage.getItem(WORKSPACE_STORAGE_KEY) && last && last !== initial.slug && scenarios.some((s) => s.slug === last)) setSlug(last);
+      const last = localStorage.getItem(lastMissionKey);
+      if (!signedIn && !hasLink && !localStorage.getItem(workspaceKey) && last && last !== initial.slug && scenarios.some((s) => s.slug === last)) setSlug(last);
     } catch { /* ไม่มี storage ก็เริ่มที่ด่านง่าย */ }
   }, []);
   useEffect(() => {
     if (!workspaceReady) return;
     const data = latestWorkspace.current.data;
-    try { localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(data)); } catch { /* storage may be disabled */ }
+    try { localStorage.setItem(workspaceKey, JSON.stringify(data)); } catch { /* storage may be disabled */ }
     if (!signedIn) { setSaveStatus('saved'); return; }
     setSaveStatus('saving');
     const timer = setTimeout(async () => {
@@ -417,7 +422,7 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
     setSaveStatus('saving');
     const data = latestWorkspace.current.data;
     try {
-      localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(data));
+      localStorage.setItem(workspaceKey, JSON.stringify(data));
       if (signedIn) {
         const response = await fetch('/api/simulator/workspace', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
         if (!response.ok) throw new Error('workspace save failed');
@@ -425,9 +430,9 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
       setSaveStatus('saved');
     } catch { setSaveStatus('error'); }
   };
-  const chooseStyle = (v: Style) => { setStyleSel(v); if (v !== 'any') setCode(convertStyle(code, v)); try { localStorage.setItem(STYLE_KEY, v); } catch { /* ไม่เป็นไร */ } };
+  const chooseStyle = (v: Style) => { setStyleSel(v); if (v !== 'any') setCode(convertStyle(code, v)); try { localStorage.setItem(styleKey, v); } catch { /* ไม่เป็นไร */ } };
 
-  useEffect(() => { document.title = 'ตัวจำลองการบิน · ชมรมโดรน ลือคำหาญฯ'; }, []);
+  useEffect(() => { document.title = `${remoteOnly ? 'สนามรีโมท USB' : 'ตัวจำลองการบิน'} · ชมรมโดรน ลือคำหาญฯ`; }, [remoteOnly]);
 
   const onFinish = useCallback((result: Result) => {
     setPayloads((current) => ({ ...current, [sc.slug]: result.payloadRemaining }));
@@ -445,9 +450,9 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
   const commitPick = (s: string) => {
     setSlug(s); setPanel(null);
     setCanReload(true);
-    try { localStorage.setItem(LAST_KEY, s); } catch { /* ไม่เป็นไร */ }
+    try { localStorage.setItem(lastMissionKey, s); } catch { /* ไม่เป็นไร */ }
     const u = new URL(window.location.href);
-    u.searchParams.set('tab', s); u.searchParams.delete('p'); u.searchParams.delete('mode');
+    u.searchParams.set('tab', s); u.searchParams.delete('p');
     window.history.replaceState(null, '', u);
   };
   const setCode = (v: string) => setDrafts((d) => ({ ...d, [sc.slug]: v }));
@@ -462,6 +467,7 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
     if (targetSlug !== slug) commitPick(targetSlug);
   };
   const pick = (s: string) => {
+    if (radioMode) { commitPick(s); return; }
     if (editorMode === 'blocks') {
       const target = scenarios.find((scenario) => scenario.slug === s);
       if (target) {
@@ -530,14 +536,15 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
   return (
     <main className="flex min-h-svh w-full min-w-0 flex-col pt-[4.75rem] xl:h-svh xl:overflow-hidden">
       <header className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-3 py-2 sm:flex sm:flex-wrap sm:gap-3 sm:px-6">
-        <div className="min-w-0 flex-1"><h1 className="text-base font-extrabold sm:text-2xl">สนามฝึกการบินโดรน</h1><p className="hidden text-sm text-muted-foreground lg:block">วางแผนคำสั่ง ดูเส้นทางจริง แล้วเรียนรู้จากสิ่งที่คลาดเคลื่อน</p></div>
-        {qs.get('lesson') !== '1' && <Button variant="outline" className="min-h-10 px-2 sm:px-4" data-sim-guide aria-label="วิธีใช้"><CircleHelp className="size-4" /><span className="hidden sm:inline">วิธีใช้</span></Button>}
-        <Link href="/battle" className="inline-flex min-h-10 items-center squircle-xl border border-line px-3 text-sm font-semibold hover:bg-surface-2">Battle</Link>
+        <div className="min-w-0 flex-1"><h1 className="text-base font-extrabold sm:text-2xl">{remoteOnly ? 'สนามรีโมท USB' : 'สนามฝึกการบินโดรน'}</h1><p className="hidden text-sm text-muted-foreground lg:block">{remoteOnly ? 'บังคับด้วยก้าน สลับมารันโค้ด แล้วกลับไปบังคับได้ระหว่างบิน' : 'วางแผนคำสั่ง ดูเส้นทางจริง แล้วเรียนรู้จากสิ่งที่คลาดเคลื่อน'}</p></div>
+        {!remoteOnly && qs.get('lesson') !== '1' && <Button variant="outline" className="min-h-10 px-2 sm:px-4" data-sim-guide aria-label="วิธีใช้"><CircleHelp className="size-4" /><span className="hidden sm:inline">วิธีใช้</span></Button>}
+        <Link href={remoteOnly ? '/simulator' : '/simulator/remote'} className="inline-flex min-h-10 items-center gap-1.5 squircle-xl border border-line px-2 text-sm font-semibold hover:bg-surface-2 sm:px-3"><Gamepad2 className="size-4" aria-hidden /> {remoteOnly ? 'สนามเขียนโค้ด' : 'สนามรีโมท USB'}</Link>
+        {!remoteOnly && <Link href="/battle" className="hidden min-h-10 items-center squircle-xl border border-line px-3 text-sm font-semibold hover:bg-surface-2 sm:inline-flex">Battle</Link>}
         <Button type="button" variant="outline" className="min-h-10 px-2 sm:px-4" disabled={!workspaceReady || saveStatus === 'saving'} onClick={saveNow}><Save className="size-4" />{saveStatus === 'saving' ? 'กำลังเซฟ' : 'เซฟ'}</Button>
         <span role="status" className="col-span-2 min-w-0 text-xs text-muted-foreground sm:order-none sm:w-auto">{saveStatus === 'saving' ? 'กำลังบันทึก…' : saveStatus === 'saved' ? signedIn ? 'บันทึกในบัญชีแล้ว' : 'บันทึกในเครื่องแล้ว' : saveStatus === 'error' ? 'บันทึกไม่สำเร็จ กดเซฟอีกครั้ง' : ''}</span>
         <Button className="col-start-3 row-start-2 min-h-10 whitespace-nowrap" data-tour="sim-pick" onClick={() => setPanel('pick')}><BookOpen className="size-4" /> เลือกภารกิจ</Button>
       </header>
-      <div className="grid w-full min-w-0 flex-1 auto-rows-max grid-cols-1 gap-3 p-3 sm:p-4 xl:min-h-0 xl:auto-rows-[minmax(0,1fr)] xl:overflow-hidden xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className={`grid w-full min-w-0 flex-1 auto-rows-max grid-cols-1 gap-3 p-3 sm:p-4 xl:min-h-0 xl:auto-rows-[minmax(0,1fr)] xl:overflow-hidden ${radioMode ? 'xl:grid-cols-[minmax(18rem,1fr)_minmax(0,2.6fr)]' : 'xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]'}`}>
         <section data-tour="sim-stage" aria-label="สนามจำลอง" className="order-1 grid min-h-0 min-w-0 grid-cols-1 content-start gap-2 xl:order-2 xl:grid-rows-[auto_auto_auto] xl:overflow-y-auto">
           <div className="min-w-0 squircle-2xl border border-line bg-surface">
             <div className="flex min-w-0 items-center gap-2 px-3 py-2">
@@ -555,7 +562,7 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
             </div>
           </div>
           <div data-tour="sim-stage-canvas" className="min-w-0 squircle-3xl border border-line bg-surface p-2 sm:p-3">
-            <FlightRunner event={ev} code={code} config={config} scene={scene} maxPoints={max} bigPlay={false} fullHeightField controlsBlocked={payloadDialogOpen || tuningOpen} onResult={onFlightResult} onCommandProgress={setActiveBlockCommand} onStart={() => setCanReload(false)} onFinish={onFinish} />
+            <FlightRunner event={ev} code={code} config={config} scene={scene} maxPoints={max} bigPlay={false} fullHeightField dedicatedRemote={remoteOnly} onRadioModeChange={setRadioMode} controlsBlocked={panel !== null || payloadDialogOpen || tuningOpen} onResult={onFlightResult} onCommandProgress={setActiveBlockCommand} onStart={() => setCanReload(false)} onFinish={onFinish} />
           </div>
           {sc.config.requiresPayload && <section ref={payloadPanel} className="grid gap-2 squircle-2xl border border-line bg-surface p-3" aria-label="เตรียมโดรน" aria-keyshortcuts="Shift+S">{payloadControls}</section>}
           <Dialog open={payloadDialogOpen} onOpenChange={setPayloadDialogOpen}>
@@ -566,11 +573,37 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
             </DialogContent>
           </Dialog>
         </section>
-        <aside className="order-2 grid min-h-0 min-w-0 content-start gap-2 xl:order-1 xl:grid-rows-[minmax(0,1fr)] xl:overflow-hidden xl:pr-1">
+        {radioMode && <aside className="order-2 grid min-w-0 content-start gap-3 self-start xl:order-1" aria-label="คู่มือฝึกบิน">
+          <section className="grid gap-3 squircle-3xl border border-line bg-surface p-4">
+            <h2 className="flex items-center gap-2 text-lg font-bold"><Gamepad2 aria-hidden className="size-5" /> ฝึกบินบังคับ</h2>
+            <ol className="grid gap-2 text-sm">
+              {[
+                ['K1', 'สลับได้ระหว่างบิน', 'เข้า Coding แล้วกด K2–K10 เพื่อเรียกฟังก์ชัน กด K1 อีกครั้งเพื่อบังคับต่อ'],
+                ['K2', 'ตั้งศูนย์', 'วางก้านไว้กลาง แล้วรอ 3 วินาที'],
+                ['K8', 'ขึ้นบิน', 'ใบพัดเร่งรอบ 3 วินาที แล้วโดรนจึงยกตัว'],
+              ].map(([key, title, detail]) => <li key={key} className="grid grid-cols-[auto_1fr] gap-2 squircle-xl border border-line bg-surface-2 p-2">
+                <kbd className="self-start squircle-lg border border-line bg-surface px-2 py-1 font-mono text-xs font-bold">{key}</kbd>
+                <div><p className="font-semibold">{title}</p><p className="text-xs leading-5 text-muted-foreground">{detail}</p></div>
+              </li>)}
+            </ol>
+            <dl className="grid gap-2 border-t border-line pt-3 text-xs leading-5">
+              <div><dt className="font-semibold">ก้านซ้าย</dt><dd className="text-muted-foreground">ขึ้น/ลงเปลี่ยนความสูง · ซ้าย/ขวาหมุนหัว</dd></div>
+              <div><dt className="font-semibold">ก้านขวา</dt><dd className="text-muted-foreground">หน้า/หลัง/ซ้าย/ขวา ตามทิศที่หัวโดรนหันอยู่</dd></div>
+            </dl>
+          </section>
+          <section className="grid gap-2 squircle-3xl border border-line bg-surface p-4">
+            <h2 className="text-sm font-bold">โจทย์ฝึกแนะนำ</h2>
+            {RADIO_COURSES.map(id => scenarios.find(scenario => scenario.slug === id)).filter(scenario => scenario !== undefined).map(scenario => (
+              <Button key={scenario.slug} type="button" variant={scenario.slug === slug ? 'default' : 'outline'} aria-pressed={scenario.slug === slug}
+                className="h-auto min-h-10 justify-start whitespace-normal text-left" onClick={() => pick(scenario.slug)}>{scenario.title}</Button>
+            ))}
+          </section>
+        </aside>}
+        <aside hidden={radioMode} className={`order-2 ${radioMode ? 'hidden' : 'grid'} min-h-0 min-w-0 content-start gap-2 xl:order-1 xl:grid-rows-[minmax(0,1fr)] xl:overflow-hidden xl:pr-1`}>
           <section className="grid min-h-[28rem] min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden squircle-3xl border border-line bg-surface xl:min-h-0" data-tour="sim-code" aria-label="โค้ดภารกิจ">
             <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
-              <div className="min-w-0 flex-1"><h2 className="font-bold">เขียนโค้ดภารกิจ</h2><p className="text-xs text-muted-foreground">เขียนฟังก์ชัน → ผูก KEY → กดปุ่มใต้สนาม</p></div>
-              <Button className="min-h-10" data-sim-course>ฝึกเขียนโค้ด</Button>
+              <div className="min-w-0 flex-1"><h2 className="font-bold">เขียนโค้ดภารกิจ</h2><p className="text-xs text-muted-foreground">{remoteOnly ? 'ผูก K2–K10 แล้วกดปุ่มบนรีโมทเมื่ออยู่ในโหมด Coding' : 'เขียนฟังก์ชัน → ผูก KEY → กดปุ่มใต้สนาม'}</p></div>
+              {!remoteOnly && <Button className="min-h-10" data-sim-course>ฝึกเขียนโค้ด</Button>}
               <KeyExamplePopover />
             </div>
             <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
@@ -606,14 +639,14 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
 
         </aside>
         {/* จอแคบ: สนามกับโค้ดเรียงต่อกัน ปุ่มนี้พาไปมาระหว่างสองส่วนได้ในแตะเดียว */}
-        <div className="pointer-events-none sticky bottom-0 z-20 order-3 flex justify-center pb-1 xl:hidden">
+        {!radioMode && <div className="pointer-events-none sticky bottom-0 z-20 order-3 flex justify-center pb-1 xl:hidden">
           <div className="pointer-events-auto flex gap-1 squircle-2xl border border-line bg-surface/95 p-1 shadow-lg backdrop-blur">
             <Button size="sm" variant="ghost" className="min-h-10" onClick={() => document.querySelector('[data-tour="sim-stage"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>สนามจำลอง</Button>
             <Button size="sm" variant="ghost" className="min-h-10" onClick={() => document.querySelector('[data-tour="sim-code"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>เขียนโค้ด</Button>
           </div>
-        </div>
+        </div>}
       </div>
-      {qs.get('lesson') !== '1' && <Tour id="simulator-guide-v2" steps={SIM_TOUR} autoOpenImmediately trigger="[data-sim-guide]" allowTargetInteraction paused={panel === 'pick' || tuningOpen || payloadDialogOpen} />}
+      {!remoteOnly && qs.get('lesson') !== '1' && <Tour id="simulator-guide-v2" steps={SIM_TOUR} autoOpenImmediately trigger="[data-sim-guide]" allowTargetInteraction paused={panel === 'pick' || tuningOpen || payloadDialogOpen} />}
       <TuningLab open={tuningOpen} onOpenChange={setTuningOpen} config={config} mission={code}
         onApply={sketch => {
           setStyleSel('any');
@@ -621,7 +654,7 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn }: { scenar
           setCode(sketch);
           setTuningOpen(false);
         }} />
-      <Tour id="sim-code-course" steps={CODE_COURSE} forceQuery="lesson" autoOpenImmediately startOnFocus="[data-sim-editor] textarea" trigger="[data-sim-course]" allowTargetInteraction paused={tuningOpen || payloadDialogOpen} />
+      {!remoteOnly && <Tour id="sim-code-course" steps={CODE_COURSE} forceQuery="lesson" autoOpenImmediately startOnFocus="[data-sim-editor] textarea" trigger="[data-sim-course]" allowTargetInteraction paused={tuningOpen || payloadDialogOpen} />}
       <Dialog open={!!pendingBlockImport} onOpenChange={(open) => { if (!open) setPendingBlockImport(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>

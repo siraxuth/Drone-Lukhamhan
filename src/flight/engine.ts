@@ -1,7 +1,9 @@
+import { launchFrameBars, DRONE_SIZE } from '../field/layout';
 import { countsFor, DEFAULT_GATE, DROP_PAIRS, EMPTY_PAYLOAD, isPayloadChannel, PAYLOAD_CHANNELS, payloadWithCounts, SIDE_CHANNELS, type ChannelCounts, type GatePositions, type Payload, type PayloadChannel } from "./payload";
 import { parse, type Call } from "./parser";
 import type { Style } from "./style";
-import { LIGHTS_OFF, opticalFlowQuality, type FlightEnvironment, type ManualStick, type PlayerPosition } from './environment';
+import { LIGHTS_OFF, opticalFlowQuality, type FlightAction, type FlightEnvironment, type ManualStick, type PlayerPosition } from './environment';
+import { NEUTRAL_STICK, RADIO_READY_MS, radioDynamics, stepRadio } from './radio-physics';
 export { parse };
 /**
  * เอนจินจำลองการบินบนสนามจริง 10×10 ม. (ไม่ผูกกับ UI)
@@ -79,7 +81,7 @@ export type FlightConfig = {
 };
 
 /** rpm = รอบใบพัด 0–1 (ช่วงสตาร์ทหมุนจากช้าไปเร็วตาม delay หลัง takeOff) */
-export type Frame = { t: number; x: number; y: number; z: number; yaw: number; rpm?: number };
+export type Frame = { t: number; x: number; y: number; z: number; yaw: number; rpm?: number; pitch?: number; roll?: number };
 export type EventKind = "info" | "warn" | "error" | "drop" | "pop" | "shot" | "shot_b" | "land" | "takeoff" | "hold" | "servo";
 export type SimEvent = {
     t: number;
@@ -103,7 +105,7 @@ export type Result = {
     frames: Frame[];
     events: SimEvent[];
     /** Time span and source line for highlighting the command currently running. */
-    commandTimeline: Array<{ start: number; end: number; line: number }>;
+    commandTimeline: Array<{ start: number; end: number; line: number; key?: number }>;
     duration: number;
     score: number;
     breakdown: Breakdown[];
@@ -210,30 +212,57 @@ function evalExtras(frames: Frame[], cfg: FlightConfig, completed: string[] = []
     return { visits, breakdown };
 }
 
+function radioCalls(actions: FlightAction[], timeLimit: number, horizon: number): Call[] {
+    const calls = [
+        { name: 'takeOff', args: [], line: 0 },
+        { name: 'delay', args: [3000], line: 0 },
+    ];
+    let from = RADIO_READY_MS;
+    const interrupts = actions.filter(action => action.type === 'radio-cancel-code' || action.type === 'radio-land' || action.type === 'land');
+    for (const action of actions) {
+        if (action.type !== 'radio-land' && action.type !== 'radio-drop' && action.type !== 'radio-key') continue;
+        const at = Math.max(from, action.t);
+        if (at >= timeLimit) break;
+        calls.push({ name: 'radioHold', args: [at], line: 0 });
+        if (action.type === 'radio-land') {
+            calls.push({ name: 'autoLand', args: [], line: 0 });
+            return calls;
+        }
+        if (action.type === 'radio-key') {
+            const until = interrupts.find(interrupt => interrupt.t >= at)?.t ?? timeLimit;
+            calls.push({ name: 'radioCodeStart', args: [action.key, until], line: 0 }, ...action.calls, { name: 'radioCodeEnd', args: [], line: 0 });
+        } else calls.push({ name: 'radioDrop', args: [], line: 0 });
+        from = at;
+    }
+    calls.push({ name: 'radioHold', args: [Math.min(timeLimit + 20, horizon)], line: 0 });
+    return calls;
+}
+
 export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?: number, environment?: FlightEnvironment): Result {
     const conditions = conditionsFor(seed);
     const difficulty = environment?.difficulty ?? 'medium';
     const timeLimit = Math.min(TIME_LIMIT_MS, Math.max(0, environment?.timeLimitMs ?? TIME_LIMIT_MS));
-    const dynamic = difficulty === 'hard' || !!environment?.actions?.some(action => action.type !== 'walk');
+    const radio = !!environment?.radio;
+    const dynamic = radio || difficulty === 'hard' || !!environment?.actions?.some(action => action.type !== 'walk');
     const actions = [...(environment?.actions ?? [])].sort((a, b) => a.t - b.t);
     let actionIndex = 0;
     let player: PlayerPosition = { x: 0, y: -4.5 };
     let manual = false;
     let emergency = false;
     let powerOff = false;
-    let stick: ManualStick = { forward: 0, right: 0, up: 0, yaw: 0 };
+    let stick: ManualStick = NEUTRAL_STICK;
     const consumeActions = (at: number) => {
         while (actionIndex < actions.length && actions[actionIndex].t <= at) {
             const action = actions[actionIndex++];
             if (action.type === 'walk') player = action.position;
             else if (action.type === 'manual') manual = action.enabled;
             else if (action.type === 'stick') stick = action.value;
-            else if (action.type === 'land') { emergency = true; events.push({ t: action.t, kind: 'warn', text: 'สั่งลงฉุกเฉิน · คำสั่งเดิมยังรันอยู่' }); }
+            else if (action.type === 'land') { emergency = true; events.push({ t: action.t, kind: 'warn', text: radio ? 'ระบบพาโดรนจำลองลงฉุกเฉิน' : 'สั่งลงฉุกเฉิน · คำสั่งเดิมยังรันอยู่' }); }
             else if (action.type === 'pickup' || action.type === 'flip') { powerOff = true; events.push({ t: action.t, kind: 'warn', text: 'จับแบตเตอรี่แล้วพลิกโดรนกลางอากาศ · ใบพัดหยุดแล้ว วางใหม่ก่อนบินต่อ' }); }
             else if (action.type === 'power') { powerOff = false; emergency = false; manual = false; }
         }
     };
-    const { calls, errors } = parse(code, cfg.style ?? "any", selectedKey);
+    const { calls, errors }: { calls: Call[]; errors: SimEvent[] } = radio ? { calls: radioCalls(actions, timeLimit, environment?.radioUntilMs ?? Infinity), errors: [] } : parse(code, cfg.style ?? "any", selectedKey);
     const events: SimEvent[] = [...errors];
     const commandTimeline: Result["commandTimeline"] = [];
     const padC = cfg.padAt === undefined ? cfg.start : cfg.padAt; // null = ไม่มีฐาน
@@ -270,15 +299,20 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
     // ความคลาดค่อย ๆ เพิ่มใน 1 เมตรแรก แล้วคงที่ ไม่ทบเพิ่มทุกคำสั่งหรือทุกวินาที
     let driftProgressCm = 0;
     let velocityX = 0, velocityY = 0, velocityZ = 0;
+    const radioBody = radioDynamics();
+    let radioCode: { key: number; until: number } | null = null;
     const mediumGain = conditions.seed ? 1.045 + (100 - conditions.batteryPercent) * 0.0012 : 1;
     const mediumHeightGain = conditions.seed ? 1.025 + (100 - conditions.batteryPercent) * 0.0015 : 1;
 
     /** ตั้งศูนย์/สตาร์ทมอเตอร์ในโค้ดจริงเป็นแค่ "ส่งคำสั่ง" ไม่รอให้เสร็จ: ผู้เขียนต้อง delay เอง */
     const CALIB_MS = 3000, SPINUP_MS = 3000;
-    let calibStart: number | null = null; // เวลาที่สั่ง calibration ล่าสุด (null = ยังไม่เคยสั่ง)
+    let calibStart: number | null = radio ? -CALIB_MS : null; // เวลาที่สั่ง calibration ล่าสุด (null = ยังไม่เคยสั่ง)
     let armedAt: number | null = null; // เวลาที่สั่ง takeOff แต่ยังไม่ยกตัว
     const rpmNow = () => powerOff || (emergency && z <= ((onPadAt(x, y) || cfg.platforms.some(platform => Math.hypot(platform.x - x, platform.y - y) <= platform.r) ? PAD_TOP_CM : 0) + LEG_CM + 0.5)) ? 0 : (flying ? 1 : armedAt !== null ? Math.min(1, Math.max(0, (t - armedAt) / SPINUP_MS)) : 0);
-    const push = () => frames.push({ t, x, y, z, yaw, rpm: rpmNow() });
+    const push = () => frames.push({
+        t, x, y, z, yaw, rpm: rpmNow(),
+        ...(radio && { pitch: radioBody.pitch * 180 / Math.PI, roll: radioBody.roll * 180 / Math.PI }),
+    });
     /** ความเร็วเดินทางล่าสุด (ซม./มิลลิวินาที) ของคำสั่งเดินที่เพิ่งจบ ใช้คำนวณระยะเบรก */
     let cruise: { vx: number; vy: number } | null = null;
     /** เบรกหลังคำสั่งเดิน (poshold ท้ายคำสั่งในโค้ดจริง): ลดความเร็วเป็นศูนย์ ไหลต่อไปอีก v·T/2 */
@@ -297,7 +331,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
         y += (vy * BRAKE_MS) / 2;
         t += BRAKE_MS;
         scanNeedleContacts(firstFrame, line);
-        hoopCrash(firstFrame, line);
+        obstacleCrash(firstFrame, line);
     };
     /** หมุนด้วยมือได้บนแท่นเริ่มและแท่นวงกลมเมื่อโดรนลงจอดแล้ว */
     const onPadNow = () => (padC === null ? !flying : onPadAt(x, y));
@@ -330,14 +364,15 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
     function advanceMotion(dx: number, dy: number, dz: number, dyaw: number, ms: number, line: number): boolean {
         if (ms <= 0) return true;
         const firstFrame = frames.length - 1;
-        const end = Math.min(timeLimit, t + ms);
+        const end = Math.min(timeLimit, t + ms, radioCode?.until ?? Infinity);
         const duration = Math.max(1, ms);
+        const floorAt = (px: number, py: number) => (onPadAt(px, py) || cfg.platforms.some(platform => Math.hypot(platform.x - px, platform.y - py) <= platform.r) ? PAD_TOP_CM : 0) + LEG_CM;
         while (t < end - 0.001) {
             const dt = Math.min(20, end - t);
             consumeActions(t);
-            const oldX = x, oldY = y;
+            const oldX = x, oldY = y, oldZ = z;
             const d = dirOf(yaw), right = { x: -d.y, y: d.x };
-            const floorBefore = (onPadAt(x, y) || cfg.platforms.some(platform => Math.hypot(platform.x - x, platform.y - y) <= platform.r) ? PAD_TOP_CM : 0) + LEG_CM;
+            const floorBefore = floorAt(x, y);
             const grounded = !flying || (powerOff || emergency) && z <= floorBefore + 0.5;
             const cmdX = dx / duration, cmdY = dy / duration;
             const q = difficulty === 'hard' ? opticalFlowQuality(x, y, z, environment?.lights ?? LIGHTS_OFF, player, environment?.ceilingLights) : 1;
@@ -345,30 +380,52 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
             const commandGain = difficulty === 'hard' ? hardGain : mediumGain;
             const desiredX = grounded || powerOff || emergency ? 0 : manual ? (d.x * stick.forward + right.x * stick.right) * 0.09 : cmdX * commandGain;
             const desiredY = grounded || powerOff || emergency ? 0 : manual ? (d.y * stick.forward + right.y * stick.right) * 0.09 : cmdY * commandGain;
-            if (grounded) { velocityX = 0; velocityY = 0; }
-            else if (difficulty === 'hard') {
-                const response = 1 - Math.exp(-dt / (175 + (1 - q) * 680));
-                const disturbance = (0.3 + 1 - q) * 0.00004 * dt;
-                velocityX += (desiredX - velocityX) * response + Math.sin(seed * 0.000019 + t / 3400) * disturbance;
-                velocityY += (desiredY - velocityY) * response + Math.cos(seed * 0.000023 + t / 2700) * disturbance;
+            if (radio && manual && flying && !powerOff) {
+                const demand = emergency ? { ...NEUTRAL_STICK, up: -1 } : stick;
+                const velocity = stepRadio(radioBody, demand, yaw, { x: velocityX * 10, y: velocityY * 10, z: velocityZ * 10 },
+                    dt / 1000, q, difficulty, conditions.batteryPercent, z - floorBefore, t, seed);
+                velocityX = velocity.x / 10;
+                velocityY = velocity.y / 10;
+                velocityZ = velocity.z / 10;
+                yaw = velocity.yaw;
+                x += velocityX * dt;
+                y += velocityY * dt;
+                const floor = floorAt(x, y);
+                z = Math.max(floor, Math.min(250, z + velocityZ * dt));
+                if ((z === floor && velocityZ < 0) || (z === 250 && velocityZ > 0)) velocityZ = 0;
+                if (z === floor && emergency) {
+                    flying = false;
+                    Object.assign(radioBody, radioDynamics());
+                    t += dt;
+                    push();
+                    break;
+                }
             } else {
-                velocityX = desiredX;
-                velocityY = desiredY;
+                if (grounded) { velocityX = 0; velocityY = 0; }
+                else if (difficulty === 'hard') {
+                    const response = 1 - Math.exp(-dt / (175 + (1 - q) * 680));
+                    const disturbance = (0.3 + 1 - q) * 0.00004 * dt;
+                    velocityX += (desiredX - velocityX) * response + Math.sin(seed * 0.000019 + t / 3400) * disturbance;
+                    velocityY += (desiredY - velocityY) * response + Math.cos(seed * 0.000023 + t / 2700) * disturbance;
+                } else {
+                    velocityX = desiredX;
+                    velocityY = desiredY;
+                }
+                if (powerOff) { velocityX *= 0.76; velocityY *= 0.76; }
+                x += velocityX * dt;
+                y += velocityY * dt;
+                const intendedZ = powerOff || emergency ? -0.11 : !flying ? 0 : manual ? stick.up * 0.06 : dz / duration;
+                const floor = floorAt(x, y);
+                if (grounded || powerOff || emergency) velocityZ = intendedZ;
+                else if (difficulty === 'hard') {
+                    const responseZ = 1 - Math.exp(-dt / (150 + (1 - q) * 500));
+                    const wobble = Math.sin(seed * 0.000029 + t / 410) * (0.25 + 1 - q) * 0.0035;
+                    velocityZ += (intendedZ * (1.22 + (1 - q) * 0.15) + wobble - velocityZ) * responseZ;
+                } else velocityZ = intendedZ * mediumHeightGain;
+                z = Math.max(floor, z + velocityZ * dt);
+                if (z === floor && velocityZ < 0) velocityZ = 0;
+                yaw += (powerOff || emergency ? 0 : manual ? stick.yaw * 0.06 : dyaw / duration) * dt;
             }
-            if (powerOff) { velocityX *= 0.76; velocityY *= 0.76; }
-            x += velocityX * dt;
-            y += velocityY * dt;
-            const intendedZ = powerOff || emergency ? -0.11 : !flying ? 0 : manual ? stick.up * 0.06 : dz / duration;
-            const floor = (onPadAt(x, y) || cfg.platforms.some(platform => Math.hypot(platform.x - x, platform.y - y) <= platform.r) ? PAD_TOP_CM : 0) + LEG_CM;
-            if (grounded || powerOff || emergency) velocityZ = intendedZ;
-            else if (difficulty === 'hard') {
-                const responseZ = 1 - Math.exp(-dt / (150 + (1 - q) * 500));
-                const wobble = Math.sin(seed * 0.000029 + t / 410) * (0.25 + 1 - q) * 0.0035;
-                velocityZ += (intendedZ * (1.22 + (1 - q) * 0.15) + wobble - velocityZ) * responseZ;
-            } else velocityZ = intendedZ * mediumHeightGain;
-            z = Math.max(floor, z + velocityZ * dt);
-            if (z === floor && velocityZ < 0) velocityZ = 0;
-            yaw += (powerOff || emergency ? 0 : manual ? stick.yaw * 0.06 : dyaw / duration) * dt;
             t += dt;
             push();
             if (flying && !leftHoop && (Math.abs(x - hoopCenter.x) > cfg.hoop.half || Math.abs(y - hoopCenter.y) > cfg.hoop.half)) {
@@ -382,14 +439,14 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                 crashed = true;
                 break;
             }
-            if (Math.hypot(x - oldX, y - oldY) > 0.001 && hoopCrash(frames.length - 2, line)) break;
+            if ((x !== oldX || y !== oldY || z !== oldZ) && obstacleCrash(frames.length - 2, line)) break;
         }
         scanNeedleContacts(firstFrame, line);
-        if (t >= timeLimit && end < t + ms) {
+        if (t >= timeLimit && (radio || end < t + ms)) {
             timedOut = true;
             ev({ kind: 'warn', text: 'หมดเวลา 2 นาที 30 วินาที โดรนหยุดทำงาน' });
         }
-        return !crashed && !timedOut;
+        return !crashed && !timedOut && (!radioCode || t < radioCode.until);
     }
     /** ตรวจปลายเข็มตัดผิวลูกโป่งตามเส้นทางทุกช่วงเฟรม รวมระยะไหลหลังเบรก */
     const scanNeedleContacts = (firstFrame: number, line: number) => {
@@ -429,9 +486,39 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
      * ถ้าศูนย์กลางโดรนเข้าในระยะตัวเครื่อง (~11 ซม.) ของโครง → ตัดเส้นทาง ณ จุดชน แล้วโดรนตกลงพื้น (จบภารกิจ)
      * ช่องลอดคือ |ข้าง| ≤ ครึ่งความกว้าง และความสูงอยู่ใน zMin–zMax · ใต้คานล่างบินลอดได้ถ้าต่ำพอ
      */
-    const hoopCrash = (firstFrame: number, line: number) => {
+    const frameBars = cfg.free || !padC ? [] : launchFrameBars();
+    const radius = DRONE_SIZE.w * 50;
+    const intersectsBox = (dx:number, dy:number, dz:number, halfX:number, halfY:number, halfZ:number) =>
+        dz <= halfZ + LEG_CM && dz >= -halfZ - (DRONE_SIZE.h * 100 - LEG_CM) &&
+        Math.hypot(Math.max(0, Math.abs(dx)-halfX), Math.max(0, Math.abs(dy)-halfY)) <= radius;
+    function fixedObstacle(px:number, py:number, pz:number) {
+        if(padC) for(const {position:[x,h,y],size:[w,t,d]} of frameBars){
+            if(intersectsBox(px-padC.x-x*100,py-padC.y-y*100,pz-h*100,w*50,d*50,t*50)) return 'โครงเหล็กบนฐาน';
+        }
+        for(const board of cfg.boards){
+            const dx=px-board.x, dz=pz-board.cz;
+            const facing=board.y<500?1:-1;
+            const dy=py-board.y;
+            const faceOffset=Math.abs(dy-facing);
+            const reach=Math.sqrt(Math.max(0,radius*radius-faceOffset*faceOffset));
+            const gapZ=Math.max(0,dz-LEG_CM,-dz-(DRONE_SIZE.h*100-LEG_CM));
+            if(faceOffset<=radius && Math.hypot(Math.max(0,Math.abs(dx)-reach),gapZ)<=board.r) return board.id;
+            if(cfg.free){
+                if(intersectsBox(dx,dy+3*facing,pz-board.cz/2,2.5,2.5,board.cz/2)) return board.id;
+            } else {
+                for(const side of [-1,1]){
+                    const postX=dx-side*(board.r+3);
+                    if(intersectsBox(postX,dy+2*facing,pz-board.cz/2,2.5,2.5,board.cz/2+25) ||
+                       intersectsBox(postX,dy+2*facing,pz-2.5,3.5,25,2.5)) return board.id;
+                }
+                if(intersectsBox(dx,dy+2*facing,dz+20,board.r+5,2,2)) return board.id;
+            }
+        }
+        return null;
+    }
+    const obstacleCrash = (firstFrame: number, line: number) => {
         const hoops = cfg.hoops ?? [];
-        if (!flying || !hoops.length) return false;
+        if (!flying || (!hoops.length && !frameBars.length && !cfg.boards.length)) return false;
         // The frame is 4.5 cm thick. Approximate the drone's swept body by a 14 cm sphere.
         const BAR = 4.5, BODY = 14;
         for (let i = firstFrame; i < frames.length - 1; i++) {
@@ -441,6 +528,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
             for (let st = 1; st <= steps; st++) {
                 const u = st / steps;
                 const px = a.x + (b.x - a.x) * u, py = a.y + (b.y - a.y) * u, pz = a.z + (b.z - a.z) * u;
+                let obstacle = fixedObstacle(px, py, pz);
                 for (const h of hoops) {
                     const nx = Math.sin(rad(h.yaw)), ny = -Math.cos(rad(h.yaw));
                     const along = (px - h.x) * nx + (py - h.y) * ny;
@@ -458,22 +546,25 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                     const hit = [-1, 1].some(side => boxDistance(side * (half + BAR / 2), sideHeight / 2, BAR / 2, sideHeight / 2) <= BODY)
                         || boxDistance(0, bottomBar, half + BAR, BAR / 2) <= BODY
                         || boxDistance(0, topBar, half + BAR, BAR / 2) <= BODY;
-                    if (!hit) continue;
+                    if (hit) { obstacle = `โครงห่วง "${h.id}"`; break; }
+                }
+                if (obstacle) {
                     // ตัดเส้นทางที่จุดชน
                     const tHit = a.t + (b.t - a.t) * u;
                     frames.length = i + 1;
                     frames.push({ t: tHit, x: px, y: py, z: pz, yaw: a.yaw + (b.yaw - a.yaw) * u });
                     const vx = (b.x - a.x) / Math.max(1, b.t - a.t), vy = (b.y - a.y) / Math.max(1, b.t - a.t);
                     x = px; y = py; z = pz; t = tHit; yaw = frames[frames.length - 1].yaw;
-                    ev({ kind: "error", line, text: `บรรทัด ${line}: โดรนชนโครงห่วง "${h.id}" ที่ความสูง ${Math.round(pz)} ซม. แล้วตกลงพื้น`, at: { x: px, y: py, z: pz }, id: h.id, ok: false });
+                    ev({ kind: "error", line, text: `บรรทัด ${line}: โดรนชน${obstacle} ที่ความสูง ${Math.round(pz)} ซม. แล้วตกลงพื้น`, at: { x: px, y: py, z: pz }, id: obstacle, ok: false });
                     // ตกอย่างอิสระ (g = 980 ซม./วินาที²) ไถลต่ออีกเล็กน้อยตามแรงเฉื่อย
-                    const drop = Math.max(0, z - LEG_CM);
+                    const surface = (onPadAt(px,py) || cfg.platforms.some(p=>Math.hypot(px-p.x,py-p.y)<=p.r) ? PAD_TOP_CM : 0) + LEG_CM;
+                    const drop = Math.max(0, z - surface);
                     const fallMs = Math.sqrt((2 * drop) / 980) * 1000;
                     for (const f of [0.2, 0.4, 0.6, 0.8, 1]) {
                         const tau = fallMs * f;
                         frames.push({ t: t + tau, x: x + vx * tau * 0.25, y: y + vy * tau * 0.25, z: z - 0.5 * 980 * (tau / 1000) ** 2, yaw });
                     }
-                    x += vx * fallMs * 0.25; y += vy * fallMs * 0.25; z = LEG_CM; t += fallMs;
+                    x += vx * fallMs * 0.25; y += vy * fallMs * 0.25; z = surface; t += fallMs;
                     flying = false; crashed = true; cruise = null;
                     return true;
                 }
@@ -541,7 +632,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
         t += ms * k;
         push();
         scanNeedleContacts(firstFrame, line);
-        if (hoopCrash(firstFrame, line)) return false;
+        if (obstacleCrash(firstFrame, line)) return false;
         if (k < 1) {
             timedOut = true;
             ev({ kind: "warn", text: "หมดเวลา 2 นาที 30 วินาที โดรนหยุดทำงาน" });
@@ -632,11 +723,12 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
     for (let ci = 0; ci < calls.length; ci++) {
         const c = calls[ci];
         if (crashed || timedOut) break;
+        const name = canon(c.name);
+        if (radioCode && t >= radioCode.until && name !== 'radiocodeend') continue;
         const commandStart = t;
         const wasFlying = flying;
         consumeActions(t);
         const a = c.args[0];
-        const name = canon(c.name);
         if ((powerOff || emergency) && ['autoland', 'drop', 'pop', 'needle', 'shoot', 'shootb', 'shotb', 'shoots1', 'shoots2'].includes(name)) {
             ev({ kind: 'warn', line: c.line, text: `บรรทัด ${c.line}: ${powerOff ? 'มอเตอร์ดับแล้ว' : 'กำลังลงฉุกเฉิน'} คำสั่ง ${c.name} ไม่มีผล` });
             commandTimeline.push({ start: commandStart, end: t, line: c.line });
@@ -778,6 +870,30 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                 }
                 break;
             }
+            case "radiocodestart": {
+                if (!radio || !flying || emergency || powerOff) break;
+                manual = false;
+                stick = NEUTRAL_STICK;
+                radioCode = { key: c.args[0], until: c.args[1] };
+                Object.assign(radioBody, radioDynamics());
+                break;
+            }
+            case "radiocodeend": {
+                radioCode = null;
+                break;
+            }
+            case "radiohold": {
+                if (!radio || !needFly("รีโมท")) break;
+                manual = true;
+                if (!advanceMotion(0, 0, 0, 0, Math.max(0, (a ?? t) - t), c.line) || !flying) ci = calls.length;
+                break;
+            }
+            case "radiodrop": {
+                if (!radio || !flying || emergency || powerOff) break;
+                const amounts = { ...mag };
+                release(amounts, t, MS_PER_BALL * PAYLOAD_CHANNELS.reduce((sum, channel) => sum + amounts[channel], 0), c.line);
+                break;
+            }
             case "poshold":
             case "hold": {
                 if (!needFly(`${c.name}()`)) break;
@@ -789,6 +905,14 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                 break;
             }
             case "autoland": {
+                if (radio && !radioCode) {
+                    if (emergency || powerOff) break;
+                    const brakeUntil = t + 450;
+                    stick = NEUTRAL_STICK;
+                    if (!advanceMotion(0, 0, 0, 0, brakeUntil - t, c.line) || !flying) break;
+                    manual = false;
+                    Object.assign(radioBody, radioDynamics());
+                }
                 if (!flying && armedAt !== null && !needFly("autoLand()")) break;
                 if (!flying) {
                     ev({ kind: "warn", line: c.line, text: "โดรนอยู่บนพื้นแล้ว" });
@@ -810,6 +934,7 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
                     if (z !== surface) { z = surface; push(); }
                 }
                 flying = false;
+                if (radio) frames[frames.length - 1] = { ...frames[frames.length - 1], z, rpm: 0, pitch: 0, roll: 0 };
                 const finalLanding = !calls.slice(ci + 1).some(q => q.name === "takeOff");
                 if (onPad && !finalLanding) {
                     // แวะลงที่แท่นเขียวระหว่างภารกิจ (เช่น บรรจุสัมภาระรอบใหม่) ยังไม่ใช่การจบภารกิจ
@@ -1072,12 +1197,13 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
             }
         }
         drainOpenGates(t, c.line);
-        commandTimeline.push({ start: commandStart, end: t, line: c.line });
+        if (!radio || (radioCode && c.line > 0)) commandTimeline.push({ start: commandStart, end: t, line: c.line, ...(radioCode && { key: radioCode.key }) });
+        if (radio && name === 'autoland' && !flying) break;
         if (cfg.stopAtFinish && stopTime !== null) break;
     }
 
     if (!crashed && !timedOut && armedAt !== null) ev({ kind: "warn", text: "สั่ง takeOff แล้วแต่โปรแกรมจบก่อนโดรนจะยกตัว (ต้อง delay อย่างน้อย 3000 ms หลัง takeOff)" });
-    if (!crashed && !timedOut && flying && !emergency && !powerOff) ev({ kind: "warn", text: "จบโปรแกรมแล้วโดรนยังบินอยู่ อย่าลืม autoLand()" });
+    if (!radio && !crashed && !timedOut && flying && !emergency && !powerOff) ev({ kind: "warn", text: "จบโปรแกรมแล้วโดรนยังบินอยู่ อย่าลืม autoLand()" });
     if (!crashed && !timedOut && !landedOnPad && !flying && calls.length)
         ev({ kind: "warn", text: "ยังไม่ได้ลงจอดบนแท่น Takeoff จึงยังไม่หยุดเวลา" });
 
@@ -1144,20 +1270,21 @@ export function simulate(code: string, cfg: FlightConfig, seed = 0, selectedKey?
 /** ตำแหน่งโดรน ณ เวลา t (เฟรมต่อกัน ใช้ interpolation เชิงเส้น) */
 export function frameAt(frames: Frame[], t: number): Frame {
     if (t <= 0) return frames[0];
-    for (let i = 1; i < frames.length; i++) {
-        const b = frames[i];
-        if (t <= b.t) {
-            const a = frames[i - 1];
-            const k = b.t === a.t ? 1 : (t - a.t) / (b.t - a.t);
-            return {
-                t,
-                x: a.x + (b.x - a.x) * k,
-                y: a.y + (b.y - a.y) * k,
-                z: a.z + (b.z - a.z) * k,
-                yaw: a.yaw + (b.yaw - a.yaw) * k,
-                rpm: (a.rpm ?? 0) + ((b.rpm ?? 0) - (a.rpm ?? 0)) * k,
-            };
-        }
+    const last = frames.length - 1;
+    if (t > frames[last].t || last === 0) return frames[last];
+    let lo = 1, hi = last;
+    while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (frames[mid].t < t) lo = mid + 1;
+        else hi = mid;
     }
-    return frames[frames.length - 1];
+    const a = frames[lo - 1], b = frames[lo];
+    const k = b.t === a.t ? 1 : (t - a.t) / (b.t - a.t);
+    const mix = (left: number, right: number) => left + (right - left) * k;
+    return {
+        t, x: mix(a.x, b.x), y: mix(a.y, b.y), z: mix(a.z, b.z), yaw: mix(a.yaw, b.yaw),
+        rpm: mix(a.rpm ?? 0, b.rpm ?? 0),
+        ...(b.pitch !== undefined && { pitch: mix(a.pitch ?? 0, b.pitch) }),
+        ...(b.roll !== undefined && { roll: mix(a.roll ?? 0, b.roll) }),
+    };
 }

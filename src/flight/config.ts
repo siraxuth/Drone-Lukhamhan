@@ -25,7 +25,7 @@ export function buildConfig(event: EventId): FlightConfig {
   return {
     start: { x: 500, y: 500 },
     pad: { half: (FIELD.takeoff.size / 2) * 100 },
-    // ช่องห่วงอยู่ระหว่าง 0.2–1.2 ม. จากพื้น z คือกึ่งกลางโดรน: ขาต่ำกว่า 7 ซม. ต้องพ้นคานล่าง, ตัวบนสูงกว่า ~4 ซม. ต้องพ้นคานบน (เผื่อ 3–4 ซม.)
+    // ใช้ระดับคานจากโมเดลสนาม z คือกึ่งกลางโดรน: ขาต่ำกว่า 7 ซม. ต้องพ้นคานล่าง, ตัวบนสูงกว่า ~4 ซม. ต้องพ้นคานบน (เผื่อ 3–4 ซม.)
     hoop: { half: (FIELD.hoop.size / 2) * 100, zMin: FIELD.hoop.bottom * 100 + 7 + 3, zMax: FIELD.hoop.top * 100 - 4 - 4 },
     platforms: event === 'innovation' ? [] : platforms,
     balloons: event === 'aviation' ? balloons : [],

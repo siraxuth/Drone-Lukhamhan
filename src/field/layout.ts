@@ -10,7 +10,7 @@
 export const FIELD = {
   size: 10,
   takeoff: { size: 1.5, height: 0.2 },
-  hoop: { size: 1, bottom: 0.2, top: 1.4 }, // คานบนสูง 1.2 ม. จากผิวแท่น Takeoff
+  hoop: { size: 1, bottom: 0.62, top: 1.62, thickness: 0.04 }, // ระดับกึ่งกลางคานในฉากจำลอง วัดจากพื้นสนาม
   platform: {
     radius: 0.5,
     height: 0.2,
@@ -50,3 +50,32 @@ export const DRONE_SIZE = { w: 0.231, h: 0.107 };
 /** รหัสลูกโป่ง (ใช้ร่วมระหว่างเอนจินบิน กับการวาด 3 มิติ) กลุ่ม: บน, ล่าง, ซ้าย, ขวา · ลำดับ 1-3 */
 export const BALLOON_SIDES = ['บน', 'ล่าง', 'ซ้าย', 'ขวา'] as const;
 export const balloonId = (group: number, k: number) => `${BALLOON_SIDES[group]} ${k + 2}`;
+
+// Coordinates are in metres relative to the centre of the launch pad.
+// The underside of the lower rail is 40 cm above the pad surface.
+export function launchFrameBars() {
+  const {size, bottom, top, thickness: t} = FIELD.hoop;
+  type Box = {position:[number,number,number]; size:[number,number,number]};
+  const bars: Box[] = [];
+  // The one-metre cage sits on transverse bearers. The feet straddle
+  // the 1.5 m platform, so the cage keeps its original flight opening.
+  const plateWidth = 0.12, plateHeight = 0.012;
+  const footX = FIELD.takeoff.size / 2 + 0.03 + plateWidth / 2;
+  const underside = bottom - t / 2;
+  for (const z of [-size / 2, size / 2]) {
+    for (const sign of [-1, 1]) {
+      const x = sign * footX;
+      bars.push({position:[x, plateHeight / 2, z], size:[plateWidth, plateHeight, plateWidth]});
+      bars.push({position:[x, (plateHeight + underside) / 2, z], size:[t, underside - plateHeight, t]});
+      // Continue the lower rail out to the face of each ground leg.
+      const inner = size / 2, outer = footX + t / 2;
+      bars.push({position:[sign * (inner + outer) / 2, bottom, z], size:[outer - inner, t, t]});
+      bars.push({position:[sign * inner, (top + bottom) / 2, z], size:[t, top - bottom - t, t]});
+    }
+  }
+  for(const y of [bottom,top]) for(const side of [-size/2,size/2]){
+    bars.push({position:[0,y,side],size:[size,t,t]});
+    bars.push({position:[side,y,0],size:[t,t,size]});
+  }
+  return bars;
+}
