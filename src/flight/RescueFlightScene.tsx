@@ -1,5 +1,7 @@
 'use client';
 
+import { PhoneSceneCamera } from '@/field/PhoneSceneCamera';
+import type { CapturePhoneFrame } from './phone-remote';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { RoundedBox, useTexture } from '@react-three/drei';
 import { useEffect, useMemo, useRef, type RefObject } from 'react';
@@ -155,7 +157,11 @@ function World({flight,report}:{flight:RefObject<RescueFlight>;report:()=>void})
     {!waterMission && flight.current.carrying && <group position={[0,0.22,0.13]}><MedicalCase/></group>}</group>
   </>;
 }
-export default function RescueFlightScene(props:{flight:RefObject<RescueFlight>;report:()=>void}) {
+export default function RescueFlightScene(props:{flight:RefObject<RescueFlight>;report:()=>void;capturePhone?:RefObject<CapturePhoneFrame|null>}) {
   return <Canvas camera={{position:[0,2.8,5],near:0.05,far:500,fov:55}} dpr={[1,1.6]} fallback={<p>ต้องเปิด WebGL เพื่อแสดงสนามบิน</p>}><World {...props}/>
+    {props.capturePhone && <PhoneSceneCamera capture={props.capturePhone} scale={3} pose={() => {
+      const f = props.flight.current;
+      return { x: f.x, y: f.h + .52, z: f.z, yaw: f.yaw, pitch: f.dynamics.pitch * 180 / Math.PI, roll: f.dynamics.roll * 180 / Math.PI };
+    }} />}
   </Canvas>;
 }

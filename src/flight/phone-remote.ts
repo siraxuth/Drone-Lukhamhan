@@ -6,7 +6,11 @@ export const REMOTE_TIMEOUT_MS = 1600;
 export type PhonePair = { code: string; secret: string; addresses: string[]; qr: string; url: string };
 export type PhoneDisplay = { mode: 'manual' | 'code' | 'rescue'; hint: string };
 export type PhoneKey = { id: number; key: number };
-export type PhoneInput = { connected: boolean; stick: ManualStick; keys: PhoneKey[] };
+export const PHONE_VIEWS = ['off', 'fpv', 'chase', 'top', 'side'] as const;
+export type PhoneView = (typeof PHONE_VIEWS)[number];
+export type CapturePhoneFrame = (view: Exclude<PhoneView, 'off'>) => Promise<Blob | null>;
+export const FRAME_INTERVAL_MS = 125;
+export type PhoneInput = { connected: boolean; stick: ManualStick; keys: PhoneKey[]; camera: PhoneView };
 
 export async function remoteRequest<T>(body: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   const response = await fetch(PHONE_REMOTE_API, {

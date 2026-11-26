@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent, type PointerEvent } from 'react';
-import { Gamepad2, Maximize2, Minimize2, RotateCw, Unplug } from 'lucide-react';
+import { Gamepad2, Maximize2, Minimize2, RotateCw, Unplug, Video, VideoOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { keyActions } from './rescue-sortie';
 import { NEUTRAL_STICK } from './radio-physics';
-import { REMOTE_TIMEOUT_MS, RemoteError, remoteRequest, type PhoneDisplay, type PhoneKey } from './phone-remote';
+import { REMOTE_TIMEOUT_MS, RemoteError, remoteRequest, type PhoneDisplay, type PhoneKey, type PhoneView } from './phone-remote';
+import { PhoneLiveView, cameraLabels } from './PhoneLiveView';
 import { ControllerConnect, PAIR_CODE } from './ControllerConnect';
 import styles from './phone-controller.module.css';
 
@@ -106,6 +107,16 @@ export function PhoneController() {
   const [showHelp, setShowHelp] = useState(false);
   const [fullScreen, setFullScreen] = useState(false);
   const [fullscreenHint, setFullscreenHint] = useState('');
+  const [cameraView, setCameraView] = useState<PhoneView>('off');
+  const cameraRequest = useRef(cameraView);
+  cameraRequest.current = cameraView;
+  const lastView = useRef<Exclude<PhoneView, 'off'>>('chase');
+  function chooseCamera(view: PhoneView) {
+    if (view !== 'off') lastView.current = view;
+    cameraRequest.current = view;
+    setCameraView(view);
+  }
+  const stick = useRef(NEUTRAL_STICK);
   const keys = useRef<PhoneKey[]>([]);
   const nextId = useRef(0);
   const root = useRef<HTMLElement>(null);
@@ -169,6 +180,7 @@ export function PhoneController() {
     try {
       const data = await remoteRequest<{ secret: string; display: PhoneDisplay }>({ op: 'join', code: clean }, AbortSignal.timeout(4000));
       setDisplay(data.display);
+      chooseCamera('off');
       setPair({ code: clean, secret: data.secret });
       nextId.current = 0;
       resetInput();
@@ -198,6 +210,7 @@ export function PhoneController() {
     async function send() {
       try {
         const data = await remoteRequest<{ display: PhoneDisplay; accepted: number }>({ op: 'input', ...pair,
+          camera: document.hidden ? 'off' : cameraRequest.current,
           stick: document.hidden ? NEUTRAL_STICK : stick.current, keys: document.hidden ? [] : keys.current.slice(0, 16) }, AbortSignal.timeout(550));
         if (stopped) return;
         lastReply = performance.now();
@@ -243,6 +256,7 @@ export function PhoneController() {
   }
 
   function leave() {
+    chooseCamera('off');
     if (pair) void remoteRequest({ op: 'leave', ...pair }).catch(() => {});
     resetInput();
     setPair(null);
@@ -293,12 +307,14 @@ export function PhoneController() {
     };
   }, [ready, showHelp]);
 
+  const hasPicture = !!pair && cameraView !== 'off';
   const kind = preview ? previewMode : display.mode;
   const mode = kind === 'rescue' ? 'ภารกิจกู้ภัย' : kind === 'manual' ? 'บังคับด้วยก้าน' : 'บินตามโค้ด';
   return <main ref={root} className={styles.screen}>
     {!pair && !preview ? <ControllerConnect code={code} busy={joining} error={error} onCode={setCode} onJoin={join}
       onPreview={() => { setPreview(true); setPreviewMode('manual'); resetInput(); }} />
-      : <div className={styles.deck}>
+      : <div className={styles.deck} data-picture={hasPicture}>
+      {pair && cameraView !== 'off' && <PhoneLiveView key={cameraView} code={pair.code} secret={pair.secret} view={cameraView} />}
       <header className={styles.toolbar}>
         <div className="flex min-w-0 items-center gap-2">
           <Gamepad2 className="hidden size-5 shrink-0 text-brand-blue sm:block" aria-hidden />
@@ -306,6 +322,19 @@ export function PhoneController() {
             <p className="text-xs text-muted-foreground" role="status">{preview ? 'ทดลองรีโมทบนเครื่องนี้' : network ? 'เชื่อมกับคอมแล้ว' : 'กำลังเชื่อมกับคอมใหม่'}</p></div>
         </div>
         <div className={styles.toolbarActions}>
+          {pair && <>
+            <Button size="sm" variant={hasPicture ? 'default' : 'outline'}
+              aria-label={hasPicture ? 'ปิดภาพ' : 'เปิดภาพ'}
+              aria-pressed={hasPicture} onClick={() => chooseCamera(hasPicture ? 'off' : lastView.current)}>
+              {hasPicture ? <VideoOff aria-hidden /> : <Video aria-hidden />}
+              <span className={styles.cameraButtonLabel}>{hasPicture ? 'ปิดภาพ' : 'เปิดภาพ'}</span>
+            </Button>
+            {hasPicture && <select aria-label="มุมกล้องบนมือถือ" value={cameraView} className={styles.cameraSelect}
+              onChange={event => chooseCamera(event.target.value as PhoneView)}>
+              {(['chase', 'top', 'side', 'fpv'] as const).map(view =>
+                <option key={view} value={view}>{cameraLabels[view]}</option>)}
+            </select>}
+          </>}
           <Button size="sm" variant="ghost" onClick={() => { resetInput(); setShowHelp(value => !value); }} aria-expanded={showHelp}>วิธีใช้</Button>
           <Button size="icon-sm" variant="outline"
             aria-label={fullScreen ? 'ออกจากเต็มจอ' : 'เปิดเต็มจอ'}

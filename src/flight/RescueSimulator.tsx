@@ -6,6 +6,7 @@ import { useRef, useState, useMemo } from 'react';
 import { RescueMotorSound } from './RescueMotorSound';
 import { EMPTY_PHONE_READOUT, RemotePanel } from './RemotePanel';
 import { PhoneRemoteHost } from './PhoneRemoteHost';
+import type { CapturePhoneFrame } from './phone-remote';
 import { makeLandscape } from './rescue-landscape';
 import { NEUTRAL_STICK } from './radio-physics';
 import { keyActions, expectedKey, useMissionKey, approach, LAND_HEIGHT, LAND_HOLD_MS, newFlight, missions } from './rescue-sortie';
@@ -20,6 +21,7 @@ export function RescueSimulator() {
   const [phoneConnected, setPhoneConnected] = useState(false);
   const phoneLinked = useRef(false);
   const phoneReadout = useRef(EMPTY_PHONE_READOUT);
+  const capturePhone = useRef<CapturePhoneFrame | null>(null);
   const connected = usbConnected || phoneConnected;
   const [message,setMessage]=useState('');
   const [,refresh]=useState(0);
@@ -78,7 +80,7 @@ export function RescueSimulator() {
     <header className="flex items-center justify-between"><h1 className="text-xl font-bold">บินกู้ภัยริมแม่น้ำ</h1><Link href="/simulator/remote" className="text-sm underline">หน้ารีโมทเดิม</Link></header>
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_21rem]">
       <section className="relative h-[64svh] min-h-96 overflow-hidden squircle-3xl border border-line lg:h-[82svh]" aria-label="สนามบินกู้ภัย">
-        <Scene flight={flight} report={()=>refresh(n=>n+1)}/>
+        <Scene flight={flight} capturePhone={capturePhone} report={()=>refresh(n=>n+1)}/>
         <RescueMotorSound flight={flight}/>
         <div className="pointer-events-none absolute left-3 right-32 top-3 w-fit grid gap-1 squircle-xl bg-surface/95 px-3 py-2 text-sm">
           <b>{done?'จบภารกิจ · กลับถึงฐานแล้ว':station.label}</b>
@@ -104,7 +106,7 @@ export function RescueSimulator() {
           </details>}
           <p className="text-sm" role="status">{message}</p>
         </section>
-        <PhoneRemoteHost
+        <PhoneRemoteHost capture={capturePhone}
           display={{ mode: 'rescue', hint: flightHint }}
           locked={f.phase !== 'ground'}
           onConnection={value => {

@@ -27,6 +27,7 @@ import { CEILING_LIGHTS_ON, LIGHTS_OFF, LIGHTS_ON, type CeilingLights, type Fiel
 import { TouchStick, TouchWalkControls } from './TouchControls';
 import { EMPTY_PHONE_READOUT, RemotePanel } from './RemotePanel';
 import { PhoneRemoteHost } from './PhoneRemoteHost';
+import type { CapturePhoneFrame } from './phone-remote';
 import { NEUTRAL_STICK, RADIO_READY_MS } from './radio-physics';
 import { WalkGuide } from './WalkGuide';
 import type { LaunchPose } from './placement';
@@ -119,6 +120,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   const [phoneConnected, setPhoneConnected] = useState(false);
   const phoneLinked = useRef(false);
   const phoneReadout = useRef(EMPTY_PHONE_READOUT);
+  const capturePhone = useRef<CapturePhoneFrame | null>(null);
   const usbLinked = useRef(false);
   const [calibration, setCalibration] = useState<'idle' | 'running' | 'ready'>('idle');
   const [radioCalibrated, setRadioCalibrated] = useState(false);
@@ -1195,7 +1197,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
         ? 'fixed inset-0 z-[100] h-dvh w-screen overflow-hidden bg-surface'
         : `relative w-full overflow-hidden squircle-2xl border border-line bg-surface ${previewKey ? "aspect-[4/3] max-h-[55dvh] sm:aspect-video" : fullHeightField ? "h-[min(64svh,36rem)] min-h-[22rem] sm:h-[min(50svh,36rem)] sm:min-h-[18rem]" : "aspect-[4/3] sm:aspect-video xl:aspect-auto xl:h-full xl:min-h-0"}`}>
         {mode === '3d' ? (
-          <Field3D event={event} drone={{ ...pose2d }} onDrone={placing ? movePlacementDrone : () => { }} view={view} shot={null} low={low} live={live} poseRef={poseRef} playheadRef={playheadRef} marks={marks} highlight={highlight} dartInventory={{ front: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'front').length), back: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'back').length) }} holdKey={holdKey} loaded={loaded} gatePositions={gatePositions} scene={spec3d} measurements={measurements} showDimensions={!previewKey && showDimensions} dimensionFrom={dimensionFrom.id} dimensionTo={dimensionTo?.id} lights={fullHeightField ? lights : undefined} ceilingLights={fullHeightField ? ceilingLights : undefined} walkPoseRef={fullHeightField ? walkPoseRef : undefined} walkInputRef={fullHeightField ? walkInputRef : undefined} walkControlsEnabled={(!dedicatedRemote || !flightInProgress) && !controlsBlocked && !walkGuideOpen && !keyPickerOpen} onWalk={fullHeightField ? onWalk : undefined} placement={placing ? { center: toField(cfg.start.x, cfg.start.y), target: toField(placementTarget.x, placementTarget.y), aligned: placementAligned, onRotate: yaw => setDraftLaunch(current => current ? { ...current, yaw } : current) } : undefined} dropPreview={dropPreview} carryingDrone={(!dedicatedRemote || view === 'walk') && fullHeightField && !launch && !placing && !started} rescuePose={rescued ? rescuePose : null} />
+          <Field3D event={event} capturePhone={dedicatedRemote ? capturePhone : undefined} drone={{ ...pose2d }} onDrone={placing ? movePlacementDrone : () => { }} view={view} shot={null} low={low} live={live} poseRef={poseRef} playheadRef={playheadRef} marks={marks} highlight={highlight} dartInventory={{ front: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'front').length), back: Math.max(0, 2 - marks.darts.filter((item) => item.mount === 'back').length) }} holdKey={holdKey} loaded={loaded} gatePositions={gatePositions} scene={spec3d} measurements={measurements} showDimensions={!previewKey && showDimensions} dimensionFrom={dimensionFrom.id} dimensionTo={dimensionTo?.id} lights={fullHeightField ? lights : undefined} ceilingLights={fullHeightField ? ceilingLights : undefined} walkPoseRef={fullHeightField ? walkPoseRef : undefined} walkInputRef={fullHeightField ? walkInputRef : undefined} walkControlsEnabled={(!dedicatedRemote || !flightInProgress) && !controlsBlocked && !walkGuideOpen && !keyPickerOpen} onWalk={fullHeightField ? onWalk : undefined} placement={placing ? { center: toField(cfg.start.x, cfg.start.y), target: toField(placementTarget.x, placementTarget.y), aligned: placementAligned, onRotate: yaw => setDraftLaunch(current => current ? { ...current, yaw } : current) } : undefined} dropPreview={dropPreview} carryingDrone={(!dedicatedRemote || view === 'walk') && fullHeightField && !launch && !placing && !started} rescuePose={rescued ? rescuePose : null} />
         ) : (
           <FieldPlan2D event={event} drone={pose2d} interactive={false} className="size-full p-2" scene={spec2d} measurements={measurements} />
         )}
@@ -1261,6 +1263,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
           </div>}
           <div className="flex flex-wrap items-center gap-1.5 squircle-xl border border-line bg-surface/95 p-1.5 shadow-lg">
             <PhoneRemoteHost
+              capture={capturePhone}
               display={{ mode: radioMode ? 'manual' : 'code', hint: radioStatus }}
               locked={flightInProgress}
               onConnection={onPhoneConnection}

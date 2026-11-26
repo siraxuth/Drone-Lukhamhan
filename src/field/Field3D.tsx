@@ -1,5 +1,7 @@
 'use client';
 
+import { PhoneSceneCamera } from './PhoneSceneCamera';
+import type { CapturePhoneFrame } from '@/flight/phone-remote';
 import { PayloadRig } from './PayloadRig';
 import type { GatePositions, Payload } from '@/flight/payload';
 import { DRONE_MODEL } from '@/lib/drone-assets';
@@ -40,6 +42,7 @@ type Props = {
   live?: boolean;
   readOnly?: boolean;
   poseRef?: React.RefObject<LivePose>;
+  capturePhone?: React.RefObject<CapturePhoneFrame | null>;
   playheadRef?: React.RefObject<number>;
   marks?: Marks;
   highlight?: ShotHighlight;
@@ -1119,7 +1122,7 @@ function CameraRig({ view, topH, drone, dragging, live, poseRef, highlight, plac
   );
 }
 
-export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, readOnly = false, poseRef, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, gatePositions = {}, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, ceilingLights, walkPoseRef, walkInputRef, walkControlsEnabled = true, onWalk, placement, dropPreview, carryingDrone = false, rescuePose = null }: Props) {
+export default function Field3D({ event, drone, onDrone, view, shot, low, live = false, readOnly = false, poseRef, capturePhone, playheadRef, marks = NO_MARKS, highlight = null, dartInventory = { front: 2, back: 2 }, holdKey = 0, loaded = { L: 0, R: 0 }, gatePositions = {}, scene, measurements = [], showDimensions = false, dimensionFrom = 'start', dimensionTo, lights, ceilingLights, walkPoseRef, walkInputRef, walkControlsEnabled = true, onWalk, placement, dropPreview, carryingDrone = false, rescuePose = null }: Props) {
   const [dragging, setDragging] = useState(false);
   // โจทย์ฝึกบนกริด/พื้นว่าง: วาดวัตถุจาก scene แทนของตามกติกา และให้โดรนมีเข็ม/ลูกดอกตามวัตถุที่วางไว้
   const custom = !!scene && scene.pattern !== 'standard';
@@ -1137,6 +1140,10 @@ export default function Field3D({ event, drone, onDrone, view, shot, low, live =
       onContextMenu={placement ? event => event.preventDefault() : undefined}
       aria-label="สนามแข่งขัน 3 มิติ"
     >
+      {capturePhone && <PhoneSceneCamera capture={capturePhone} pose={() => {
+        const p = poseRef?.current ?? drone;
+        return { x: p.x, y: p.alt, z: -p.y, yaw: p.yaw, pitch: poseRef?.current.pitch ?? 0, roll: poseRef?.current.roll ?? 0 };
+      }} />}
       <color attach="background" args={['#0b0d12']} />
       <ambientLight intensity={fieldLit ? 0.8 : 1.15} />
       <hemisphereLight args={['#dbe7ff', '#202530', fieldLit ? 0.65 : 0.9]} />

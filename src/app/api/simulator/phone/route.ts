@@ -3,7 +3,7 @@ import { randomBytes, randomInt } from 'node:crypto';
 import { z } from 'zod';
 import QRCode from 'qrcode';
 import { NEUTRAL_STICK } from '@/flight/radio-physics';
-import { REMOTE_TIMEOUT_MS, STICK_TIMEOUT_MS, type PhoneDisplay, type PhoneKey } from '@/flight/phone-remote';
+import { REMOTE_TIMEOUT_MS, STICK_TIMEOUT_MS, PHONE_VIEWS, type PhoneView, type PhoneDisplay, type PhoneKey } from '@/flight/phone-remote';
 import type { ManualStick } from '@/flight/environment';
 
 export const runtime = 'nodejs';
@@ -18,6 +18,8 @@ type Pairing = {
   keyId: number;
   eventId: number;
   display: PhoneDisplay;
+  camera: PhoneView;
+  frame?: { id: number; bytes: ArrayBuffer };
 };
 
 const HOST_TIMEOUT = 60_000;
@@ -28,6 +30,7 @@ const sessions = new Map<string, Pairing>();
 const codeSchema = z.string().regex(/^[2-9A-HJ-NP-Z]{8}$/);
 const secretSchema = z.string().length(48);
 const credentials = { code: codeSchema, secret: secretSchema };
+const cameraSchema = z.enum(PHONE_VIEWS);
 const axis = z.number().min(-1).max(1);
 const stickSchema = z.object({ yaw: axis, up: axis, right: axis, forward: axis });
 const display = z.object({ mode: z.enum(['manual','code','rescue']), hint: z.string().max(180) });
@@ -35,7 +38,7 @@ const packet = z.discriminatedUnion('op', [
   z.object({ op: z.literal('create') }),
   z.object({ op: z.literal('join'), code: codeSchema }),
   z.object({ op: z.literal('poll'), ...credentials, received: z.int().nonnegative(), display }),
-  z.object({ op: z.literal('input'), ...credentials, stick: stickSchema, keys: z.array(z.object({
+  z.object({ op: z.literal('input'), ...credentials, camera: cameraSchema.default('off'), stick: stickSchema, keys: z.array(z.object({
     id: z.int().positive(), key: z.int().min(1).max(10),
   })).max(16) }),
   z.object({ op: z.literal('close'), ...credentials }),
@@ -78,7 +81,7 @@ export async function POST(request: Request) {
     do { code = Array.from({ length: 8 }, () => ALPHABET[randomInt(ALPHABET.length)]).join(''); }
     while (sessions.has(code));
     const secret = randomBytes(24).toString('hex');
-    sessions.set(code, { secret, hostSeen: now, phoneSeen: 0, stick: NEUTRAL_STICK, keys: [], keyId: 0, eventId: 0,
+    sessions.set(code, { secret, hostSeen: now, phoneSeen: 0, stick: NEUTRAL_STICK, keys: [], keyId: 0, eventId: 0, camera: 'off',
       display: { mode: 'manual', hint: 'รอเชื่อมต่อ' } });
     const paths = addresses.map(origin => `${origin}/simulator/controller`);
     const url = `${paths[0]}#${code}`;
@@ -95,6 +98,8 @@ export async function POST(request: Request) {
     session.stick = NEUTRAL_STICK;
     session.keys = [];
     session.keyId = 0;
+    session.camera = 'off';
+    session.frame = undefined;
     return json({ secret: session.phone, display: session.display });
   }
   if (msg.op === 'poll' || msg.op === 'close') {
@@ -103,11 +108,13 @@ export async function POST(request: Request) {
     session.hostSeen = now;
     session.display = msg.display;
     session.keys = session.keys.filter(event => event.id > msg.received && now - event.received < STICK_TIMEOUT_MS);
-    return json({ connected, stick: connected && now - session.phoneSeen < STICK_TIMEOUT_MS ? session.stick : NEUTRAL_STICK, keys: connected ? session.keys : [] });
+    return json({ connected, stick: connected && now - session.phoneSeen < STICK_TIMEOUT_MS ? session.stick : NEUTRAL_STICK, keys: connected ? session.keys : [], camera: connected ? session.camera : 'off' });
   }
   if (msg.secret !== session.phone) return json({ error: 'มือถืออีกเครื่องเชื่อมต่อแล้ว' }, 403);
   if (msg.op === 'leave') {
     session.phone = undefined;
+    session.frame = undefined;
+    session.camera = 'off';
     session.phoneSeen = 0;
     session.stick = NEUTRAL_STICK;
     session.keys = [];
@@ -116,6 +123,10 @@ export async function POST(request: Request) {
   if (msg.op !== 'input') return json({ error: 'คำขอไม่ถูกต้อง' }, 400);
   session.phoneSeen = now;
   session.stick = msg.stick;
+  if (session.camera !== msg.camera) {
+    session.camera = msg.camera;
+    session.frame = undefined;
+  }
   for (const event of msg.keys) {
     if (event.id <= session.keyId) continue;
     session.keys.push({ key: event.key, id: ++session.eventId, received: now });
@@ -123,4 +134,56 @@ export async function POST(request: Request) {
   }
   session.keys = session.keys.slice(-32);
   return json({ display: session.display, accepted: session.keyId });
+}
+
+const FRAME_BYTES_MAX = 180_000;
+const NO_STORE = { 'Cache-Control': 'no-store' };
+
+function frameSession(request: Request) {
+  const code = request.headers.get('X-Pair-Code');
+  const session = code ? sessions.get(code) : undefined;
+  if (!session || Date.now() - session.hostSeen > HOST_TIMEOUT ||
+    !session.phone || Date.now() - session.phoneSeen > REMOTE_TIMEOUT_MS) return null;
+  return session;
+}
+
+export async function PUT(request: Request) {
+  const session = frameSession(request);
+  if (!session || request.headers.get('Authorization') !== `Bearer ${session.secret}`)
+    return new Response(null, { status: 403 });
+  const view = request.headers.get('X-Camera-View');
+  if (session.camera === 'off' || session.camera !== view) return new Response(null, { status: 204 });
+  if (request.headers.get('Content-Type') !== 'image/jpeg' ||
+      Number(request.headers.get('Content-Length')) > FRAME_BYTES_MAX) return new Response(null, { status: 400 });
+  const reader = request.body?.getReader();
+  if (!reader) return new Response(null, { status: 400 });
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > FRAME_BYTES_MAX) { await reader.cancel(); return new Response(null, { status: 413 }); }
+      chunks.push(value);
+    }
+  } catch { return new Response(null, { status: 400 }); }
+  if (session.camera !== view || frameSession(request) !== session) return new Response(null, { status: 204 });
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return new Response(null, { status: 400 });
+  session.frame = { id: Date.now(), bytes: bytes.buffer };
+  return new Response(null, { status: 204, headers: NO_STORE });
+}
+
+export function GET(request: Request) {
+  const session = frameSession(request);
+  if (!session || request.headers.get('Authorization') !== `Bearer ${session.phone}`)
+    return new Response(null, { status: 403, headers: NO_STORE });
+  const frame = session.frame;
+  if (session.camera !== request.headers.get('X-Camera-View') || !frame ||
+      Date.now() - frame.id > 1300 || request.headers.get('X-Last-Frame') === String(frame.id))
+    return new Response(null, { status: 204, headers: NO_STORE });
+  return new Response(frame.bytes, { headers: { ...NO_STORE, 'Content-Type': 'image/jpeg', 'X-Frame-Id': String(frame.id) } });
 }

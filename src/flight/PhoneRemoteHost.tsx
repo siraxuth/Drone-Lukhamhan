@@ -1,22 +1,23 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { Monitor, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { REMOTE_TIMEOUT_MS, STICK_TIMEOUT_MS, RemoteError, remoteRequest, type PhoneDisplay, type PhoneInput, type PhonePair } from './phone-remote';
+import { PHONE_REMOTE_API, FRAME_INTERVAL_MS, REMOTE_TIMEOUT_MS, STICK_TIMEOUT_MS, RemoteError, remoteRequest, type PhoneDisplay, type PhoneInput, type PhonePair, type PhoneView, type CapturePhoneFrame } from './phone-remote';
 import { NEUTRAL_STICK } from './radio-physics';
 import type { ManualStick } from './environment';
 
 type Props = {
   display: PhoneDisplay;
   locked?: boolean;
+  capture?: RefObject<CapturePhoneFrame | null>;
   onConnection: (connected: boolean) => void;
   onStick: (stick: ManualStick) => void;
   onKey: (key: number) => void;
 };
 
-export function PhoneRemoteHost({ display, locked, onConnection, onStick, onKey }: Props) {
+export function PhoneRemoteHost({ display, locked, capture, onConnection, onStick, onKey }: Props) {
   const [open, setOpen] = useState(false);
   const [pair, setPair] = useState<PhonePair | null>(null);
   const [connected, setConnected] = useState(false);
@@ -41,10 +42,15 @@ export function PhoneRemoteHost({ display, locked, onConnection, onStick, onKey 
     let lastResponse = performance.now();
     let received = 0;
     let timer: ReturnType<typeof setTimeout>;
+    let frameTimer: ReturnType<typeof setTimeout>;
+    let camera: PhoneView = 'off';
+    let publishing = false;
+    let upload: AbortController | null = null;
     const { code, secret } = pair;
     const setLink = (live: boolean) => {
       if (live === linked) return;
       linked = live;
+      if (!live) setCamera('off');
       setConnected(live);
       props.current.onConnection(live);
     };
@@ -55,6 +61,7 @@ export function PhoneRemoteHost({ display, locked, onConnection, onStick, onKey 
         if (stopped) return;
         lastResponse = performance.now();
         setLink(state.connected);
+        setCamera(state.camera ?? 'off');
         if (state.connected) {
           if (document.hidden) {
             props.current.onStick(NEUTRAL_STICK);
@@ -77,6 +84,37 @@ export function PhoneRemoteHost({ display, locked, onConnection, onStick, onKey 
       if (!stopped) timer = setTimeout(poll, linked ? 35 : 240);
     }
 
+    function setCamera(view: PhoneView) {
+      if (view === camera) return;
+      camera = view;
+      clearTimeout(frameTimer);
+      upload?.abort();
+      if (capture && view !== 'off' && !publishing) void publishFrame();
+    }
+
+    async function publishFrame() {
+      const view = camera;
+      if (stopped || !linked || view === 'off') return;
+      publishing = true;
+      try {
+        if (!document.hidden && capture?.current) {
+          const frame = await capture.current(view);
+          if (!stopped && linked && view === camera && frame) {
+            upload = new AbortController();
+            await fetch(PHONE_REMOTE_API, { method: 'PUT', body: frame,
+              signal: AbortSignal.any([upload.signal, AbortSignal.timeout(700)]),
+              headers: { 'Content-Type': 'image/jpeg', 'X-Pair-Code': code, 'X-Camera-View': view, Authorization: `Bearer ${secret}` } });
+          }
+        }
+      } catch { /* The next frame can replace this one. Flight inputs use a separate request. */ }
+      finally {
+        publishing = false;
+        upload = null;
+        if (!stopped && linked && camera !== 'off')
+          frameTimer = setTimeout(publishFrame, document.hidden || !capture?.current ? 350 : FRAME_INTERVAL_MS);
+      }
+    }
+
     void poll();
     const watchdog = setInterval(() => {
       if (!linked) return;
@@ -87,6 +125,8 @@ export function PhoneRemoteHost({ display, locked, onConnection, onStick, onKey 
     return () => {
       stopped = true;
       clearTimeout(timer);
+      clearTimeout(frameTimer);
+      upload?.abort();
       clearInterval(watchdog);
       setLink(false);
       void fetch(PHONE_REMOTE_API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
