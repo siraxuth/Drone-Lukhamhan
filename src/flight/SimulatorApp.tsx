@@ -432,7 +432,7 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn, remoteOnly
   };
   const chooseStyle = (v: Style) => { setStyleSel(v); if (v !== 'any') setCode(convertStyle(code, v)); try { localStorage.setItem(styleKey, v); } catch { /* ไม่เป็นไร */ } };
 
-  useEffect(() => { document.title = `${remoteOnly ? 'สนามรีโมท USB' : 'ตัวจำลองการบิน'} · ชมรมโดรน ลือคำหาญฯ`; }, [remoteOnly]);
+  useEffect(() => { document.title = `${remoteOnly ? 'สนามรีโมท' : 'ตัวจำลองการบิน'} · ชมรมโดรน ลือคำหาญฯ`; }, [remoteOnly]);
 
   const onFinish = useCallback((result: Result) => {
     setPayloads((current) => ({ ...current, [sc.slug]: result.payloadRemaining }));
@@ -536,9 +536,9 @@ export function SimulatorApp({ scenarios, initialWorkspace, signedIn, remoteOnly
   return (
     <main className="flex min-h-svh w-full min-w-0 flex-col pt-[4.75rem] xl:h-svh xl:overflow-hidden">
       <header className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-3 py-2 sm:flex sm:flex-wrap sm:gap-3 sm:px-6">
-        <div className="min-w-0 flex-1"><h1 className="text-base font-extrabold sm:text-2xl">{remoteOnly ? 'สนามรีโมท USB' : 'สนามฝึกการบินโดรน'}</h1><p className="hidden text-sm text-muted-foreground lg:block">{remoteOnly ? 'บังคับด้วยก้าน สลับมารันโค้ด แล้วกลับไปบังคับได้ระหว่างบิน' : 'วางแผนคำสั่ง ดูเส้นทางจริง แล้วเรียนรู้จากสิ่งที่คลาดเคลื่อน'}</p></div>
+        <div className="min-w-0 flex-1"><h1 className="text-base font-extrabold sm:text-2xl">{remoteOnly ? 'สนามรีโมท' : 'สนามฝึกการบินโดรน'}</h1><p className="hidden text-sm text-muted-foreground lg:block">{remoteOnly ? 'บังคับด้วยก้าน สลับมารันโค้ด แล้วกลับไปบังคับได้ระหว่างบิน' : 'วางแผนคำสั่ง ดูเส้นทางจริง แล้วเรียนรู้จากสิ่งที่คลาดเคลื่อน'}</p></div>
         {!remoteOnly && qs.get('lesson') !== '1' && <Button variant="outline" className="min-h-10 px-2 sm:px-4" data-sim-guide aria-label="วิธีใช้"><CircleHelp className="size-4" /><span className="hidden sm:inline">วิธีใช้</span></Button>}
-        <Link href={remoteOnly ? '/simulator' : '/simulator/remote'} className="inline-flex min-h-10 items-center gap-1.5 squircle-xl border border-line px-2 text-sm font-semibold hover:bg-surface-2 sm:px-3"><Gamepad2 className="size-4" aria-hidden /> {remoteOnly ? 'สนามเขียนโค้ด' : 'สนามรีโมท USB'}</Link>
+        <Link href={remoteOnly ? '/simulator' : '/simulator/remote'} className="inline-flex min-h-10 items-center gap-1.5 squircle-xl border border-line px-2 text-sm font-semibold hover:bg-surface-2 sm:px-3"><Gamepad2 className="size-4" aria-hidden /> {remoteOnly ? 'สนามเขียนโค้ด' : 'สนามรีโมท'}</Link>
         {remoteOnly && <Link href="/simulator/rescue" className="inline-flex min-h-10 items-center gap-1.5 squircle-xl border border-line px-2 text-sm font-semibold hover:bg-surface-2 sm:px-3"><Map className="size-4" aria-hidden /> ห้องกู้ภัย 3D</Link>}
         {!remoteOnly && <Link href="/battle" className="hidden min-h-10 items-center squircle-xl border border-line px-3 text-sm font-semibold hover:bg-surface-2 sm:inline-flex">Battle</Link>}
         <Button type="button" variant="outline" className="min-h-10 px-2 sm:px-4" disabled={!workspaceReady || saveStatus === 'saving'} onClick={saveNow}><Save className="size-4" />{saveStatus === 'saving' ? 'กำลังเซฟ' : 'เซฟ'}</Button>

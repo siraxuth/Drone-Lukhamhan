@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useState, type RefObject } from 'react';
+import Link from 'next/link';
 import { Monitor, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { useTouchControls } from '@/hooks/use-touch-controls';
 import { PHONE_REMOTE_API, FRAME_INTERVAL_MS, REMOTE_TIMEOUT_MS, STICK_TIMEOUT_MS, RemoteError, remoteRequest, type PhoneDisplay, type PhoneInput, type PhonePair, type PhoneView, type CapturePhoneFrame } from './phone-remote';
 import { NEUTRAL_STICK } from './radio-physics';
 import type { ManualStick } from './environment';
@@ -18,6 +20,7 @@ type Props = {
 };
 
 export function PhoneRemoteHost({ display, locked, capture, onConnection, onStick, onKey }: Props) {
+  const touchControls = useTouchControls();
   const [open, setOpen] = useState(false);
   const [pair, setPair] = useState<PhonePair | null>(null);
   const [connected, setConnected] = useState(false);
@@ -134,8 +137,12 @@ export function PhoneRemoteHost({ display, locked, capture, onConnection, onStic
     };
   }, [capture, pair]);
 
+  if (touchControls) return <Button size="sm" variant="outline" nativeButton={false} render={<Link href="/simulator/controller" />}>
+    <Smartphone aria-hidden /> ใช้มือถือเป็นรีโมท
+  </Button>;
+
   return <Dialog open={open} onOpenChange={setOpen}>
-    <Button type="button" variant={connected ? 'default' : 'outline'} size="sm" disabled={locked && !pair} onClick={() => {
+    <Button type="button" variant={connected ? 'default' : 'outline'} size="sm" disabled={touchControls === null || (locked && !pair)} onClick={() => {
       if (document.pointerLockElement) document.exitPointerLock();
       setOpen(true);
       void create();
@@ -162,7 +169,7 @@ export function PhoneRemoteHost({ display, locked, capture, onConnection, onStic
         }}><Monitor aria-hidden /> เปิดรีโมทบนคอมเครื่องนี้</Button>
         <details className="text-sm">
           <summary className="cursor-pointer font-semibold">เปิดด้วยลิงก์และรหัส</summary>
-          <p className="my-2 text-muted-foreground">เปิดลิงก์นี้บนมือถือแล้วกรอกรหัสด้านบน ถ้าเปิดลิงก์แรกไม่ได้ ให้ลองลิงก์ถัดไป หรือต่อ Wi-Fi วงเดียวกับคอม</p>
+          <p className="my-2 text-muted-foreground">เปิดลิงก์บนมือถือแล้วกรอกรหัสด้านบน{pair.addresses.length > 1 && ' ถ้าเปิดลิงก์แรกไม่ได้ ให้ลองลิงก์ถัดไป'}</p>
           {pair.addresses.map(address => <a key={address} className="block break-all py-1 underline" href={address} target="_blank" rel="noreferrer">{address}</a>)}
         </details>
       </>}

@@ -6,6 +6,7 @@ import { useRef, useState, useMemo } from 'react';
 import { RescueMotorSound } from './RescueMotorSound';
 import { EMPTY_PHONE_READOUT, RemotePanel } from './RemotePanel';
 import { PhoneRemoteHost } from './PhoneRemoteHost';
+import { useTouchControls } from '@/hooks/use-touch-controls';
 import type { CapturePhoneFrame } from './phone-remote';
 import { makeLandscape } from './rescue-landscape';
 import { NEUTRAL_STICK } from './radio-physics';
@@ -15,6 +16,7 @@ import type { ManualStick } from './environment';
 const Scene = dynamic(()=>import('./RescueFlightScene'),{ssr:false});
 const noop=()=>{};
 export function RescueSimulator() {
+  const touchControls = useTouchControls();
   const flight=useRef(newFlight());
   const corner=useRef(0), released=useRef(false);
   const [usbConnected, setUsbConnected] = useState(false);
@@ -74,7 +76,8 @@ export function RescueSimulator() {
     corner.current=0;f.landingSince=0;released.current=false;f.stick=NEUTRAL_STICK;
     if(f.phase==='flight'||f.phase==='launch'){f.phase='landing';setMessage('สัญญาณขาด กำลังลงจอด');}
   }
-  const status=f.phase==='ground'?(connected?'ดึงก้านซ้าย ↘ และก้านขวา ↙ ค้างพร้อมกัน':'เชื่อมมือถือหรือเสียบรีโมทเพื่อเริ่มบิน'):f.phase==='launch'?'กำลังขึ้นบิน ปล่อยก้านทั้งสองกลับตรงกลาง':f.phase==='landing'?'กำลังลงจอด':!released.current?'ปล่อยก้านกลับตรงกลางก่อนบังคับ':f.landingSince?'ดึงก้านซ้ายลงสุดค้างไว้เพื่อจอด':f.contact>0?'แนวบินติดสิ่งกีดขวาง ถอยออกแล้วบินอ้อม หรือไต่เหนือยอด':terrain.wet(f.x,f.z)&&f.h<=LAND_HEIGHT?'เหนือน้ำ ลงจอดบนฝั่งเท่านั้น':guide;
+  const connectionHint = touchControls === false ? 'เชื่อมมือถือหรือเสียบรีโมทเพื่อเริ่มบิน' : 'เชื่อมรีโมทมือถือเพื่อเริ่มบิน';
+  const status=f.phase==='ground'?(connected?'ดึงก้านซ้าย ↘ และก้านขวา ↙ ค้างพร้อมกัน':connectionHint):f.phase==='launch'?'กำลังขึ้นบิน ปล่อยก้านทั้งสองกลับตรงกลาง':f.phase==='landing'?'กำลังลงจอด':!released.current?'ปล่อยก้านกลับตรงกลางก่อนบังคับ':f.landingSince?'ดึงก้านซ้ายลงสุดค้างไว้เพื่อจอด':f.contact>0?'แนวบินติดสิ่งกีดขวาง ถอยออกแล้วบินอ้อม หรือไต่เหนือยอด':terrain.wet(f.x,f.z)&&f.h<=LAND_HEIGHT?'เหนือน้ำ ลงจอดบนฝั่งเท่านั้น':guide;
   const flightHint = f.phase === 'flight' && feedback.until > performance.now() ? feedback.text : status;
   return <main className="mx-auto grid max-w-[1600px] gap-4 p-4 text-foreground">
     <header className="flex items-center justify-between"><h1 className="text-xl font-bold">บินกู้ภัยริมแม่น้ำ</h1><Link href="/simulator/remote" className="text-sm underline">หน้ารีโมทเดิม</Link></header>
@@ -124,12 +127,12 @@ export function RescueSimulator() {
             missionButton(key);
           }}
         />
-        <RemotePanel phoneReadout={phoneConnected ? phoneReadout : undefined} active={!phoneConnected} locked={f.phase !== 'ground'} calibration="idle" calibrated rescueMode autoConnect
+        {(touchControls === false || phoneConnected) && <RemotePanel phoneReadout={phoneConnected ? phoneReadout : undefined} active={!phoneConnected} locked={f.phase !== 'ground'} calibration="idle" calibrated rescueMode autoConnect={touchControls === false}
           onStick={stick => { if (!phoneLinked.current) sample(stick); }}
           onKey={key => { if (!phoneLinked.current) missionButton(key); }}
           onLost={() => { if (!phoneLinked.current) lost(); }}
           onConnectionChange={setUsbConnected} onCalibrationComplete={noop}
-        />
+        />}
         <p className="text-xs text-muted-foreground">พื้นผิวจาก <a className="underline" href="https://polyhaven.com/a/grass_path_2">Grass Path 2</a> และ <a className="underline" href="https://polyhaven.com/a/gravel_floor">Gravel Floor</a> ของ Poly Haven</p>
         <a href="https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer" className="text-xs text-muted-foreground underline">ภาพถ่ายทางอากาศ USGS The National Map</a>
       </aside>

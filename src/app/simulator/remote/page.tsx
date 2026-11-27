@@ -6,8 +6,8 @@ import { hybridStarter } from '@/flight/hybrid-program';
 import { getScenarios } from '@/lib/scenario-data';
 import { shareMetadata } from '@/lib/og';
 
-const title = 'สนามจำลองบินด้วยรีโมท LiteBee Ghost C05';
-const description = 'ฝึกบินในสนามจำลอง 3 มิติด้วยค่าก้านจากรีโมท LiteBee Ghost C05 ผ่าน USB กด K2 ตั้งศูนย์และ K8 ขึ้นบิน';
+const title = 'สนามจำลองบินด้วยรีโมท';
+const description = 'ฝึกบินในสนาม 3 มิติด้วยรีโมทมือถือหรือ LiteBee Ghost C05 กด K2 ตั้งศูนย์และ K8 ขึ้นบิน';
 const path = '/simulator/remote';
 
 export const metadata: Metadata = { title, description, alternates: { canonical: path }, ...shareMetadata({ title, description, path }) };

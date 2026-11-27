@@ -27,6 +27,7 @@ import { CEILING_LIGHTS_ON, LIGHTS_OFF, LIGHTS_ON, type CeilingLights, type Fiel
 import { TouchStick, TouchWalkControls } from './TouchControls';
 import { EMPTY_PHONE_READOUT, RemotePanel } from './RemotePanel';
 import { PhoneRemoteHost } from './PhoneRemoteHost';
+import { useTouchControls } from '@/hooks/use-touch-controls';
 import type { CapturePhoneFrame } from './phone-remote';
 import { NEUTRAL_STICK, RADIO_READY_MS } from './radio-physics';
 import { WalkGuide } from './WalkGuide';
@@ -93,6 +94,7 @@ type Props = {
  * ใช้ทั้งหน้า /field (เดโมโค้ดตัวอย่าง) และ /simulator (โค้ดที่ผู้ใช้เขียนเอง)
  */
 export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandProgress, onStart, onFinish, playLabel = 'เริ่มจำลองการบิน', config, scene, maxPoints, previewKey, remoteKeys, initialView, focusPlay, fullHeightField = false, controlsBlocked = false, dedicatedRemote = false, onRadioModeChange }: Props) {
+  const touchControls = useTouchControls();
   const cfg = useMemo(() => config ?? buildConfig(event.id), [config, event.id]);
   const initialPayload = cfg.initialPayload;
   const payloadRef = useRef(initialPayload);
@@ -1158,7 +1160,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
   const canSwitch = hardwareConnected && (!flightInProgress || radioReady);
   const radioStatus = radioFlying
     ? radioEnding.current ? 'กำลังลงจอด' : now < 3000 ? 'ใบพัดกำลังเร่งรอบ' : now < RADIO_READY_MS ? 'กำลังยกตัว' : radioMode ? 'บังคับได้แล้ว' : activeKey ? `Coding · K${activeKey} กำลังทำงาน` : 'Coding · รอ K2–K10'
-    : !hardwareConnected ? 'เชื่อมมือถือหรือเสียบรีโมท USB เพื่อเริ่ม'
+    : !hardwareConnected ? touchControls === false ? 'เชื่อมมือถือหรือเสียบรีโมท USB เพื่อเริ่ม' : 'เชื่อมรีโมทมือถือเพื่อเริ่ม'
     : !radioMode ? flightInProgress ? `Coding · K${activeKey} กำลังทำงาน` : 'Coding · กด K2–K10 เพื่อเริ่มฟังก์ชันจากพื้น'
     : calibration === 'running' ? 'กำลังตั้งศูนย์ · รอ 3 วินาที' : calibration === 'ready' && radioCalibrated ? 'ตั้งศูนย์แล้ว · กด K8 เพื่อขึ้นบิน' : calibration === 'ready' ? 'ตั้งศูนย์ไม่สำเร็จ · กด K2 อีกครั้ง' : 'กด K2 เพื่อตั้งศูนย์';
   const radioTelemetry = radioFlying ? frameAt(result.frames, now) : null;
@@ -1240,7 +1242,7 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
           <div className="flex gap-1.5"><Button type="button" size="sm" className="flex-1" onClick={confirmPlacement}>ยืนยันวาง · F</Button><Button type="button" size="sm" variant="outline" onClick={cancelPlacement}>ยกเลิก</Button></div>
         </div>}
 
-        {dedicatedRemote && !hardwareConnected && !radioFlying && <div className="absolute inset-x-3 top-12 z-20 mx-auto grid w-fit max-w-[calc(100%-1.5rem)] gap-1 squircle-2xl border border-line bg-surface/95 p-3 text-center shadow-lg sm:top-16">
+        {dedicatedRemote && touchControls === false && !hardwareConnected && !radioFlying && <div className="absolute inset-x-3 top-12 z-20 mx-auto grid w-fit max-w-[calc(100%-1.5rem)] gap-1 squircle-2xl border border-line bg-surface/95 p-3 text-center shadow-lg sm:top-16">
           <p className="text-sm font-semibold">ใช้มือถือหรือเสียบรีโมท USB</p>
           <Button size="sm" variant="outline" onClick={() => {
             setRadioSetup(true);
@@ -1408,14 +1410,14 @@ export function FlightRunner({ event, code, bigPlay = true, onResult, onCommandP
         )}
       </div>
 
-      {dedicatedRemote && <div className="grid gap-2">
+      {dedicatedRemote && (touchControls === false || phoneConnected) && <div className="grid gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" variant="outline" aria-expanded={radioSetup} aria-controls="sim-usb-setup" onClick={() => setRadioSetup(value => !value)}><Gamepad2 className="size-4" /> ดูก้านและปุ่ม</Button>
           <p role="status" className="text-xs leading-5 text-muted-foreground">{phoneConnected ? 'กำลังใช้ก้านจากมือถือ' : hardwareConnected ? 'กำลังใช้รีโมท USB' : 'เชื่อมมือถือหรือเสียบรีโมท USB เพื่อดูก้าน'}</p>
         </div>
         <div id="sim-usb-setup" hidden={!radioSetup}>
           <RemotePanel phoneReadout={phoneConnected ? phoneReadout : undefined} active={!phoneConnected && radioReady && playing && radioMode} locked={flightInProgress}
-            calibration={phoneConnected ? 'idle' : calibration} calibrated={!phoneConnected && radioCalibrated} autoConnect={dedicatedRemote}
+            calibration={phoneConnected ? 'idle' : calibration} calibrated={!phoneConnected && radioCalibrated} autoConnect={touchControls === false}
             onConnectionChange={connected => {
               usbLinked.current = connected;
               if (phoneLinked.current) return;

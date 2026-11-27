@@ -45,12 +45,25 @@ const packet = z.discriminatedUnion('op', [
   z.object({ op: z.literal('leave'), ...credentials }),
 ]);
 
-function phoneAddresses(request: Request) {
-  const url = new URL(request.url);
-  const host = request.headers.get('host');
-  if (host) {
-    try { const incoming = new URL(`${url.protocol}//${host}`); url.host = incoming.host; } catch { /* use request origin */ }
+function phoneOrigin(request: Request) {
+  const requestUrl = new URL(request.url);
+  const firstHeader = (name: string) => request.headers.get(name)?.split(',')[0].trim();
+  const host = firstHeader('x-forwarded-host') || firstHeader('host');
+  const forwarded = firstHeader('x-forwarded-proto');
+  const protocol = forwarded === 'https' || forwarded === 'http' ? `${forwarded}:` : requestUrl.protocol;
+  // Build a fresh URL so a proxy's internal port cannot survive on the public host.
+  for (const value of [firstHeader('origin'), host && `${protocol}//${host}`]) {
+    if (!value) continue;
+    try {
+      const url = new URL(value);
+      if (url.protocol === 'https:' || url.protocol === 'http:') return url;
+    } catch { /* Try the next origin. */ }
   }
+  return requestUrl;
+}
+
+function phoneAddresses(request: Request) {
+  const url = phoneOrigin(request);
   if (!['localhost', '127.0.0.1', '[::1]', '0.0.0.0'].includes(url.hostname)) return [url.origin];
   const interfaces = Object.entries(networkInterfaces()).sort(([a], [b]) =>
     Number(/^wl/i.test(b)) - Number(/^wl/i.test(a)));
